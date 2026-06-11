@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { BarChart3, CalendarDays, CalendarPlus, CalendarX2, ClipboardCheck, ClipboardList, Clock, CreditCard, LogOut, Menu, Settings, UserRound, Users } from "lucide-react";
 import { useState } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
+import { signOutAction } from "@/lib/auth/actions";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -24,16 +25,10 @@ const nav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const isClock = pathname === "/clock";
 
   if (isClock) return <>{children}</>;
-
-  function logout() {
-    window.localStorage.removeItem("jan-staff-manager-session");
-    router.push("/login");
-  }
 
   const menu = (
     <nav className="mt-8 grid gap-1" aria-label="Main navigation">
@@ -63,9 +58,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <BrandMark />
         {menu}
         <div className="absolute bottom-5 left-5 right-5">
-          <Button variant="ghost" className="w-full justify-start" onClick={logout}>
-            <LogOut className="h-4 w-4" /> Sign out
-          </Button>
+          <form action={signOutAction} onSubmit={() => window.localStorage.removeItem("jan-staff-manager-session")}>
+            <Button type="submit" variant="ghost" className="w-full justify-start">
+              <LogOut className="h-4 w-4" /> Sign out
+            </Button>
+          </form>
         </div>
       </aside>
       <header className="sticky top-0 z-30 border-b border-purple-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
