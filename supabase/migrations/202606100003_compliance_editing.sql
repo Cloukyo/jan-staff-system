@@ -56,9 +56,7 @@ select
   sp.auth_user_id,
   cr.dbs_recorded,
   cr.dbs_update_service,
-  cr.dbs_issue_date,
   cr.dbs_last_checked_at,
-  cr.dbs_new_check_required,
   cr.dbs_number_last4,
   (
     coalesce(cr.appointment_induction_completed, false)::int +
@@ -73,6 +71,8 @@ select
     coalesce(cr.medical_declaration, false)::int +
     coalesce(cr.employee_information_form, false)::int
   ) as central_record_completed_count,
-  11 as central_record_total_count
+  11 as central_record_total_count,
+  cr.dbs_issue_date,
+  cr.dbs_new_check_required
 from public.staff_profiles sp
 left join public.staff_central_records cr on cr.staff_id = sp.id;
