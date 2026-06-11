@@ -1,5 +1,5 @@
 import { addDays, addWeeks, format, startOfWeek } from "date-fns";
-import type { ClockEvent, DemoState, PayRateHistory, RotaShift, StaffMember } from "@/types";
+import type { ClockEvent, DemoState, LeaveRequest, PayRateHistory, RotaShift, StaffAccount, StaffMember } from "@/types";
 import { prototypeHashPin } from "@/lib/pin/service";
 
 const now = "2026-06-08T08:00:00+01:00";
@@ -54,6 +54,78 @@ const staffSeed: StaffMember[] = [
   createdAt: now,
   updatedAt: now,
 }));
+
+const accountSeed: StaffAccount[] = staffSeed.slice(0, 8).map((person, index) => ({
+  id: id("acct", index + 1),
+  authUserId: null,
+  staffId: person.id,
+  fullName: person.fullName,
+  email: index === 0 ? "manager@janpreschool.local" : `${person.displayName.toLowerCase()}@janpreschool.local`,
+  role: index === 0 ? "manager" : "staff",
+  active: person.active,
+  createdAt: now,
+  updatedAt: now,
+}));
+
+const leaveRequestSeed: LeaveRequest[] = [
+  {
+    id: "leave-001",
+    staffId: "stf-004",
+    leaveType: "annual_leave",
+    startDate: "2026-06-10",
+    endDate: "2026-06-10",
+    dayPart: "full_day",
+    startTime: null,
+    endTime: null,
+    requestedMinutes: 450,
+    staffNote: "Family appointment.",
+    status: "approved",
+    managerNote: "Approved, rota warning retained for review.",
+    reviewedBy: "acct-001",
+    reviewedAt: "2026-06-02T10:15:00+01:00",
+    cancelledAt: null,
+    createdAt: "2026-06-01T09:20:00+01:00",
+    updatedAt: "2026-06-02T10:15:00+01:00",
+  },
+  {
+    id: "leave-002",
+    staffId: "stf-005",
+    leaveType: "medical_appointment",
+    startDate: "2026-06-11",
+    endDate: "2026-06-11",
+    dayPart: "partial_day",
+    startTime: "10:00",
+    endTime: "12:00",
+    requestedMinutes: 120,
+    staffNote: "Dentist appointment.",
+    status: "pending",
+    managerNote: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    cancelledAt: null,
+    createdAt: "2026-06-07T16:10:00+01:00",
+    updatedAt: "2026-06-07T16:10:00+01:00",
+  },
+  {
+    id: "leave-003",
+    staffId: "stf-003",
+    leaveType: "training",
+    startDate: "2026-06-12",
+    endDate: "2026-06-12",
+    dayPart: "full_day",
+    startTime: null,
+    endTime: null,
+    requestedMinutes: 450,
+    staffNote: "External SEN training.",
+    status: "rejected",
+    managerNote: "Please choose another date due to cover.",
+    reviewedBy: "acct-001",
+    reviewedAt: "2026-06-05T13:30:00+01:00",
+    cancelledAt: null,
+    createdAt: "2026-06-04T12:00:00+01:00",
+    updatedAt: "2026-06-05T13:30:00+01:00",
+  },
+];
 
 function buildRota(): RotaShift[] {
   const monday = startOfWeek(new Date("2026-06-08T12:00:00+01:00"), { weekStartsOn: 1 });
@@ -170,6 +242,8 @@ export function createSeedState(): DemoState {
   return {
     schemaVersion: 4,
     staff: staffSeed,
+    staffAccounts: accountSeed,
+    leaveRequests: leaveRequestSeed,
     payRates,
     rota,
     clockEvents,

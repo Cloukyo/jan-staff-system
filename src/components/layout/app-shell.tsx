@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, CalendarDays, ClipboardCheck, Clock, CreditCard, LogOut, Menu, Settings, Users } from "lucide-react";
+import { BarChart3, CalendarDays, CalendarPlus, CalendarX2, ClipboardCheck, ClipboardList, Clock, CreditCard, LogOut, Menu, Settings, UserRound, Users } from "lucide-react";
 import { useState } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/primitives";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/staff", label: "Staff", icon: Users },
+  { href: "/compliance", label: "Compliance", icon: ClipboardList },
   { href: "/rota", label: "Rota", icon: CalendarDays },
+  { href: "/leave/requests", label: "Leave requests", icon: CalendarX2 },
+  { href: "/leave/request", label: "Request leave", icon: CalendarPlus },
+  { href: "/leave", label: "My leave", icon: CalendarDays },
+  { href: "/accounts", label: "Accounts", icon: UserRound },
   { href: "/clock", label: "Kiosk", icon: Clock },
   { href: "/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/payroll", label: "Pay prep", icon: CreditCard },

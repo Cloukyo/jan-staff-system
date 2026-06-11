@@ -104,47 +104,6 @@ export function ManagerApp({ screen }: { screen: Screen }) {
   );
 }
 
-export function LoginScreen() {
-  const [email, setEmail] = useState("manager@janpreschool.local");
-  const [password, setPassword] = useState("JanDemo123!");
-  const [error, setError] = useState("");
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (email === "manager@janpreschool.local" && password === "JanDemo123!") {
-      window.localStorage.setItem("jan-staff-manager-session", "demo");
-      window.location.href = "/dashboard";
-    } else {
-      setError("Use the demo manager credentials shown on this page.");
-    }
-  }
-
-  return (
-    <main className="grid min-h-screen place-items-center bg-lavender px-4 py-10">
-      <Panel className="w-full max-w-md">
-        <BrandMark />
-        <h1 className="mt-8 text-3xl font-black text-purple-950">Manager login</h1>
-        <p className="mt-2 text-sm text-slate-600">Prototype access for the local Jan Staff demo.</p>
-        <form className="mt-6 grid gap-4" onSubmit={submit}>
-          <Field label="Email">
-            <input className={inputClassName()} value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
-          </Field>
-          <Field label="Password">
-            <input className={inputClassName()} value={password} onChange={(event) => setPassword(event.target.value)} type="password" />
-          </Field>
-          {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
-          <Button type="submit">Sign in</Button>
-        </form>
-        <div className="mt-6 rounded-2xl bg-purple-50 p-4 text-sm">
-          <p className="font-bold text-purple-950">Development-only credentials</p>
-          <p className="mt-1 text-purple-800">Email: manager@janpreschool.local</p>
-          <p className="text-purple-800">Password: JanDemo123!</p>
-        </div>
-      </Panel>
-    </main>
-  );
-}
-
 function DashboardScreen() {
   const repo = useDemoRepository();
   const clock = createAppClock(repo.state.settings);
@@ -227,6 +186,17 @@ function DashboardScreen() {
               return [formatDateUk(shift.date), person?.displayName ?? "", `${shift.scheduledStart ?? "-"} to ${shift.scheduledEnd ?? "-"}`, shift.status, shift.roomOrRole ?? ""];
             })}
         />
+      </Panel>
+      <Panel className="mt-4">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div>
+            <h2 className="text-xl font-black text-purple-950">Compliance alerts</h2>
+            <p className="mt-1 text-sm text-slate-600">Review expired certificates, upcoming expiries, missing first-aid and safeguarding records, and incomplete central records.</p>
+          </div>
+          <a className="inline-flex min-h-11 items-center justify-center rounded-xl bg-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-800" href="/compliance">
+            Open staff compliance
+          </a>
+        </div>
       </Panel>
     </>
   );
@@ -494,7 +464,7 @@ function RotaScreen() {
                       status: "working",
                       plannedBreakMinutes: person.defaultBreakMinutes,
                     } satisfies RotaShift;
-                    const warnings = rotaWarnings(shift, person);
+                    const warnings = rotaWarnings(shift, person, repo.state.leaveRequests);
                     return (
                       <td key={date} className="border-b border-purple-50 px-2 py-2">
                         <button aria-label={`Edit ${person.displayName} on ${formatDateUk(date)}. ${shift.status}. ${shift.scheduledStart ?? "No start"} to ${shift.scheduledEnd ?? "No finish"}.`} className={`min-h-28 w-full rounded-xl border p-3 text-left transition hover:border-purple-400 focus:outline-purple-700 ${statusStyle(shift.status)}`} onClick={() => setEditing(shift)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setEditing(shift); }}>
@@ -541,7 +511,7 @@ function RotaScreen() {
               headers={["Staff", "Status", "Start", "Finish", "Break", "Pay", "Credited", "Room or duty", "Warnings", "Edit"]}
               rows={repo.state.staff.filter((person) => person.active).map((person) => {
                 const shift = repo.state.rota.find((item) => item.staffId === person.id && item.date === selectedDate) ?? { id: `new-${person.id}-${selectedDate}`, staffId: person.id, date: selectedDate, scheduledStart: "08:30", scheduledEnd: "16:30", status: "working", plannedBreakMinutes: person.defaultBreakMinutes } satisfies RotaShift;
-                return [person.displayName, titleCase(shift.status), shift.scheduledStart ?? "-", shift.scheduledEnd ?? "-", shift.plannedBreakMinutes, <PayTreatmentBadge key="pay" shift={shift} />, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), shift.roomOrRole ?? "", rotaWarnings(shift, person).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(selectedDate)}`} onClick={() => setEditing(shift)}>Edit</Button>];
+                return [person.displayName, titleCase(shift.status), shift.scheduledStart ?? "-", shift.scheduledEnd ?? "-", shift.plannedBreakMinutes, <PayTreatmentBadge key="pay" shift={shift} />, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), shift.roomOrRole ?? "", rotaWarnings(shift, person, repo.state.leaveRequests).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(selectedDate)}`} onClick={() => setEditing(shift)}>Edit</Button>];
               })}
             />
           </div>
@@ -560,7 +530,7 @@ function RotaScreen() {
                     headers={["Day", "Status", "Times", "Break", "Credited", "Pay", "Warnings", "Edit"]}
                     rows={dates.map((date) => {
                       const shift = repo.state.rota.find((item) => item.staffId === person.id && item.date === date) ?? { id: `new-${person.id}-${date}`, staffId: person.id, date, scheduledStart: "08:30", scheduledEnd: "16:30", status: "working", plannedBreakMinutes: person.defaultBreakMinutes } satisfies RotaShift;
-                      return [formatDateUk(date), titleCase(shift.status), `${shift.scheduledStart ?? "-"} to ${shift.scheduledEnd ?? "-"}`, shift.plannedBreakMinutes, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), <PayTreatmentBadge key="pay" shift={shift} />, rotaWarnings(shift, person).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(date)}`} onClick={() => setEditing(shift)}>Edit</Button>];
+                      return [formatDateUk(date), titleCase(shift.status), `${shift.scheduledStart ?? "-"} to ${shift.scheduledEnd ?? "-"}`, shift.plannedBreakMinutes, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), <PayTreatmentBadge key="pay" shift={shift} />, rotaWarnings(shift, person, repo.state.leaveRequests).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(date)}`} onClick={() => setEditing(shift)}>Edit</Button>];
                     })}
                   />
                 </>
@@ -577,7 +547,10 @@ function RotaScreen() {
 function ShiftModal({ shift, onClose }: { shift: RotaShift; onClose: () => void }) {
   const repo = useDemoRepository();
   const [draft, setDraft] = useState(shift);
+  const staff = repo.state.staff.find((person) => person.id === draft.staffId);
+  const warnings = rotaWarnings(draft, staff, repo.state.leaveRequests);
   function save() {
+    if (warnings.some((warning) => warning.includes("leave")) && !confirm("This shift overlaps leave. Save the shift and keep the conflict warning?")) return;
     repo.saveShift(draft);
     onClose();
   }
@@ -599,6 +572,11 @@ function ShiftModal({ shift, onClose }: { shift: RotaShift; onClose: () => void 
         <Field label="Notes"><input className={inputClassName()} value={draft.notes ?? ""} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></Field>
         <Field label="Manager note"><input className={inputClassName()} value={draft.managerNote ?? ""} onChange={(e) => setDraft({ ...draft, managerNote: e.target.value })} /></Field>
       </div>
+      {warnings.length > 0 && (
+        <div className="mt-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">
+          {warnings.join(", ")}
+        </div>
+      )}
       <div className="mt-5 flex justify-between gap-3">
         <Button variant="secondary" onClick={() => repo.copyPreviousWeek(isoDate(weekStart(shift.date)), shift.staffId)}>Copy employee previous week</Button>
         <div className="flex gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>Save shift</Button></div>

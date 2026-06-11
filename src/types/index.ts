@@ -6,6 +6,14 @@ export type ClockEventSource = "kiosk" | "manager";
 export type ReviewStatus = "needs_review" | "approved" | "draft";
 export type PayStatus = "draft" | "reviewed" | "exported";
 export type PayTreatment = "paid" | "unpaid" | "informational";
+export type AppRole = "manager" | "staff";
+export type LeaveType = "annual_leave" | "sickness" | "medical_appointment" | "unpaid_leave" | "training" | "other";
+export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type LeaveDayPart = "full_day" | "partial_day";
+export type CertificateStatus = "valid" | "expiring_90" | "expiring_60" | "expiring_30" | "expired" | "no_expiry" | "awaiting_evidence" | "expected";
+export type ComplianceIndicator = "complete" | "attention" | "urgent" | "incomplete";
+export type EvidenceStatus = "not_required" | "awaiting" | "received" | "verified";
+export type ChecklistStatus = "complete" | "incomplete" | "not_applicable";
 
 export interface StaffMember {
   id: string;
@@ -25,6 +33,146 @@ export interface StaffMember {
   pinIsTemporary: boolean;
   failedPinAttempts: number;
   lockedUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffAccount {
+  id: string;
+  authUserId: string | null;
+  staffId: string;
+  fullName: string;
+  email: string;
+  role: AppRole;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffProfile {
+  id: string;
+  fullName: string;
+  displayName: string;
+  employmentRole: string;
+  mainQualificationLevel: string | null;
+  isApprentice: boolean;
+  isCoverStaff: boolean;
+  appointmentDate: string | null;
+  active: boolean;
+  authUserId: string | null;
+  email: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffQualification {
+  id: string;
+  staffId: string;
+  qualificationName: string;
+  qualificationLevel: string | null;
+  awardingOrganisation: string | null;
+  awardDate: string | null;
+  expectedCompletionDate: string | null;
+  permanent: boolean;
+  evidenceStatus: EvidenceStatus;
+  evidenceReference: string | null;
+  notes: string | null;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffCertificate {
+  id: string;
+  staffId: string;
+  certificateType: string;
+  customTitle: string | null;
+  completionDate: string | null;
+  expiryDate: string | null;
+  validityMonths: number | null;
+  permanent: boolean;
+  evidenceStatus: EvidenceStatus;
+  evidenceReference: string | null;
+  notes: string | null;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffCentralRecord {
+  id: string;
+  staffId: string;
+  appointmentInductionCompleted: boolean;
+  appointmentInductionCheckedAt: string | null;
+  contractForm: boolean;
+  contractFormCheckedAt: string | null;
+  idChecked: boolean;
+  idCheckedAt: string | null;
+  addressEvidenceChecked: boolean;
+  addressEvidenceCheckedAt: string | null;
+  additionalEmploymentTaxEvidenceChecked: boolean;
+  additionalEmploymentTaxEvidenceCheckedAt: string | null;
+  dbsRecorded: boolean;
+  dbsUpdateService: boolean;
+  dbsIssueDate: string | null;
+  dbsLastCheckedAt: string | null;
+  dbsNumberLast4: string | null;
+  dbsNewCheckRequired: boolean;
+  referencesComplete: boolean;
+  referencesCheckedAt: string | null;
+  starterForm: boolean;
+  starterFormCheckedAt: string | null;
+  suitabilityDeclaration: boolean;
+  suitabilityDeclarationCheckedAt: string | null;
+  medicalDeclaration: boolean;
+  medicalDeclarationCheckedAt: string | null;
+  employeeInformationForm: boolean;
+  employeeInformationFormCheckedAt: string | null;
+  checkedBy: string | null;
+  checkedAt: string | null;
+  notes: string | null;
+  itemStatuses?: Record<string, ChecklistStatus>;
+  itemNotes?: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffReferenceCheck {
+  id: string;
+  staffId: string;
+  referenceType: "current_last_employer" | "previous_employer" | "alternative";
+  referenceName: string | null;
+  method: "written" | "telephone" | "email" | null;
+  satisfactory: boolean | null;
+  notes: string | null;
+  checkedBy: string | null;
+  checkedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeaveRequest {
+  id: string;
+  staffId: string;
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  dayPart: LeaveDayPart;
+  startTime: string | null;
+  endTime: string | null;
+  requestedMinutes: number;
+  staffNote: string;
+  status: LeaveStatus;
+  managerNote: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,6 +313,8 @@ export interface NurserySettings {
 export interface DemoState {
   schemaVersion?: number;
   staff: StaffMember[];
+  staffAccounts: StaffAccount[];
+  leaveRequests: LeaveRequest[];
   payRates: PayRateHistory[];
   rota: RotaShift[];
   clockEvents: ClockEvent[];

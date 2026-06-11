@@ -9,18 +9,24 @@ import type {
   ClockEvent,
   ClockEventType,
   DemoState,
+  LeaveDayPart,
+  LeaveRequest,
+  LeaveStatus,
+  LeaveType,
   PayPeriodSummary,
   PayRateHistory,
   RotaShift,
+  StaffAccount,
   StaffMember,
 } from "@/types";
 import { calculateAttendanceDay } from "@/lib/calculations/attendance";
+import { calculateLeaveMinutes, findOverlappingLeave, validateLeaveRequestInput } from "@/lib/calculations/leave";
 import { createPaySummary } from "@/lib/calculations/pay";
 import { createSeedState } from "@/lib/demo-data/seed";
 import { prototypeHashPin, verifyPrototypePin } from "@/lib/pin/service";
 
-const STORAGE_KEY = "jan-staff-demo-state-v4";
-const LEGACY_STORAGE_KEYS = ["jan-staff-demo-state-v3", "jan-staff-demo-state-v2", "jan-staff-demo-state-v1"];
+const STORAGE_KEY = "jan-staff-demo-state-v5";
+const LEGACY_STORAGE_KEYS = ["jan-staff-demo-state-v4", "jan-staff-demo-state-v3", "jan-staff-demo-state-v2", "jan-staff-demo-state-v1"];
 
 interface DemoRepository {
   state: DemoState;
@@ -28,6 +34,20 @@ interface DemoRepository {
   reseed: () => void;
   addStaff: (staff: Omit<StaffMember, "id" | "createdAt" | "updatedAt" | "pinHash" | "failedPinAttempts" | "lockedUntil"> & { temporaryPin: string }) => void;
   updateStaff: (staff: StaffMember, rate?: Omit<PayRateHistory, "id" | "createdAt">) => void;
+  addStaffAccount: (account: Omit<StaffAccount, "id" | "authUserId" | "createdAt" | "updatedAt">) => { ok: boolean; message: string };
+  deactivateAccount: (accountId: string) => void;
+  submitLeaveRequest: (input: {
+    staffId: string;
+    leaveType: LeaveType;
+    startDate: string;
+    endDate: string;
+    dayPart: LeaveDayPart;
+    startTime?: string | null;
+    endTime?: string | null;
+    staffNote: string;
+  }) => { ok: boolean; message: string; request?: LeaveRequest };
+  cancelLeaveRequest: (requestId: string, staffId: string) => { ok: boolean; message: string };
+  reviewLeaveRequest: (requestId: string, status: Extract<LeaveStatus, "approved" | "rejected">, managerNote: string, reviewedBy?: string) => { ok: boolean; message: string };
   saveShift: (shift: RotaShift) => void;
   copyPreviousWeek: (weekStart: string, staffId?: string) => void;
   clearWeek: (weekStart: string) => void;
@@ -72,8 +92,10 @@ export function migrateState(input: Partial<DemoState>): DemoState {
   return {
     ...seed,
     ...input,
-    schemaVersion: 4,
+    schemaVersion: 5,
     settings,
+    staffAccounts: input.staffAccounts ?? seed.staffAccounts,
+    leaveRequests: input.leaveRequests ?? seed.leaveRequests,
     staff: (input.staff ?? seed.staff).map((person) => ({
       ...person,
       contractedWeeklyMinutes: repairContractedWeeklyMinutes(person.contractedWeeklyMinutes),
@@ -188,6 +210,77 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
               ]
             : current.payRates,
         })),
+      addStaffAccount: (account) => {
+        const email = account.email.trim().toLowerCase();
+        if (state.staffAccounts.some((item) => item.email.toLowerCase() === email)) return { ok: false, message: "An account already exists for this email address." };
+        if (state.staffAccounts.some((item) => item.staffId === account.staffId)) return { ok: false, message: "An account already exists for this staff member." };
+        const createdAt = new Date().toISOString();
+        setState((current) => ({
+          ...current,
+          staffAccounts: [...current.staffAccounts, { ...account, email, id: uid("acct"), authUserId: null, createdAt, updatedAt: createdAt }],
+        }));
+        return { ok: true, message: "Account created. Send a password-reset email from Supabase before production use." };
+      },
+      deactivateAccount: (accountId) =>
+        setState((current) => ({
+          ...current,
+          staffAccounts: current.staffAccounts.map((account) => (account.id === accountId ? { ...account, active: false, updatedAt: new Date().toISOString() } : account)),
+        })),
+      submitLeaveRequest: (input) => {
+        const errors = validateLeaveRequestInput(input);
+        const requestedMinutes = calculateLeaveMinutes(input);
+        if (!requestedMinutes) errors.push("The selected dates do not include any working time.");
+        if (findOverlappingLeave(state.leaveRequests, { staffId: input.staffId, startDate: input.startDate, endDate: input.endDate }).length) {
+          errors.push("This overlaps an existing pending or approved leave request.");
+        }
+        if (errors.length) return { ok: false, message: errors[0] };
+        const now = new Date().toISOString();
+        const request: LeaveRequest = {
+          id: uid("leave"),
+          staffId: input.staffId,
+          leaveType: input.leaveType,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          dayPart: input.dayPart,
+          startTime: input.dayPart === "partial_day" ? input.startTime ?? null : null,
+          endTime: input.dayPart === "partial_day" ? input.endTime ?? null : null,
+          requestedMinutes,
+          staffNote: input.staffNote.trim(),
+          status: "pending",
+          managerNote: null,
+          reviewedBy: null,
+          reviewedAt: null,
+          cancelledAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        setState((current) => ({ ...current, leaveRequests: [request, ...current.leaveRequests] }));
+        return { ok: true, message: "Leave request submitted.", request };
+      },
+      cancelLeaveRequest: (requestId, staffId) => {
+        const request = state.leaveRequests.find((item) => item.id === requestId && item.staffId === staffId);
+        if (!request) return { ok: false, message: "Leave request not found." };
+        if (request.status !== "pending") return { ok: false, message: "Only pending requests can be cancelled." };
+        const now = new Date().toISOString();
+        setState((current) => ({
+          ...current,
+          leaveRequests: current.leaveRequests.map((item) => (item.id === requestId ? { ...item, status: "cancelled", cancelledAt: now, updatedAt: now } : item)),
+        }));
+        return { ok: true, message: "Leave request cancelled." };
+      },
+      reviewLeaveRequest: (requestId, status, managerNote, reviewedBy = "acct-001") => {
+        const request = state.leaveRequests.find((item) => item.id === requestId);
+        if (!request) return { ok: false, message: "Leave request not found." };
+        if (request.status !== "pending") return { ok: false, message: "This request has already been reviewed." };
+        const now = new Date().toISOString();
+        setState((current) => ({
+          ...current,
+          leaveRequests: current.leaveRequests.map((item) =>
+            item.id === requestId ? { ...item, status, managerNote: managerNote.trim() || null, reviewedBy, reviewedAt: now, updatedAt: now } : item,
+          ),
+        }));
+        return { ok: true, message: status === "approved" ? "Leave approved." : "Leave rejected." };
+      },
       saveShift: (shift) =>
         setState((current) => ({
           ...current,

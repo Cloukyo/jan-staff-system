@@ -68,7 +68,7 @@ describe("local repository persistence and migrations", () => {
 
   it("migrates schema version, legacy contract hours and partial old-schema defaults", () => {
     const migrated = migrateState({ staff: [{ ...createSeedState().staff[0], contractedWeeklyMinutes: 40 }], settings: { nurseryDisplayName: "Old" } as never });
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
     expect(migrated.staff[0].contractedWeeklyMinutes).toBe(2400);
     expect(migrated.settings.attendancePageSize).toBe(25);
     expect(repairContractedWeeklyMinutes(38)).toBe(2280);

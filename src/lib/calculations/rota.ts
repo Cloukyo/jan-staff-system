@@ -1,6 +1,7 @@
 import { differenceInMinutes } from "date-fns";
-import type { RotaShift, StaffMember } from "@/types";
+import type { LeaveRequest, RotaShift, StaffMember } from "@/types";
 import { toDateTime } from "@/lib/dates/format";
+import { findRotaLeaveWarnings } from "@/lib/calculations/leave";
 
 export function shiftScheduledMinutes(shift: RotaShift): number {
   if (shift.status !== "working") return shift.creditedMinutes ?? 0;
@@ -25,13 +26,16 @@ export function weeklyPaidStatusTotal(staffId: string, shifts: RotaShift[]): num
   return shifts.filter((shift) => shift.staffId === staffId).reduce((sum, shift) => sum + shiftPayableStatusMinutes(shift), 0);
 }
 
-export function rotaWarnings(shift: RotaShift, staff?: StaffMember): string[] {
+export function rotaWarnings(shift: RotaShift, staff?: StaffMember, leaveRequests: LeaveRequest[] = []): string[] {
   const warnings: string[] = [];
   if (shift.status === "working") {
     if (!shift.scheduledStart || !shift.scheduledEnd) warnings.push("Missing shift time");
     if (shift.scheduledStart && shift.scheduledEnd && shift.scheduledEnd <= shift.scheduledStart) warnings.push("Finish is before start");
     if (shiftScheduledMinutes(shift) > 10 * 60) warnings.push("Very long shift");
     if (staff && !staff.active) warnings.push("Inactive staff member");
+    for (const request of findRotaLeaveWarnings(shift, leaveRequests)) {
+      warnings.push(request.status === "approved" ? "Approved leave conflict" : "Pending leave request");
+    }
   }
   if (shift.status !== "working" && shift.payTreatment === "paid" && !shiftPayableStatusMinutes(shift)) warnings.push("Paid status missing duration");
   return warnings;
