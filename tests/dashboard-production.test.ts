@@ -5,6 +5,7 @@ import { dashboardRepositorySource, mapDashboardSummary } from "@/lib/dashboard/
 import { isoDateInLondon, weekStart, isoDate } from "@/lib/dates/format";
 
 const migration = readFileSync(resolve("supabase/migrations/202606120005_production_dashboard_summary.sql"), "utf8");
+const alignment = readFileSync(resolve("supabase/migrations/202606120006_dashboard_summary_alignment.sql"), "utf8");
 
 describe("production dashboard separation", () => {
   it("uses Supabase only in production and preserves explicit demo mode", () => {
@@ -92,5 +93,11 @@ describe("production dashboard database safeguards", () => {
     expect(migration).toContain("ce.recorded_date = dashboard_date");
     expect(migration).toContain("where status = 'pending'");
     expect(migration).toContain("latest.event_type = 'clock_in'");
+  });
+
+  it("aligns checklist and payroll counts with their manager screens", () => {
+    expect(alignment).toContain("items.item_count < 12 or items.completed_count < 12");
+    expect(alignment).toContain("account.role = 'manager'");
+    expect(alignment).toContain("get_manager_dashboard_summary_base");
   });
 });
