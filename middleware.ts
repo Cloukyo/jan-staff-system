@@ -1,12 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getAppMode } from "@/lib/app-mode";
+const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
 
 const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile"];
 
 export async function middleware(request: NextRequest) {
   const hasConfig = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   const isProtected = protectedPrefixes.some((prefix) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
+  const hasKioskDeviceCookie = Boolean(request.cookies.get(KIOSK_DEVICE_COOKIE)?.value);
+  if (hasKioskDeviceCookie && isProtected) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/clock";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
   if (getAppMode() === "demo" || !hasConfig || !isProtected) return NextResponse.next();
 
   let response = NextResponse.next({ request });

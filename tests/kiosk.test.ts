@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { kioskRepositorySource, mapKioskRoster } from "@/lib/kiosk/server";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
+import { KIOSK_DEVICE_COOKIE } from "@/lib/kiosk/device-session";
 
 describe("production kiosk separation", () => {
   it("uses Supabase in production and never falls back to demo data", () => {
@@ -60,6 +61,63 @@ describe("production kiosk migration safeguards", () => {
     expect(migration).toContain("event_source = 'manager'");
     expect(migration).toContain("manager_correction = true");
     expect(migration).not.toMatch(/create policy [\\s\\S]* clock_events for update/i);
+  });
+});
+
+describe("device-specific kiosk access", () => {
+  const migration = readFileSync(resolve("supabase/migrations/202606120002_kiosk_devices_manager_access.sql"), "utf8");
+  const middleware = readFileSync(resolve("middleware.ts"), "utf8");
+  const kioskServer = readFileSync(resolve("src/lib/kiosk/server.ts"), "utf8");
+  const kioskActions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+
+  it("stores only token hashes and supports expiry and revocation", () => {
+    expect(migration).toContain("token_hash bytea not null unique");
+    expect(migration).toContain("expires_at timestamptz not null");
+    expect(migration).toContain("revoked_by uuid");
+    expect(migration).toContain("digest(candidate_token, 'sha256')");
+    expect(migration).not.toContain("device_token text not null");
+  });
+
+  it("revokes anonymous access to legacy kiosk RPCs", () => {
+    expect(migration).toContain("revoke execute on function public.get_kiosk_roster() from anon, authenticated");
+    expect(migration).toContain("revoke execute on function public.verify_kiosk_pin(text, text) from anon, authenticated");
+    expect(migration).toContain("revoke execute on function public.record_kiosk_clock_event(text, text, text, text) from anon, authenticated");
+    expect(kioskServer).toContain("get_device_kiosk_roster");
+    expect(kioskActions).toContain("record_device_kiosk_clock_event");
+  });
+
+  it("keeps the device token in an HttpOnly cookie and redirects manager routes", () => {
+    expect(KIOSK_DEVICE_COOKIE).toBe("jan_kiosk_device");
+    const deviceSession = readFileSync(resolve("src/lib/kiosk/device-session.ts"), "utf8");
+    expect(deviceSession).toContain("httpOnly: true");
+    expect(deviceSession).not.toContain("localStorage");
+    expect(middleware).toContain('url.pathname = "/clock"');
+  });
+
+  it("does not expose payroll or compliance fields in the roster", () => {
+    expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*hourly_rate/i);
+    expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*annual_salary/i);
+    expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*dbs_/i);
+  });
+});
+
+describe("manager access workflow", () => {
+  const migration = readFileSync(resolve("supabase/migrations/202606120002_kiosk_devices_manager_access.sql"), "utf8");
+  const linker = readFileSync(resolve("scripts/link-existing-manager.ps1"), "utf8");
+  const accounts = readFileSync(resolve("src/lib/accounts/server.ts"), "utf8");
+
+  it("records who granted and disabled access", () => {
+    expect(migration).toContain("access_granted_by");
+    expect(migration).toContain("disabled_by");
+    expect(accounts).toContain("access_granted_by: manager.id");
+    expect(accounts).toContain("disabled_by: manager.id");
+  });
+
+  it("links an Auth user to an existing profile without a password", () => {
+    expect(linker).toContain("Existing canonical staff profile UUID");
+    expect(linker).toContain("from auth.users");
+    expect(linker).toContain("update public.staff_profiles");
+    expect(linker).not.toMatch(/password/i);
   });
 });
 

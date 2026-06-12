@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { createPublicKioskClient } from "@/lib/kiosk/server";
+import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
 import type { KioskActionResult, KioskStatus } from "@/lib/kiosk/types";
 
@@ -22,8 +23,10 @@ function rpcResult(row: RpcResult | undefined): KioskActionResult {
 
 export async function verifyKioskPinAction(staffId: string, pin: string): Promise<KioskActionResult> {
   if (!staffId || !/^\d{4,6}$/.test(pin)) return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("verify_kiosk_pin", { target_staff_id: staffId, candidate_pin: pin });
+  const { data, error } = await supabase.rpc("verify_device_kiosk_pin", { device_token: deviceToken, target_staff_id: staffId, candidate_pin: pin });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
   return rpcResult((data as RpcResult[] | null)?.[0]);
 }
@@ -35,12 +38,14 @@ export async function recordKioskEventAction(input: {
   deviceId?: string;
 }): Promise<KioskActionResult> {
   if (!input.staffId || !/^\d{4,6}$/.test(input.pin)) return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("record_kiosk_clock_event", {
+  const { data, error } = await supabase.rpc("record_device_kiosk_clock_event", {
+    device_token: deviceToken,
     target_staff_id: input.staffId,
     candidate_pin: input.pin,
     requested_event_type: input.eventType,
-    device_identifier: input.deviceId ?? null,
   });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
   const result = rpcResult((data as RpcResult[] | null)?.[0]);

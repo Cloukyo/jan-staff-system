@@ -2,6 +2,38 @@ import { addDays, format, parseISO, startOfWeek } from "date-fns";
 
 export const TIME_ZONE = "Europe/London";
 
+export function isoDateInLondon(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: TIME_ZONE,
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+export function londonDateStartUtc(date: string): Date {
+  const intended = Date.parse(`${date}T00:00:00.000Z`);
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZone: TIME_ZONE,
+  });
+  const offsetAt = (instant: number) => {
+    const values = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
+    return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), Number(values.second)) - instant;
+  };
+  let result = intended - offsetAt(intended);
+  result = intended - offsetAt(result);
+  return new Date(result);
+}
+
 export function formatDateUk(date: string | Date): string {
   const value = typeof date === "string" ? parseISO(date) : date;
   return format(value, "dd/MM/yyyy");

@@ -1,0 +1,55 @@
+export type ProductionPayType = "hourly" | "salaried";
+
+export type PayArrangement = {
+  id: string;
+  staffId: string;
+  payType: ProductionPayType;
+  hourlyRate: number | null;
+  annualSalary: number | null;
+  monthlySalary: number | null;
+  contractedWeeklyHours: number;
+  standardDailyHours: number | null;
+  overtimeMultiplier: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+  managerNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ProductionStaffRow = {
+  id: string;
+  fullName: string;
+  displayName: string;
+  employmentRole: string;
+  mainQualificationLevel: string | null;
+  active: boolean;
+  loginStatus: string;
+  kioskStatus: string;
+  isManager: boolean;
+  payArrangements: PayArrangement[];
+};
+
+export type ProductionClockEvent = {
+  id: string;
+  staffId: string;
+  eventType: "clock_in" | "clock_out";
+  eventTimestamp: string;
+  managerCorrection: boolean;
+};
+
+export type PayrollPreparationRow = {
+  staffId: string;
+  fullName: string;
+  employmentRole: string;
+  payType: ProductionPayType | null;
+  contractedWeeklyHours: number | null;
+  recordedMinutes: number;
+  adjustedMinutes: number;
+  ordinaryMinutes: number;
+  overtimeMinutes: number;
+  hourlyRate: number | null;
+  estimatedGross: number | null;
+  salaryBasis: number | null;
+  warnings: string[];
+};

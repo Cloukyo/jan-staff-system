@@ -1,11 +1,12 @@
 "use client";
 
 import { CheckCircle2, Clock3, Delete, LogIn, LogOut } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
+import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
 
 type Mode = "select" | "pin" | "action" | "success";
 
@@ -16,16 +17,6 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   const [mode, setMode] = useState<Mode>("select");
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
-  const deviceId = useRef("");
-
-  useEffect(() => {
-    const key = "jan-staff-kiosk-device-id";
-    const existing = window.localStorage.getItem(key);
-    const value = existing ?? crypto.randomUUID();
-    if (!existing) window.localStorage.setItem(key, value);
-    deviceId.current = value;
-  }, []);
-
   function reset() {
     setSelected(null);
     setPin("");
@@ -48,7 +39,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   function record(eventType: "clock_in" | "clock_out") {
     if (!selected) return;
     startTransition(async () => {
-      const result = await recordKioskEventAction({ staffId: selected.staffId, pin, eventType, deviceId: deviceId.current });
+      const result = await recordKioskEventAction({ staffId: selected.staffId, pin, eventType });
       setMessage(result.ok ? `${eventType === "clock_in" ? "Clock in" : "Clock out"} recorded for ${selected.displayName}.` : result.message);
       if (!result.ok) return;
       const currentStatus = result.currentStatus ?? (eventType === "clock_in" ? "clocked_in" : "clocked_out");
@@ -68,6 +59,9 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
             <LiveTime />
           </div>
         </div>
+        <form action={exitKioskModeAction} className="mt-3 self-end">
+          <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Exit kiosk mode</button>
+        </form>
 
         {mode === "select" && (
           <>

@@ -21,6 +21,7 @@ const nav = [
   { href: "/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/payroll", label: "Pay prep", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/kiosk", label: "Kiosk devices", icon: Clock },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

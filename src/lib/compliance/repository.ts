@@ -19,6 +19,7 @@ export type ComplianceImportWarning = {
 };
 
 export type ComplianceAccountStatus = {
+  id: string;
   staffId: string;
   email: string | null;
   authUserId: string | null;
@@ -192,7 +193,7 @@ export async function loadProductionComplianceDataset(): Promise<ComplianceDatas
     supabase.from("staff_central_records").select("*"),
     supabase.from("staff_reference_checks").select("*").is("archived_at", null),
     supabase.from("staff_import_reviews").select("*").order("created_at", { ascending: false }),
-    supabase.from("staff_accounts").select("staff_id,email,auth_user_id,active"),
+    supabase.from("staff_accounts").select("id,staff_id,email,auth_user_id,active"),
     supabase.from("staff_central_record_items").select("*"),
   ]);
   const staffRows = assertQuery(staffResult, "Staff profiles") as Record<string, unknown>[];
@@ -217,6 +218,7 @@ export async function loadProductionComplianceDataset(): Promise<ComplianceDatas
       createdAt: String(row.created_at),
     })),
     accounts: accountRows.map((row) => ({
+      id: String(row.id),
       staffId: String(row.staff_id),
       email: row.email ? String(row.email) : null,
       authUserId: row.auth_user_id ? String(row.auth_user_id) : null,

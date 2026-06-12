@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getAppMode } from "@/lib/app-mode";
 import { getSupabaseConfig, hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
 
 type KioskRosterRow = {
@@ -39,10 +40,39 @@ export function createPublicKioskClient() {
 
 export async function loadProductionKioskRoster(): Promise<KioskRosterEntry[]> {
   if (kioskRepositorySource() !== "supabase") return [];
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) throw new Error("Kiosk device access has not been activated.");
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("get_kiosk_roster");
+  const { data, error } = await supabase.rpc("get_device_kiosk_roster", { device_token: deviceToken });
   if (error) throw new Error(`The production kiosk roster could not be loaded: ${error.message}`);
   return mapKioskRoster((data ?? []) as KioskRosterRow[]);
+}
+
+export type KioskDeviceRow = {
+  id: string;
+  deviceName: string;
+  active: boolean;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  activatedAt: string;
+  revokedAt: string | null;
+};
+
+export async function loadKioskDevices(): Promise<KioskDeviceRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.from("kiosk_devices")
+    .select("id,device_name,active,expires_at,last_used_at,activated_at,revoked_at")
+    .order("activated_at", { ascending: false });
+  if (error) throw new Error("Kiosk devices could not be loaded.");
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    deviceName: row.device_name,
+    active: row.active,
+    expiresAt: row.expires_at,
+    lastUsedAt: row.last_used_at,
+    activatedAt: row.activated_at,
+    revokedAt: row.revoked_at,
+  }));
 }
 
 export type ManagerKioskRow = KioskRosterEntry & {
