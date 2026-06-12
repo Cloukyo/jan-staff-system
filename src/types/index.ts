@@ -45,6 +45,7 @@ export interface StaffAccount {
   email: string;
   role: AppRole;
   active: boolean;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 }

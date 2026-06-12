@@ -63,6 +63,7 @@ const accountSeed: StaffAccount[] = staffSeed.slice(0, 8).map((person, index) =>
   email: index === 0 ? "manager@janpreschool.local" : `${person.displayName.toLowerCase()}@janpreschool.local`,
   role: index === 0 ? "manager" : "staff",
   active: person.active,
+  mustChangePassword: false,
   createdAt: now,
   updatedAt: now,
 }));

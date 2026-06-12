@@ -259,7 +259,7 @@ export function AccountsScreen() {
           <Field label="Role"><select className={inputClassName()} value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as "staff" | "manager" })}><option value="staff">Staff</option><option value="manager">Manager</option></select></Field>
         </div>
         <Button className="mt-4" onClick={() => {
-          const result = repo.addStaffAccount({ ...form, active: true });
+          const result = repo.addStaffAccount({ ...form, active: true, mustChangePassword: false });
           setMessage(result.message);
         }}>Create account link</Button>
       </Panel>

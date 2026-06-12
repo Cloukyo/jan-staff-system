@@ -94,7 +94,10 @@ export function migrateState(input: Partial<DemoState>): DemoState {
     ...input,
     schemaVersion: 5,
     settings,
-    staffAccounts: input.staffAccounts ?? seed.staffAccounts,
+    staffAccounts: (input.staffAccounts ?? seed.staffAccounts).map((account) => ({
+      ...account,
+      mustChangePassword: account.mustChangePassword ?? false,
+    })),
     leaveRequests: input.leaveRequests ?? seed.leaveRequests,
     staff: (input.staff ?? seed.staff).map((person) => ({
       ...person,

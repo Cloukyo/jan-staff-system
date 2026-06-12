@@ -11,6 +11,7 @@ type StaffAccountRow = {
   email: string;
   role: AppRole;
   active: boolean;
+  must_change_password: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -24,6 +25,7 @@ export function mapStaffAccount(row: StaffAccountRow): StaffAccount {
     email: row.email,
     role: row.role,
     active: row.active,
+    mustChangePassword: row.must_change_password,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -45,6 +47,7 @@ export async function getCurrentAccount(): Promise<StaffAccount | null> {
 export async function requireAccount(roles?: AppRole[]): Promise<StaffAccount> {
   const account = await getCurrentAccount();
   if (!account) redirect("/login");
+  if (account.mustChangePassword) redirect("/change-password");
   if (roles?.length && !roles.includes(account.role)) redirect(account.role === "manager" ? "/dashboard" : "/leave");
   return account;
 }
