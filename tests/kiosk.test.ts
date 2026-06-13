@@ -122,6 +122,8 @@ describe("manager access workflow", () => {
 });
 
 describe("kiosk PIN safety", () => {
+  const temporaryPinMigration = readFileSync(resolve("supabase/migrations/202606130004_kiosk_temporary_pin_change.sql"), "utf8");
+
   it("rejects weak, repeated and year-like PINs", () => {
     for (const pin of ["0000", "1111", "1234", "4321", "1990", "2026", "12", "abcdef"]) {
       expect(validateKioskPin(pin)).toBeTruthy();
@@ -137,5 +139,20 @@ describe("kiosk PIN safety", () => {
     expect(kioskResultMessage("already_clocked_in")).toMatch(/already clocked in/i);
     expect(kioskResultMessage("not_clocked_in")).toMatch(/cannot clock out/i);
     expect(kioskResultMessage("locked")).toMatch(/15 minutes/i);
+  });
+
+  it("forces temporary PIN replacement before clocking", () => {
+    const actions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+    const kiosk = readFileSync(resolve("src/components/kiosk/production-kiosk.tsx"), "utf8");
+    const manager = readFileSync(resolve("src/components/attendance/production-attendance.tsx"), "utf8");
+
+    expect(temporaryPinMigration).toContain("'change_required'");
+    expect(temporaryPinMigration).toContain("change_device_kiosk_pin");
+    expect(temporaryPinMigration).toContain("pin_reset_required = false");
+    expect(temporaryPinMigration).toContain("perform public.require_kiosk_device(device_token)");
+    expect(temporaryPinMigration).not.toMatch(/returns table[\\s\\S]{0,300}pin_hash/i);
+    expect(actions).toContain("changeTemporaryKioskPinAction");
+    expect(kiosk).toContain('setMode("change")');
+    expect(manager).toContain('name="requireChange" defaultChecked');
   });
 });

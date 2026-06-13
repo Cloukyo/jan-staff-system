@@ -31,6 +31,37 @@ export async function verifyKioskPinAction(staffId: string, pin: string): Promis
   return rpcResult((data as RpcResult[] | null)?.[0]);
 }
 
+export async function changeTemporaryKioskPinAction(input: {
+  staffId: string;
+  temporaryPin: string;
+  newPin: string;
+  confirmation: string;
+}): Promise<KioskActionResult> {
+  if (!input.staffId || !/^\d{4,6}$/.test(input.temporaryPin)) {
+    return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
+  }
+  if (input.newPin !== input.confirmation) {
+    return { ok: false, code: "pin_mismatch", message: "The new PINs do not match." };
+  }
+  const validation = validateKioskPin(input.newPin);
+  if (validation) return { ok: false, code: "weak_pin", message: validation };
+  if (input.newPin === input.temporaryPin) {
+    return { ok: false, code: "same_pin", message: kioskResultMessage("same_pin") };
+  }
+
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
+  const supabase = createPublicKioskClient();
+  const { data, error } = await supabase.rpc("change_device_kiosk_pin", {
+    device_token: deviceToken,
+    target_staff_id: input.staffId,
+    temporary_pin: input.temporaryPin,
+    new_pin: input.newPin,
+  });
+  if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
+  return rpcResult((data as RpcResult[] | null)?.[0]);
+}
+
 export async function recordKioskEventAction(input: {
   staffId: string;
   pin: string;
@@ -77,10 +108,15 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
   await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");
   const pin = String(formData.get("pin") ?? "");
+  const requireChange = formData.get("requireChange") === "on";
   const validation = validateKioskPin(pin);
   if (validation) return { ok: false, code: "weak_pin", message: validation };
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("set_staff_kiosk_pin", { target_staff_id: staffId, new_pin: pin });
+  const { error } = await supabase.rpc("set_staff_kiosk_pin", {
+    target_staff_id: staffId,
+    new_pin: pin,
+    require_change: requireChange,
+  });
   if (error) return { ok: false, code: "save_failed", message: "The PIN could not be saved." };
   revalidatePath("/attendance");
   revalidatePath("/clock");

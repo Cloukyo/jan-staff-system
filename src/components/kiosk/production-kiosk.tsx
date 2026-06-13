@@ -4,22 +4,26 @@ import { CheckCircle2, Clock3, Delete, LogIn, LogOut } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
-import { recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
+import { changeTemporaryKioskPinAction, recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
 import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
 
-type Mode = "select" | "pin" | "action" | "success";
+type Mode = "select" | "pin" | "change" | "action" | "success";
 
 export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterEntry[] }) {
   const [roster, setRoster] = useState(initialRoster);
   const [selected, setSelected] = useState<KioskRosterEntry | null>(null);
   const [pin, setPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
   const [mode, setMode] = useState<Mode>("select");
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
   function reset() {
     setSelected(null);
     setPin("");
+    setNewPin("");
+    setConfirmPin("");
     setMessage("");
     setMode("select");
   }
@@ -29,10 +33,34 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     startTransition(async () => {
       const result = await verifyKioskPinAction(selected.staffId, pin);
       setMessage(result.message);
+      if (result.ok && result.code === "change_required") {
+        if (result.currentStatus) setSelected({ ...selected, currentStatus: result.currentStatus });
+        setMode("change");
+        return;
+      }
       if (result.ok && result.currentStatus) {
         setSelected({ ...selected, currentStatus: result.currentStatus });
         setMode("action");
       }
+    });
+  }
+
+  function changePin() {
+    if (!selected) return;
+    startTransition(async () => {
+      const result = await changeTemporaryKioskPinAction({
+        staffId: selected.staffId,
+        temporaryPin: pin,
+        newPin,
+        confirmation: confirmPin,
+      });
+      setMessage(result.message);
+      if (!result.ok) return;
+      setPin(newPin);
+      setNewPin("");
+      setConfirmPin("");
+      setSelected({ ...selected, currentStatus: result.currentStatus ?? selected.currentStatus, pinReady: true });
+      setMode("action");
     });
   }
 
@@ -87,6 +115,42 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
               ))}
             </div>
           </>
+        )}
+
+        {mode === "change" && selected && (
+          <KioskPanel title="Choose your own PIN" message={message}>
+            <div className="mx-auto grid max-w-sm gap-4">
+              <label className="grid gap-2 text-lg font-bold">
+                New PIN
+                <input
+                  className="min-h-16 rounded-lg border border-purple-200 bg-white px-4 text-center text-3xl tracking-[0.4rem]"
+                  value={newPin}
+                  onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  type="password"
+                  autoComplete="new-password"
+                />
+              </label>
+              <label className="grid gap-2 text-lg font-bold">
+                Confirm new PIN
+                <input
+                  className="min-h-16 rounded-lg border border-purple-200 bg-white px-4 text-center text-3xl tracking-[0.4rem]"
+                  value={confirmPin}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  type="password"
+                  autoComplete="new-password"
+                />
+              </label>
+              <p className="text-center text-sm font-semibold text-slate-600">Use four to six digits. Avoid repeated digits, simple sequences and birth years.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="secondary" onClick={reset}>Cancel</Button>
+                <Button disabled={pending || newPin.length < 4 || confirmPin.length < 4} onClick={changePin}>
+                  {pending ? "Saving" : "Save PIN"}
+                </Button>
+              </div>
+            </div>
+          </KioskPanel>
         )}
 
         {mode === "pin" && selected && (

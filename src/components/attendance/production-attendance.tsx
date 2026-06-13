@@ -81,20 +81,26 @@ function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
             {person.lockedUntil ? ` · Locked until ${formatTimeUk(person.lockedUntil)}` : ""}
           </p>
         </div>
-        <StatusPill tone={person.pinReady ? "green" : "amber"}>{person.pinReady ? "PIN ready" : "PIN setup needed"}</StatusPill>
+        <StatusPill tone={person.pinReady ? "green" : "amber"}>
+          {person.pinReady ? "PIN ready" : person.pinUpdatedAt ? "PIN change required" : "PIN setup needed"}
+        </StatusPill>
       </div>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <form action={settingsAction} className="flex flex-wrap items-center gap-4">
           <input type="hidden" name="staffId" value={person.staffId} />
           <label className="font-bold"><input type="checkbox" name="kioskEnabled" defaultChecked={person.kioskEnabled} /> Kiosk enabled</label>
-          <label className="font-bold"><input type="checkbox" name="pinResetRequired" defaultChecked={person.pinResetRequired} /> Force PIN reset</label>
+          <label className="font-bold"><input type="checkbox" name="pinResetRequired" defaultChecked={person.pinResetRequired} /> Require PIN change at next use</label>
           <button className="min-h-11 rounded-lg bg-purple-100 px-4 font-bold text-purple-900" type="submit">Save access</button>
           {settingsState.message && <p className={settingsState.ok ? "text-green-700" : "text-red-700"}>{settingsState.message}</p>}
         </form>
         <form action={pinAction} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="staffId" value={person.staffId} />
-          <Field label="New PIN"><input className={inputClassName()} name="pin" inputMode="numeric" type="password" minLength={4} maxLength={6} autoComplete="new-password" required /></Field>
-          <button className="min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white" type="submit">Set or reset PIN</button>
+          <Field label="Temporary PIN"><input className={inputClassName()} name="pin" inputMode="numeric" type="password" minLength={4} maxLength={6} autoComplete="new-password" required /></Field>
+          <label className="flex min-h-11 items-center gap-2 font-bold">
+            <input type="checkbox" name="requireChange" defaultChecked />
+            Require staff member to choose a new PIN
+          </label>
+          <button className="min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white" type="submit">Set PIN</button>
           {pinState.message && <p className={pinState.ok ? "text-green-700" : "text-red-700"}>{pinState.message}</p>}
         </form>
       </div>
