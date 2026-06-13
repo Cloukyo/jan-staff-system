@@ -31,7 +31,7 @@ export type ActionResult = {
   message: string;
 };
 
-export function mapLeaveRequest(row: LeaveRequestRow): LeaveRequest {
+function mapLeaveRequest(row: LeaveRequestRow): LeaveRequest {
   return {
     id: row.id,
     staffId: row.staff_id,

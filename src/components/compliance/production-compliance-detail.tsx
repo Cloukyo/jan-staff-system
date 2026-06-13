@@ -11,7 +11,6 @@ import {
   saveReferenceAction,
   updateStaffProfileAction,
 } from "@/lib/compliance/actions";
-import { createStaffAccountAction, deactivateStaffAccountAction } from "@/lib/accounts/server";
 import type { StaffComplianceRecord } from "@/lib/compliance/repository";
 import { centralRecordCompletion, certificateStatus, certificateStatusLabel, certificateStatusTone, maskDbsNumber } from "@/lib/calculations/compliance";
 import { formatDateUk } from "@/lib/dates/format";
@@ -70,15 +69,7 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
           <h2 className="text-xl font-black text-purple-950">Login/account status</h2>
           <p className="mt-2 text-sm text-slate-600">{loginState}</p>
           <p className="mt-1 text-sm text-slate-500">Auth user: {account?.authUserId ?? staff.authUserId ?? "Not linked"}</p>
-          {!account?.authUserId && <ProductionActionForm action={createStaffAccountAction} submitLabel="Prepare manager invitation">
-            <input type="hidden" name="staffId" value={staff.id} />
-            <input type="hidden" name="fullName" value={staff.fullName} />
-            <input type="hidden" name="role" value="manager" />
-            <Field label="Manager email"><input className={inputClassName()} name="email" type="email" defaultValue={staff.email ?? account?.email ?? ""} required /></Field>
-          </ProductionActionForm>}
-          {account?.authUserId && account.active && <ProductionActionForm action={deactivateStaffAccountAction} submitLabel="Disable login">
-            <input type="hidden" name="accountId" value={account.id} />
-          </ProductionActionForm>}
+          <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/accounts">Manage account access</Link>
         </Panel>
 
         <Panel>

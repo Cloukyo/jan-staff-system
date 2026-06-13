@@ -103,14 +103,19 @@ describe("device-specific kiosk access", () => {
 
 describe("manager access workflow", () => {
   const migration = readFileSync(resolve("supabase/migrations/202606120002_kiosk_devices_manager_access.sql"), "utf8");
+  const auditMigration = readFileSync(resolve("supabase/migrations/202606130005_production_account_access_audit.sql"), "utf8");
+  const preparationMigration = readFileSync(resolve("supabase/migrations/202606130006_transactional_account_preparation.sql"), "utf8");
   const linker = readFileSync(resolve("scripts/link-existing-manager.ps1"), "utf8");
   const accounts = readFileSync(resolve("src/lib/accounts/server.ts"), "utf8");
 
   it("records who granted and disabled access", () => {
     expect(migration).toContain("access_granted_by");
     expect(migration).toContain("disabled_by");
-    expect(accounts).toContain("access_granted_by: manager.id");
-    expect(accounts).toContain("disabled_by: manager.id");
+    expect(accounts).toContain('supabase.rpc("prepare_staff_account"');
+    expect(preparationMigration).toContain("access_granted_by");
+    expect(accounts).toContain('supabase.rpc("set_staff_account_active"');
+    expect(auditMigration).toContain("disabled_by = case when p_active then null else manager_account.id end");
+    expect(auditMigration).toContain("staff_account_access_audit");
   });
 
   it("links an Auth user to an existing profile without a password", () => {
