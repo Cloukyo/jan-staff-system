@@ -94,3 +94,13 @@ export async function loadProductionRota(weekStart: string): Promise<ProductionR
     },
   };
 }
+
+export async function loadProductionRotaForExport(weekStart: string, includeArchived: boolean): Promise<ProductionRotaDataset> {
+  const data = await loadProductionRota(weekStart);
+  if (!data.week || !includeArchived) return data;
+  const supabase = await createSupabaseServerClient();
+  const { data: rows, error } = await supabase.from("rota_shifts").select("*")
+    .eq("rota_week_id", data.week.id).order("shift_date").order("start_time");
+  if (error) throw new Error("Production rota export data could not be loaded.");
+  return { ...data, shifts: (rows as Record<string, unknown>[]).map(mapShift) };
+}

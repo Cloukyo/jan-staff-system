@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Archive, Copy, Ellipsis, Plus } from "lucide-react";
+import { Archive, Copy, Download, Ellipsis, Plus } from "lucide-react";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
 import { TemplateWeekGrid } from "@/components/rota/template-week-grid";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
@@ -58,6 +58,9 @@ export function TemplateManager({ data }: { data: RotaTemplateDataset }) {
                 <div><h2 className="text-xl font-black text-purple-950">{selected.name}</h2><p className="mt-1 text-sm text-slate-600">{selected.description || "No description"}</p></div>
                 <div className="flex items-center gap-2">
                   <StatusPill tone={selected.status === "active" ? "green" : "grey"}>{selected.status}</StatusPill>
+                  <a className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-purple-200 px-4 text-sm font-bold text-purple-900 hover:bg-purple-50" href={`/rota/templates/export?template=${selected.id}`}>
+                    <Download className="h-4 w-4" /> Export Excel
+                  </a>
                   {selected.status === "active" ? (
                     <details className="relative">
                       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-purple-200 px-4 text-sm font-bold text-purple-900 hover:bg-purple-50"><Ellipsis className="h-4 w-4" /> Template actions</summary>

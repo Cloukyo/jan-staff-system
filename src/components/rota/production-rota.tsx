@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ProductionRotaGrid } from "@/components/rota/production-rota-grid";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
+import { RotaExportControls } from "@/components/rota/rota-export-controls";
 import { TemplateRotaControls } from "@/components/rota/template-rota-controls";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, isoDate } from "@/lib/dates/format";
@@ -86,6 +87,7 @@ export function ProductionRota({
               <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="inline-flex">
                 {hidden("weekStart", data.weekStart)}
               </RotaActionForm>
+              <RotaExportControls weekStart={data.weekStart} />
               {data.week.status === "draft" ? (
                 <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Publish rota" className="inline-flex" confirmMessage="Publish this rota for staff viewing?">
                   {hidden("weekId", data.week.id)}{hidden("status", "published")}
