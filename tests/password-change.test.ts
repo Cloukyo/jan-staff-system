@@ -36,4 +36,20 @@ describe("forced password change", () => {
     expect(screen).toContain('type="password"');
     expect(screen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
+
+  it("routes password recovery through a server-side code exchange", () => {
+    const actions = readFileSync(resolve("src/lib/auth/actions.ts"), "utf8");
+    const callback = readFileSync(resolve("src/app/auth/callback/route.ts"), "utf8");
+    const resetPage = readFileSync(resolve("src/app/reset-password/page.tsx"), "utf8");
+    const resetScreen = readFileSync(resolve("src/components/auth/reset-password-screen.tsx"), "utf8");
+
+    expect(actions).toContain("/auth/callback?next=/reset-password");
+    expect(actions).toContain("resetRecoveredPasswordAction");
+    expect(actions).toContain("await supabase.auth.signOut()");
+    expect(callback).toContain("exchangeCodeForSession(code)");
+    expect(callback).toContain('url.searchParams.get("next") === "/reset-password"');
+    expect(resetPage).toContain("getCurrentAccount()");
+    expect(resetScreen).toContain('type="password"');
+    expect(resetScreen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+  });
 });

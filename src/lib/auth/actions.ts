@@ -30,26 +30,51 @@ export type ChangePasswordActionState = {
   message: string;
 };
 
-export async function changeRequiredPasswordAction(
-  _state: ChangePasswordActionState,
-  formData: FormData,
-): Promise<ChangePasswordActionState> {
+async function updateCurrentUserPassword(password: string, confirmation: string): Promise<ChangePasswordActionState> {
   if (!hasSupabaseConfig()) return { ok: false, message: "Supabase is not configured." };
-  const password = String(formData.get("password") ?? "");
-  const confirmation = String(formData.get("confirmation") ?? "");
   if (password !== confirmation) return { ok: false, message: "The password confirmation does not match." };
 
   const supabase = await createSupabaseServerClient();
   const { data: userResult } = await supabase.auth.getUser();
-  if (!userResult.user?.email) return { ok: false, message: "Your signed-in session could not be verified." };
+  if (!userResult.user?.email) return { ok: false, message: "Your password-reset session has expired. Request a new reset email." };
   const validation = validatePrivatePassword(password, userResult.user.email);
   if (validation) return { ok: false, message: validation };
 
   const { error: passwordError } = await supabase.auth.updateUser({ password });
-  if (passwordError) return { ok: false, message: "The new password could not be saved." };
+  if (passwordError) return { ok: false, message: "The new password could not be saved. Request a new reset email and try again." };
+
+  return { ok: true, message: "" };
+}
+
+export async function changeRequiredPasswordAction(
+  _state: ChangePasswordActionState,
+  formData: FormData,
+): Promise<ChangePasswordActionState> {
+  const password = String(formData.get("password") ?? "");
+  const confirmation = String(formData.get("confirmation") ?? "");
+  const result = await updateCurrentUserPassword(password, confirmation);
+  if (!result.ok) return result;
+
+  const supabase = await createSupabaseServerClient();
   const { error: flagError } = await supabase.rpc("complete_required_password_change");
   if (flagError) return { ok: false, message: "The password changed, but the account flag could not be cleared. Please submit the new password again." };
   redirect("/dashboard");
+}
+
+export async function resetRecoveredPasswordAction(
+  _state: ChangePasswordActionState,
+  formData: FormData,
+): Promise<ChangePasswordActionState> {
+  const password = String(formData.get("password") ?? "");
+  const confirmation = String(formData.get("confirmation") ?? "");
+  const result = await updateCurrentUserPassword(password, confirmation);
+  if (!result.ok) return result;
+
+  const supabase = await createSupabaseServerClient();
+  const { error: flagError } = await supabase.rpc("complete_required_password_change");
+  if (flagError) return { ok: false, message: "The password changed, but the account could not be finalised. Please contact a manager." };
+  await supabase.auth.signOut();
+  redirect("/login?password-reset=success");
 }
 
 export async function signOutAction() {
@@ -66,7 +91,7 @@ export async function resetPasswordAction(_state: AuthActionState, formData: For
   if (!email) return { message: "Enter your email address first." };
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/login` : undefined,
+    redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/reset-password` : undefined,
   });
   if (error) return { message: "Password reset could not be sent. Please ask a manager to check the account." };
   return { message: "If the email is linked to an active account, Supabase will send a reset link." };

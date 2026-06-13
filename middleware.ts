@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { getAppMode } from "@/lib/app-mode";
 const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
 
-const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/change-password"];
+const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/change-password", "/reset-password"];
 
 export async function middleware(request: NextRequest) {
   const hasConfig = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
@@ -46,7 +46,7 @@ export async function middleware(request: NextRequest) {
     .eq("auth_user_id", user.id)
     .eq("active", true)
     .maybeSingle();
-  if (account?.must_change_password && request.nextUrl.pathname !== "/change-password") {
+  if (account?.must_change_password && !["/change-password", "/reset-password"].includes(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/change-password";
     url.search = "";
