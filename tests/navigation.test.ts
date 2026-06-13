@@ -45,7 +45,7 @@ describe("role-aware navigation", () => {
 
   it("points dashboard setup warnings to the current editing workflows", () => {
     const dashboard = source("src/components/dashboard/production-dashboard.tsx");
-    expect(dashboard).toContain('staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/attendance"');
+    expect(dashboard).toContain('staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/settings/kiosk"');
     expect(dashboard).toContain('staffMissingPayArrangement", label: "Missing active pay arrangement", href: "/payroll/arrangements"');
   });
 });

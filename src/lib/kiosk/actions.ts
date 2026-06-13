@@ -99,7 +99,7 @@ export async function saveKioskSettingsAction(_state: KioskActionResult, formDat
     pin_reset_required: resetRequired,
   }, { onConflict: "staff_id" });
   if (error) return { ok: false, code: "save_failed", message: "Kiosk settings could not be saved." };
-  revalidatePath("/attendance");
+  revalidatePath("/settings/kiosk");
   revalidatePath("/clock");
   return { ok: true, code: "saved", message: "Kiosk settings saved." };
 }
@@ -118,7 +118,7 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
     require_change: requireChange,
   });
   if (error) return { ok: false, code: "save_failed", message: "The PIN could not be saved." };
-  revalidatePath("/attendance");
+  revalidatePath("/settings/kiosk");
   revalidatePath("/clock");
   return { ok: true, code: "saved", message: "A new kiosk PIN has been saved securely." };
 }

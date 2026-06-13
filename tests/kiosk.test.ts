@@ -149,7 +149,7 @@ describe("kiosk PIN safety", () => {
   it("forces temporary PIN replacement before clocking", () => {
     const actions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
     const kiosk = readFileSync(resolve("src/components/kiosk/production-kiosk.tsx"), "utf8");
-    const manager = readFileSync(resolve("src/components/attendance/production-attendance.tsx"), "utf8");
+    const manager = readFileSync(resolve("src/components/kiosk/staff-kiosk-management.tsx"), "utf8");
 
     expect(temporaryPinMigration).toContain("'change_required'");
     expect(temporaryPinMigration).toContain("change_device_kiosk_pin");
@@ -158,6 +158,24 @@ describe("kiosk PIN safety", () => {
     expect(temporaryPinMigration).not.toMatch(/returns table[\\s\\S]{0,300}pin_hash/i);
     expect(actions).toContain("changeTemporaryKioskPinAction");
     expect(kiosk).toContain('setMode("change")');
+    expect(kiosk).toContain("<PinKeypad");
     expect(manager).toContain('name="requireChange" defaultChecked');
+  });
+
+  it("keeps setup controls out of attendance", () => {
+    const attendance = readFileSync(resolve("src/components/attendance/production-attendance.tsx"), "utf8");
+    const setup = readFileSync(resolve("src/app/settings/kiosk/page.tsx"), "utf8");
+    expect(attendance).not.toContain("setKioskPinAction");
+    expect(attendance).not.toContain("saveKioskSettingsAction");
+    expect(setup).toContain("StaffKioskManagement");
+    expect(setup).toContain("Kiosk Setup");
+  });
+
+  it("uses clear Staff Clock terminology", () => {
+    const clock = readFileSync(resolve("src/app/clock/page.tsx"), "utf8");
+    const kiosk = readFileSync(resolve("src/components/kiosk/production-kiosk.tsx"), "utf8");
+    expect(clock).not.toContain("Manager sign in");
+    expect(clock).toContain("Staff Clock setup required");
+    expect(kiosk).toContain(">Staff Clock<");
   });
 });

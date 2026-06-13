@@ -1,12 +1,13 @@
 "use client";
 
-import { CheckCircle2, Clock3, Delete, LogIn, LogOut } from "lucide-react";
+import { CheckCircle2, Clock3, LogIn, LogOut } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
+import { PinKeypad } from "@/components/kiosk/pin-keypad";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { changeTemporaryKioskPinAction, recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
-import type { KioskRosterEntry } from "@/lib/kiosk/types";
 import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
+import type { KioskRosterEntry } from "@/lib/kiosk/types";
 
 type Mode = "select" | "pin" | "change" | "action" | "success";
 
@@ -16,14 +17,17 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   const [pin, setPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  const [changeStep, setChangeStep] = useState<"new" | "confirm">("new");
   const [mode, setMode] = useState<Mode>("select");
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
+
   function reset() {
     setSelected(null);
     setPin("");
     setNewPin("");
     setConfirmPin("");
+    setChangeStep("new");
     setMessage("");
     setMode("select");
   }
@@ -83,18 +87,19 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
         <div className="flex items-center justify-between gap-4">
           <BrandMark />
           <div className="text-right">
-            <p className="text-sm font-bold text-green-700">Production kiosk</p>
+            <p className="text-sm font-bold text-green-700">Registered Staff Clock device</p>
             <LiveTime />
           </div>
         </div>
         <form action={exitKioskModeAction} className="mt-3 self-end">
-          <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Exit kiosk mode</button>
+          <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Remove Staff Clock access from this browser</button>
         </form>
 
-        {mode === "select" && (
+        {mode === "select" ? (
           <>
-            <h1 className="mt-8 text-center text-4xl font-black">Staff clock in</h1>
-            {!roster.length && <p className="mt-8 text-center font-bold text-red-700">No active kiosk staff could be loaded. Please ask a manager for help.</p>}
+            <h1 className="mt-8 text-center text-4xl font-black">Staff Clock</h1>
+            <p className="mt-3 text-center font-semibold text-slate-600">Choose your name to clock in or clock out.</p>
+            {!roster.length ? <p className="mt-8 text-center font-bold text-red-700">No active Staff Clock users could be loaded. Please ask a manager for help.</p> : null}
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {roster.map((person) => (
                 <button
@@ -103,7 +108,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
                   onClick={() => {
                     setSelected(person);
                     setMode("pin");
-                    setMessage(person.pinReady ? "" : "A manager must set your kiosk PIN before you can clock in.");
+                    setMessage(person.pinReady ? "" : "A manager must set your Staff Clock PIN before you can clock in.");
                   }}
                 >
                   <span className="text-2xl font-black">{person.displayName}</span>
@@ -115,63 +120,38 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
               ))}
             </div>
           </>
-        )}
+        ) : null}
 
-        {mode === "change" && selected && (
+        {mode === "change" && selected ? (
           <KioskPanel title="Choose your own PIN" message={message}>
             <div className="mx-auto grid max-w-sm gap-4">
-              <label className="grid gap-2 text-lg font-bold">
-                New PIN
-                <input
-                  className="min-h-16 rounded-lg border border-purple-200 bg-white px-4 text-center text-3xl tracking-[0.4rem]"
-                  value={newPin}
-                  onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  type="password"
-                  autoComplete="new-password"
-                />
-              </label>
-              <label className="grid gap-2 text-lg font-bold">
-                Confirm new PIN
-                <input
-                  className="min-h-16 rounded-lg border border-purple-200 bg-white px-4 text-center text-3xl tracking-[0.4rem]"
-                  value={confirmPin}
-                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  type="password"
-                  autoComplete="new-password"
-                />
-              </label>
+              {changeStep === "new"
+                ? <PinKeypad value={newPin} onChange={setNewPin} label="Enter a new PIN" />
+                : <PinKeypad value={confirmPin} onChange={setConfirmPin} label="Enter the new PIN again" />}
               <p className="text-center text-sm font-semibold text-slate-600">Use four to six digits. Avoid repeated digits, simple sequences and birth years.</p>
               <div className="grid grid-cols-2 gap-3">
-                <Button variant="secondary" onClick={reset}>Cancel</Button>
-                <Button disabled={pending || newPin.length < 4 || confirmPin.length < 4} onClick={changePin}>
-                  {pending ? "Saving" : "Save PIN"}
-                </Button>
+                <Button variant="secondary" onClick={changeStep === "confirm" ? () => { setConfirmPin(""); setChangeStep("new"); } : reset}>{changeStep === "confirm" ? "Back" : "Cancel"}</Button>
+                {changeStep === "new"
+                  ? <Button disabled={newPin.length < 4} onClick={() => { setConfirmPin(""); setChangeStep("confirm"); }}>Continue</Button>
+                  : <Button disabled={pending || confirmPin.length < 4} onClick={changePin}>{pending ? "Saving" : "Save PIN"}</Button>}
               </div>
             </div>
           </KioskPanel>
-        )}
+        ) : null}
 
-        {mode === "pin" && selected && (
+        {mode === "pin" && selected ? (
           <KioskPanel title={`Enter PIN for ${selected.displayName}`} message={message}>
             <div className="mx-auto max-w-sm">
-              <div className="mb-5 min-h-20 rounded-lg bg-white p-5 text-center text-4xl tracking-[0.5rem] shadow-soft">{pin.replace(/./g, "•") || " "}</div>
-              <div className="grid grid-cols-3 gap-3">
-                {[1,2,3,4,5,6,7,8,9].map((digit) => <Button key={digit} variant="secondary" className="min-h-16 text-2xl" onClick={() => pin.length < 6 && setPin(`${pin}${digit}`)}>{digit}</Button>)}
-                <Button variant="secondary" className="min-h-16" onClick={() => setPin("")}>Clear</Button>
-                <Button variant="secondary" className="min-h-16 text-2xl" onClick={() => pin.length < 6 && setPin(`${pin}0`)}>0</Button>
-                <Button variant="secondary" className="min-h-16" aria-label="Delete digit" onClick={() => setPin(pin.slice(0, -1))}><Delete className="h-6 w-6" /></Button>
-              </div>
+              <PinKeypad value={pin} onChange={setPin} label="Enter your PIN" />
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <Button variant="secondary" onClick={reset}>Cancel</Button>
                 <Button disabled={pending || pin.length < 4 || !selected.pinReady} onClick={verify}>{pending ? "Checking" : "Continue"}</Button>
               </div>
             </div>
           </KioskPanel>
-        )}
+        ) : null}
 
-        {mode === "action" && selected && (
+        {mode === "action" && selected ? (
           <KioskPanel title={`Hello ${selected.displayName}`} message={`You are currently ${selected.currentStatus === "clocked_in" ? "clocked in" : "clocked out"}.`}>
             <div className="mx-auto max-w-xl">
               {selected.currentStatus === "clocked_in" ? (
@@ -182,14 +162,14 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
               <Button variant="secondary" className="mt-5 w-full" onClick={reset}>Cancel</Button>
             </div>
           </KioskPanel>
-        )}
+        ) : null}
 
-        {mode === "success" && (
+        {mode === "success" ? (
           <KioskPanel title="Recorded" message={message}>
             <CheckCircle2 className="mx-auto h-24 w-24 text-green-600" />
             <Button className="mx-auto mt-6 flex" onClick={reset}>Done</Button>
           </KioskPanel>
-        )}
+        ) : null}
       </div>
     </main>
   );

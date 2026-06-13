@@ -16,9 +16,9 @@ export function ProductionSettingsScreen() {
           <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/rota/templates">Open rota templates</Link>
         </Panel>
         <Panel>
-          <div className="flex items-start justify-between gap-3"><h2 className="text-xl font-black text-purple-950">Kiosk devices</h2><StatusPill tone="green">Production</StatusPill></div>
-          <p className="mt-2 text-sm text-slate-600">Register, inspect and revoke nursery clock devices.</p>
-          <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/settings/kiosk">Manage kiosk devices</Link>
+          <div className="flex items-start justify-between gap-3"><h2 className="text-xl font-black text-purple-950">Kiosk Setup</h2><StatusPill tone="green">Production</StatusPill></div>
+          <p className="mt-2 text-sm text-slate-600">Register Staff Clock devices and manage employee PIN readiness.</p>
+          <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/settings/kiosk">Open Kiosk Setup</Link>
         </Panel>
       </div>
       <Panel className="border-purple-200 bg-purple-50">

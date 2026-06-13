@@ -81,6 +81,7 @@ export type ManagerKioskRow = KioskRosterEntry & {
   pinResetRequired: boolean;
   failedAttemptCount: number;
   lockedUntil: string | null;
+  lastKioskUseAt: string | null;
 };
 
 export type ManagerClockEvent = {
@@ -105,7 +106,14 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
   const settingMap = new Map((settings.data ?? []).map((row) => [row.staff_id, row]));
   const eventRows = (events.data ?? []) as Array<Record<string, unknown>>;
   const latestByStaff = new Map<string, string>();
+  const lastKioskUseByStaff = new Map<string, string>();
   for (const event of eventRows) if (!latestByStaff.has(String(event.staff_id))) latestByStaff.set(String(event.staff_id), String(event.event_type));
+  for (const event of eventRows) {
+    const staffId = String(event.staff_id);
+    if (String(event.event_source) === "kiosk" && !lastKioskUseByStaff.has(staffId)) {
+      lastKioskUseByStaff.set(staffId, String(event.event_timestamp));
+    }
+  }
   return {
     staff: (profiles.data ?? []).filter((row) => row.active).map((row) => {
       const setting = settingMap.get(row.id);
@@ -121,6 +129,7 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
         pinResetRequired: setting?.pin_reset_required ?? true,
         failedAttemptCount: setting?.failed_attempt_count ?? 0,
         lockedUntil: setting?.locked_until ?? null,
+        lastKioskUseAt: lastKioskUseByStaff.get(row.id) ?? null,
       };
     }),
     events: eventRows.map((row) => ({
