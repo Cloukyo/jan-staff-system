@@ -9,7 +9,8 @@ import type { PayArrangement, ProductionStaffRow } from "@/lib/payroll/types";
 const hourly: PayArrangement = {
   id: "pay-1", staffId: "staff-1", payType: "hourly", hourlyRate: 12, annualSalary: null, monthlySalary: null,
   contractedWeeklyHours: 35, standardDailyHours: 7, overtimeMultiplier: 1.5, effectiveFrom: "2026-05-01",
-  effectiveTo: null, isActive: true, managerNotes: null, createdAt: "2026-05-01", updatedAt: "2026-05-01",
+  effectiveTo: null, isActive: true, hoursBasis: "contracted", managerNotes: null, createdByName: "Manager",
+  createdAt: "2026-05-01", updatedAt: "2026-05-01",
 };
 const staff: ProductionStaffRow = {
   id: "staff-1", fullName: "Canonical Staff", displayName: "Canonical", employmentRole: "Practitioner",
@@ -62,8 +63,8 @@ describe("effective-dated pay arrangements", () => {
 describe("production payroll preparation", () => {
   it("pairs clock events, flags invalid sequences and distinguishes corrections", () => {
     const result = calculateClockTotals([
-      { id: "1", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", managerCorrection: false },
-      { id: "2", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-01T16:00:00Z", managerCorrection: true },
+      { id: "1", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "2", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-01T16:00:00Z", recordedDate: "2026-06-01", managerCorrection: true },
     ]);
     expect(result.recordedMinutes).toBe(480);
     expect(result.warnings).toContain("Manager correction");
@@ -71,8 +72,8 @@ describe("production payroll preparation", () => {
 
   it("calculates hourly pay but keeps salaried attendance informational", () => {
     const events = [
-      { id: "1", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", managerCorrection: false },
-      { id: "2", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T16:00:00Z", managerCorrection: false },
+      { id: "1", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "2", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T16:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
     ];
     const hourlyRow = createPayrollPreparationRow(staff, events, "2026-06-01", "2026-06-07");
     expect(hourlyRow.estimatedGross).toBe(96);

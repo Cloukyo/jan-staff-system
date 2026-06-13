@@ -58,8 +58,9 @@ function StaffPayCard({ person }: { person: ProductionStaffRow }) {
             {!person.payArrangements.length && <p className="mt-2 text-sm text-amber-700">No pay arrangements have been imported or entered.</p>}
             {person.payArrangements.map((item) => (
               <div key={item.id} className="mt-3 rounded-lg border border-purple-100 p-3">
-                <p className="font-bold text-purple-950">{item.payType === "hourly" ? `${formatMoney(item.hourlyRate === null ? null : Math.round(item.hourlyRate * 100))} per hour` : `${formatMoney(item.monthlySalary === null ? null : Math.round(item.monthlySalary * 100))} monthly salary basis`}</p>
-                <p className="text-sm text-slate-600">{formatDateUk(item.effectiveFrom)} to {item.effectiveTo ? formatDateUk(item.effectiveTo) : "ongoing"} | {item.contractedWeeklyHours} contracted hours weekly</p>
+                <p className="font-bold text-purple-950">{item.payType === "hourly" ? `${formatMoney(item.hourlyRate === null ? null : Math.round(item.hourlyRate * 100))} per hour` : item.annualSalary !== null ? `${formatMoney(Math.round(item.annualSalary * 100))} annual salary basis` : `${formatMoney(item.monthlySalary === null ? null : Math.round(item.monthlySalary * 100))} monthly salary basis`}</p>
+                <p className="text-sm text-slate-600">{formatDateUk(item.effectiveFrom)} to {item.effectiveTo ? formatDateUk(item.effectiveTo) : "ongoing"} | {item.contractedWeeklyHours === null ? item.hoursBasis.replaceAll("_", " ") : `${item.contractedWeeklyHours} contracted hours weekly`}</p>
+                <p className="mt-1 text-xs text-slate-500">Created by {item.createdByName ?? "manager"} on {formatDateUk(item.createdAt.slice(0, 10))}</p>
                 {!item.effectiveTo && <PayrollActionForm action={closePayArrangementAction} submitLabel="End arrangement" className="mt-2"><input type="hidden" name="arrangementId" value={item.id} /><Field label="Effective end date"><input className={inputClassName()} type="date" name="effectiveTo" required /></Field></PayrollActionForm>}
               </div>
             ))}
@@ -71,7 +72,8 @@ function StaffPayCard({ person }: { person: ProductionStaffRow }) {
               <Field label="Hourly rate"><input className={inputClassName()} name="hourlyRate" type="number" min="0" step="0.01" /></Field>
               <Field label="Annual salary"><input className={inputClassName()} name="annualSalary" type="number" min="0" step="0.01" /></Field>
               <Field label="Monthly salary"><input className={inputClassName()} name="monthlySalary" type="number" min="0" step="0.01" /></Field>
-              <Field label="Contracted weekly hours"><input className={inputClassName()} name="contractedWeeklyHours" type="number" min="0" max="80" step="0.25" required /></Field>
+              <Field label="Contracted weekly hours"><input className={inputClassName()} name="contractedWeeklyHours" type="number" min="0" max="80" step="0.25" /></Field>
+              <Field label="Hours basis"><select className={inputClassName()} name="hoursBasis" defaultValue="contracted"><option value="contracted">Contracted hours</option><option value="variable_hours">Variable hours</option><option value="casual">Casual</option><option value="zero_hours">Zero hours</option><option value="salaried_untracked">Salaried, hours not tracked</option></select></Field>
               <Field label="Standard daily hours"><input className={inputClassName()} name="standardDailyHours" type="number" min="0" max="24" step="0.25" /></Field>
               <Field label="Overtime multiplier"><input className={inputClassName()} name="overtimeMultiplier" type="number" min="1" max="5" step="0.01" defaultValue="1" /></Field>
               <Field label="Effective from"><input className={inputClassName()} name="effectiveFrom" type="date" required /></Field>

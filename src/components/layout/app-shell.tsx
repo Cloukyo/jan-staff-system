@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CreditCard,
+  FileSpreadsheet,
   KeyRound,
   LayoutTemplate,
   LogOut,
@@ -60,6 +61,7 @@ const managerNavigation: NavGroup[] = [
     label: "Pay",
     items: [
       { href: "/payroll/arrangements", label: "Pay arrangements", icon: CreditCard },
+      { href: "/payroll/review", label: "Payroll review", icon: FileSpreadsheet },
       { href: "/payroll", label: "Pay preparation", icon: CreditCard, active: (path) => path === "/payroll" },
     ],
   },

@@ -1,5 +1,5 @@
 import { differenceInMinutes, parseISO } from "date-fns";
-import type { PayArrangement, PayrollPreparationRow, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
+import type { PayArrangement, PayrollAttendanceReview, PayrollPreparationRow, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
 
 export function arrangementsForPeriod(arrangements: PayArrangement[], start: string, end: string): PayArrangement[] {
   return arrangements
@@ -49,34 +49,59 @@ export function createPayrollPreparationRow(
   events: ProductionClockEvent[],
   periodStart: string,
   periodEnd: string,
+  reviews: PayrollAttendanceReview[] = [],
 ): PayrollPreparationRow {
   const periodArrangements = arrangementsForPeriod(staff.payArrangements, periodStart, periodEnd);
   const arrangement = arrangementAt(staff.payArrangements, periodEnd);
-  const totals = calculateClockTotals(events.filter((event) => event.staffId === staff.id));
-  const warnings = [...totals.warnings];
+  const staffEvents = events.filter((event) => event.staffId === staff.id);
+  const rawTotals = calculateClockTotals(staffEvents.filter((event) => !event.managerCorrection));
+  const adjustedTotals = calculateClockTotals(staffEvents);
+  const warnings = [...adjustedTotals.warnings];
   if (!arrangement) warnings.push("Missing active pay arrangement");
   if (periodArrangements.length > 1) warnings.push("Pay arrangement changes within period");
-  if (totals.recordedMinutes === 0) warnings.push("Zero recorded hours");
+  if (adjustedTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
+  if (arrangement && arrangement.hoursBasis !== "contracted") warnings.push("Contracted hours not tracked");
   const periodDays = Math.max(1, differenceInMinutes(parseISO(`${periodEnd}T12:00:00`), parseISO(`${periodStart}T12:00:00`)) / 1440 + 1);
-  const ordinaryLimit = arrangement ? Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7) : 0;
-  const ordinaryMinutes = arrangement?.payType === "hourly" ? Math.min(totals.adjustedMinutes, ordinaryLimit) : totals.adjustedMinutes;
-  const overtimeMinutes = arrangement?.payType === "hourly" ? Math.max(0, totals.adjustedMinutes - ordinaryLimit) : 0;
+  const ordinaryLimit = arrangement?.contractedWeeklyHours === null || arrangement?.contractedWeeklyHours === undefined
+    ? null
+    : Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7);
+  const ordinaryMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
+    ? Math.min(adjustedTotals.recordedMinutes, ordinaryLimit)
+    : adjustedTotals.recordedMinutes;
+  const overtimeMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
+    ? Math.max(0, adjustedTotals.recordedMinutes - ordinaryLimit)
+    : 0;
   const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
     ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
     : null;
+  const workedDates = new Set(staffEvents.map((event) => event.recordedDate));
+  const staffReviews = reviews.filter((review) => review.staffId === staff.id && workedDates.has(review.reviewDate));
+  const reviewedDates = new Set(staffReviews.map((review) => review.reviewDate));
+  const unresolvedDays = [...workedDates].filter((date) => !reviewedDates.has(date)).length;
+  if (unresolvedDays > 0) warnings.push("Attendance review incomplete");
+  const adjustmentNotes = Array.from(new Set([
+    ...staffReviews.map((review) => review.reason).filter((reason): reason is string => Boolean(reason)),
+    ...(staffEvents.some((event) => event.managerCorrection) ? ["Manager correction events included"] : []),
+  ]));
   return {
     staffId: staff.id,
     fullName: staff.fullName,
     employmentRole: staff.employmentRole,
     payType: arrangement?.payType ?? null,
     contractedWeeklyHours: arrangement?.contractedWeeklyHours ?? null,
-    recordedMinutes: totals.recordedMinutes,
-    adjustedMinutes: totals.adjustedMinutes,
+    hoursBasis: arrangement?.hoursBasis ?? null,
+    recordedMinutes: rawTotals.recordedMinutes,
+    adjustedMinutes: adjustedTotals.recordedMinutes,
     ordinaryMinutes,
     overtimeMinutes,
     hourlyRate: arrangement?.hourlyRate ?? null,
     estimatedGross,
     salaryBasis: arrangement?.payType === "salaried" ? salaryForPeriod(arrangement, periodStart, periodEnd) : null,
+    workedDays: workedDates.size,
+    reviewedDays: reviewedDates.size,
+    unresolvedDays,
+    reviewStatus: workedDates.size === 0 ? "no_attendance" : unresolvedDays === 0 ? "ready" : "unresolved",
+    adjustmentNotes,
     warnings: Array.from(new Set(warnings)),
   };
 }

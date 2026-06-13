@@ -1,4 +1,5 @@
 export type ProductionPayType = "hourly" | "salaried";
+export type PayrollHoursBasis = "contracted" | "variable_hours" | "casual" | "zero_hours" | "salaried_untracked";
 
 export type PayArrangement = {
   id: string;
@@ -7,13 +8,15 @@ export type PayArrangement = {
   hourlyRate: number | null;
   annualSalary: number | null;
   monthlySalary: number | null;
-  contractedWeeklyHours: number;
+  contractedWeeklyHours: number | null;
+  hoursBasis: PayrollHoursBasis;
   standardDailyHours: number | null;
   overtimeMultiplier: number;
   effectiveFrom: string;
   effectiveTo: string | null;
   isActive: boolean;
   managerNotes: string | null;
+  createdByName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -35,7 +38,15 @@ export type ProductionClockEvent = {
   staffId: string;
   eventType: "clock_in" | "clock_out";
   eventTimestamp: string;
+  recordedDate: string;
   managerCorrection: boolean;
+};
+
+export type PayrollAttendanceReview = {
+  staffId: string;
+  reviewDate: string;
+  status: "approved" | "corrected" | "ignored" | "needs_staff_clarification";
+  reason: string | null;
 };
 
 export type PayrollPreparationRow = {
@@ -44,6 +55,7 @@ export type PayrollPreparationRow = {
   employmentRole: string;
   payType: ProductionPayType | null;
   contractedWeeklyHours: number | null;
+  hoursBasis: PayrollHoursBasis | null;
   recordedMinutes: number;
   adjustedMinutes: number;
   ordinaryMinutes: number;
@@ -51,5 +63,10 @@ export type PayrollPreparationRow = {
   hourlyRate: number | null;
   estimatedGross: number | null;
   salaryBasis: number | null;
+  workedDays: number;
+  reviewedDays: number;
+  unresolvedDays: number;
+  reviewStatus: "ready" | "unresolved" | "no_attendance";
+  adjustmentNotes: string[];
   warnings: string[];
 };
