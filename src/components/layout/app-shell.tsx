@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, CalendarDays, CalendarPlus, CalendarX2, ClipboardCheck, ClipboardList, Clock, CreditCard, LogOut, Menu, Settings, UserRound, Users } from "lucide-react";
+import { BarChart3, CalendarDays, CalendarPlus, CalendarX2, ClipboardCheck, ClipboardList, Clock, CreditCard, LayoutTemplate, LogOut, Menu, Settings, UserRound, Users } from "lucide-react";
 import { useState } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
@@ -13,6 +13,7 @@ const nav = [
   { href: "/staff", label: "Staff", icon: Users },
   { href: "/compliance", label: "Compliance", icon: ClipboardList },
   { href: "/rota", label: "Rota", icon: CalendarDays },
+  { href: "/rota/templates", label: "Rota templates", icon: LayoutTemplate },
   { href: "/leave/requests", label: "Leave requests", icon: CalendarX2 },
   { href: "/leave/request", label: "Request leave", icon: CalendarPlus },
   { href: "/leave", label: "My leave", icon: CalendarDays },

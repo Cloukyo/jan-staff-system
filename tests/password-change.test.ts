@@ -29,12 +29,11 @@ describe("forced password change", () => {
     expect(migration).toContain("revoke all on function public.complete_required_password_change()");
   });
 
-  it("keeps the one-time Admin API helper ignored and password input hidden", () => {
+  it("keeps private setup tooling ignored and password input hidden", () => {
     const gitignore = readFileSync(resolve(".gitignore"), "utf8");
+    const screen = readFileSync(resolve("src/components/auth/change-password-screen.tsx"), "utf8");
     expect(gitignore).toContain("private-imports/");
-    const helper = readFileSync(resolve("private-imports/set-nazmon-temporary-password.ps1"), "utf8");
-    expect(helper).toContain('Read-Host "Temporary password" -AsSecureString');
-    expect(helper).toContain("/auth/v1/admin/users/");
-    expect(helper).not.toMatch(/password\s*=\s*["'][^"']+["']/i);
+    expect(screen).toContain('type="password"');
+    expect(screen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
 });

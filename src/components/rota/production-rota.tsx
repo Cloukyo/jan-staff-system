@@ -16,6 +16,8 @@ import {
 import type { ProductionRotaDataset, ProductionRotaShift } from "@/lib/rota/types";
 import { leaveWarningsForShift, overlapWarningsForShift, shiftDurationMinutes } from "@/lib/rota/validation";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
+import { TemplateRotaControls } from "@/components/rota/template-rota-controls";
+import type { RotaTemplate, RotaTemplateApplyMode, TemplateApplicationPreview } from "@/lib/rota/template-types";
 
 const dayFormat = "EEEE dd/MM";
 
@@ -92,7 +94,21 @@ function ShiftEditor({ data, shift }: { data: ProductionRotaDataset; shift: Prod
   );
 }
 
-export function ProductionRota({ data }: { data: ProductionRotaDataset }) {
+export function ProductionRota({
+  data,
+  templates,
+  templatePreview,
+  selectedTemplateId,
+  selectedTemplateMode,
+  templateRequestKey,
+}: {
+  data: ProductionRotaDataset;
+  templates: RotaTemplate[];
+  templatePreview: TemplateApplicationPreview | null;
+  selectedTemplateId?: string;
+  selectedTemplateMode: RotaTemplateApplyMode;
+  templateRequestKey: string;
+}) {
   const start = parseISO(data.weekStart);
   const dates = Array.from({ length: 7 }, (_, index) => isoDate(addDays(start, index)));
   const previousWeek = isoDate(addWeeks(start, -1));
@@ -161,6 +177,14 @@ export function ProductionRota({ data }: { data: ProductionRotaDataset }) {
               </div>
             ) : null}
           </Panel>
+          <TemplateRotaControls
+            data={data}
+            templates={templates}
+            preview={templatePreview}
+            selectedTemplateId={selectedTemplateId}
+            selectedMode={selectedTemplateMode}
+            requestKey={templateRequestKey}
+          />
 
           <Panel className="mt-5">
             <h2 className="flex items-center gap-2 text-xl font-black text-purple-950"><CalendarPlus className="h-5 w-5" /> Add shift</h2>
