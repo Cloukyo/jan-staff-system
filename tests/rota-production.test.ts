@@ -13,6 +13,7 @@ const shift: ProductionRotaShift = {
   startTime: "08:30",
   endTime: "16:30",
   breakMinutes: 30,
+  breakUnspecified: false,
   roomOrArea: "Preschool",
   roleOnShift: null,
   notes: null,

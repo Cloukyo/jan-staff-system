@@ -39,7 +39,7 @@ function ShiftFields({ data, shift }: { data: ProductionRotaDataset; shift?: Pro
       </Field>
       <Field label="Start time"><input className={inputClassName()} name="startTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.startTime ?? data.settings.openingTime} required /></Field>
       <Field label="Finish time"><input className={inputClassName()} name="endTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.endTime ?? "16:30"} required /></Field>
-      <Field label="Break minutes"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakMinutes ?? data.settings.defaultBreakMinutes} required /></Field>
+      <Field label="Break minutes"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakUnspecified ? "" : shift?.breakMinutes ?? data.settings.defaultBreakMinutes} placeholder={shift?.breakUnspecified ? "Not specified" : undefined} required /></Field>
       <Field label="Status">
         <select className={inputClassName()} name="status" defaultValue={shift?.status ?? "scheduled"}>
           <option value="scheduled">Scheduled</option><option value="cancelled">Cancelled</option><option value="completed">Completed</option>
@@ -66,7 +66,7 @@ function ShiftEditor({ data, shift }: { data: ProductionRotaDataset; shift: Prod
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="font-black text-purple-950">{staff?.displayName || staff?.fullName || "Unknown staff"}</p>
-            <p className="text-sm text-slate-600">{shift.startTime} to {shift.endTime} · {shift.breakMinutes} min break · {Math.max(0, duration)} working min</p>
+            <p className="text-sm text-slate-600">{shift.startTime} to {shift.endTime} · {shift.breakUnspecified ? "break not specified" : `${shift.breakMinutes} min break · ${Math.max(0, duration)} working min`}</p>
             {shift.roomOrArea ? <p className="text-sm font-semibold text-purple-800">{shift.roomOrArea}{shift.roleOnShift ? ` · ${shift.roleOnShift}` : ""}</p> : null}
           </div>
           <StatusPill tone={shift.status === "scheduled" ? "green" : shift.status === "cancelled" ? "red" : "grey"}>{shift.status}</StatusPill>

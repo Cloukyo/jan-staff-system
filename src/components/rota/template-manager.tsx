@@ -39,7 +39,7 @@ function TemplateShiftFields({ data, shift }: { data: RotaTemplateDataset; shift
       </Field>
       <Field label="Start time"><input className={inputClassName()} name="startTime" type="time" defaultValue={shift?.startTime ?? "08:30"} required /></Field>
       <Field label="Finish time"><input className={inputClassName()} name="endTime" type="time" defaultValue={shift?.endTime ?? "16:30"} required /></Field>
-      <Field label="Break minutes"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakMinutes ?? 30} required /></Field>
+      <Field label="Break minutes"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakMinutes ?? ""} placeholder="Not specified" /></Field>
       <Field label="Room or area"><input className={inputClassName()} name="roomOrArea" defaultValue={shift?.roomOrArea ?? ""} /></Field>
       <Field label="Role on shift"><input className={inputClassName()} name="roleOnShift" defaultValue={shift?.roleOnShift ?? ""} /></Field>
       <Field label="Display order"><input className={inputClassName()} name="sortOrder" type="number" defaultValue={shift?.sortOrder ?? 0} /></Field>
@@ -56,7 +56,7 @@ function TemplateShiftEditor({ data, shift }: { data: RotaTemplateDataset; shift
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="font-black text-purple-950">{staff?.displayName || staff?.fullName || "Missing staff profile"}</p>
-            <p className="text-sm text-slate-600">{days[shift.dayOfWeek - 1]} {shift.startTime} to {shift.endTime}, {shift.breakMinutes} minute break</p>
+            <p className="text-sm text-slate-600">{days[shift.dayOfWeek - 1]} {shift.startTime} to {shift.endTime}, {shift.breakMinutes === null ? "break not specified" : `${shift.breakMinutes} minute break`}</p>
           </div>
           <StatusPill tone={staff?.active ? "green" : "amber"}>{staff?.active ? "Ready" : "Inactive staff"}</StatusPill>
         </div>

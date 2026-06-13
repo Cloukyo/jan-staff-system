@@ -27,6 +27,7 @@ export type ProductionRotaShift = {
   startTime: string;
   endTime: string;
   breakMinutes: number;
+  breakUnspecified: boolean;
   roomOrArea: string | null;
   roleOnShift: string | null;
   notes: string | null;

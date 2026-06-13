@@ -63,6 +63,7 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
     start_time: startTime,
     end_time: endTime,
     break_minutes: breakMinutes,
+    break_unspecified: false,
     room_or_area: text(formData, "roomOrArea"),
     role_on_shift: text(formData, "roleOnShift"),
     notes: text(formData, "notes"),

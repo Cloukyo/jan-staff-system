@@ -59,7 +59,7 @@ describe("rota template application preview", () => {
     const preview = buildTemplateApplicationPreview({
       template,
       templateShifts: [templateShift],
-      rota: { ...rota, shifts: [{ id: "existing", rotaWeekId: "week-1", staffId: "other", shiftDate: "2026-06-15", startTime: "09:00", endTime: "15:00", breakMinutes: 0, roomOrArea: null, roleOnShift: null, notes: null, status: "scheduled", inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null }] },
+      rota: { ...rota, shifts: [{ id: "existing", rotaWeekId: "week-1", staffId: "other", shiftDate: "2026-06-15", startTime: "09:00", endTime: "15:00", breakMinutes: 0, breakUnspecified: false, roomOrArea: null, roleOnShift: null, notes: null, status: "scheduled", inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null }] },
       mode: "empty_days",
     });
     expect(preview.rows[0].outcome).toBe("skip_empty_day");
@@ -67,7 +67,7 @@ describe("rota template application preview", () => {
   });
 
   it("detects duplicates, overlaps, approved leave and inactive staff", () => {
-    const existing = { id: "existing", rotaWeekId: "week-1", staffId: "staff-1", shiftDate: "2026-06-15", startTime: "09:00", endTime: "15:00", breakMinutes: 0, roomOrArea: null, roleOnShift: null, notes: null, status: "scheduled" as const, inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null };
+    const existing = { id: "existing", rotaWeekId: "week-1", staffId: "staff-1", shiftDate: "2026-06-15", startTime: "09:00", endTime: "15:00", breakMinutes: 0, breakUnspecified: false, roomOrArea: null, roleOnShift: null, notes: null, status: "scheduled" as const, inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null };
     const overlap = buildTemplateApplicationPreview({ template, templateShifts: [templateShift], rota: { ...rota, shifts: [existing] }, mode: "alongside" });
     expect(overlap.overlappingShifts).toBe(1);
     const approved = buildTemplateApplicationPreview({
@@ -93,6 +93,13 @@ describe("rota template migration and permissions", () => {
     expect(migration).toContain("Managers can manage rota templates");
     expect(migration).toContain("current_staff_role() = 'manager'");
     expect(migration).toContain("revoke all on public.rota_templates");
+  });
+
+  it("preserves unspecified imported breaks without treating zero as confirmation", () => {
+    const breakMigration = readFileSync(resolve("supabase/migrations/202606130003_unspecified_template_breaks.sql"), "utf8");
+    expect(breakMigration).toContain("alter column break_minutes drop not null");
+    expect(breakMigration).toContain("break_unspecified boolean not null default false");
+    expect(breakMigration).toContain("new.break_unspecified := true");
   });
 
   it("supports independent save, duplication, archive and transactional idempotent apply", () => {

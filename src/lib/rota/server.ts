@@ -27,6 +27,7 @@ function mapShift(row: Record<string, unknown>): ProductionRotaShift {
     startTime: String(row.start_time).slice(0, 5),
     endTime: String(row.end_time).slice(0, 5),
     breakMinutes: Number(row.break_minutes),
+    breakUnspecified: Boolean(row.break_unspecified),
     roomOrArea: row.room_or_area ? String(row.room_or_area) : null,
     roleOnShift: row.role_on_shift ? String(row.role_on_shift) : null,
     notes: row.notes ? String(row.notes) : null,

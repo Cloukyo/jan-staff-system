@@ -21,7 +21,7 @@ export type RotaTemplateShift = {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
-  breakMinutes: number;
+  breakMinutes: number | null;
   roomOrArea: string | null;
   roleOnShift: string | null;
   notes: string | null;

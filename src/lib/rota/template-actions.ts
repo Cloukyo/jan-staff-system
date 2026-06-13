@@ -61,13 +61,14 @@ export async function saveRotaTemplateShiftAction(_state: RotaActionState, formD
   const dayOfWeek = Number(text(formData, "dayOfWeek"));
   const startTime = text(formData, "startTime");
   const endTime = text(formData, "endTime");
-  const breakMinutes = Number(text(formData, "breakMinutes") ?? "0");
+  const breakText = text(formData, "breakMinutes");
+  const breakMinutes = breakText === null ? null : Number(breakText);
   if (!templateId || !staffId || !startTime || !endTime || !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7) {
     return failure("Staff, weekday, start time and finish time are required.");
   }
   const duration = shiftDurationMinutes(startTime, endTime);
   if (duration <= 0) return failure("Finish time must be after start time.");
-  if (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > duration) {
+  if (breakMinutes !== null && (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > duration)) {
     return failure("Break minutes must fit within the shift.");
   }
   const payload = {
