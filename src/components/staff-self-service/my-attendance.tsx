@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AttendanceCorrectionRequest } from "@/components/staff-self-service/attendance-correction-request";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, formatDurationCompact, formatTimeUk } from "@/lib/dates/format";
 import type { StaffAttendanceRange } from "@/lib/staff-self-service/server";
@@ -19,6 +20,8 @@ export function MyAttendance({ data }: { data: StaffAttendanceRange }) {
           <button className="min-h-11 self-end rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" type="submit">Apply dates</button>
         </form>
       </Panel>
+
+      <AttendanceCorrectionRequest defaultDate={data.to} />
 
       {data.days.length ? data.days.map((day) => (
         <Panel key={day.date}>

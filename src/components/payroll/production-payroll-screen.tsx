@@ -14,6 +14,7 @@ export function ProductionPayrollScreen({
   includeInactive,
   includeManagers,
   includeZero,
+  reviewReadiness,
 }: {
   rows: PayrollPreparationRow[];
   periodStart: string;
@@ -21,6 +22,7 @@ export function ProductionPayrollScreen({
   includeInactive: boolean;
   includeManagers: boolean;
   includeZero: boolean;
+  reviewReadiness: { unresolved: number; pendingRequests: number };
 }) {
   const router = useRouter();
   const [start, setStart] = useState(periodStart);
@@ -48,6 +50,13 @@ export function ProductionPayrollScreen({
   return (
     <div className="grid gap-5">
       <Panel>
+        {reviewReadiness.unresolved || reviewReadiness.pendingRequests ? (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+            Attendance review is incomplete: {reviewReadiness.unresolved} worked day(s) are not reviewed and {reviewReadiness.pendingRequests} staff correction request(s) remain open.
+          </div>
+        ) : (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-900">Attendance records in this period have review decisions and no staff requests remain open.</div>
+        )}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
           <Field label="Period start"><input className={inputClassName()} type="date" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
           <Field label="Period end"><input className={inputClassName()} type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
@@ -55,7 +64,7 @@ export function ProductionPayrollScreen({
           <label className="flex items-end gap-2 pb-3 font-bold"><input type="checkbox" defaultChecked={includeManagers} onChange={(event) => router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${event.target.checked ? "1" : "0"}&zero=${includeZero ? "1" : "0"}`)} /> Include manager profile</label>
           <label className="flex items-end gap-2 pb-3 font-bold"><input type="checkbox" defaultChecked={includeZero} onChange={(event) => router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${includeManagers ? "1" : "0"}&zero=${event.target.checked ? "1" : "0"}`)} /> Include zero hours</label>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3"><Button onClick={apply}>Preview period</Button><Button variant="secondary" onClick={download}>Export CSV</Button></div>
+        <div className="mt-4 flex flex-wrap gap-3"><Button onClick={apply}>Preview period</Button><Button variant="secondary" disabled={reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0} onClick={download}>Export CSV</Button></div>
         <p className="mt-3 text-sm font-bold text-purple-800">Payroll preparation only. No PAYE, National Insurance, pension or statutory deductions are calculated.</p>
       </Panel>
       <Panel>
