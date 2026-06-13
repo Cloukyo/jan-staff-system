@@ -52,4 +52,11 @@ describe("forced password change", () => {
     expect(resetScreen).toContain('type="password"');
     expect(resetScreen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
+
+  it("explains Supabase reset email rate limits without logging private details", () => {
+    const actions = readFileSync(resolve("src/lib/auth/actions.ts"), "utf8");
+    expect(actions).toContain("error.status === 429");
+    expect(actions).toContain("use only the newest link");
+    expect(actions).not.toContain('console.error("Supabase password reset failed", { email');
+  });
 });

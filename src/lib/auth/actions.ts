@@ -93,6 +93,12 @@ export async function resetPasswordAction(_state: AuthActionState, formData: For
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/reset-password` : undefined,
   });
-  if (error) return { message: "Password reset could not be sent. Please ask a manager to check the account." };
+  if (error) {
+    console.error("Supabase password reset failed", { code: error.code, status: error.status });
+    if (error.status === 429) {
+      return { message: "Too many reset emails have been requested. Wait a few minutes, then request one new email and use only the newest link." };
+    }
+    return { message: "Password reset could not be sent. Please ask a manager to check the account." };
+  }
   return { message: "If the email is linked to an active account, Supabase will send a reset link." };
 }
