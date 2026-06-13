@@ -48,7 +48,7 @@ export async function requireAccount(roles?: AppRole[]): Promise<StaffAccount> {
   const account = await getCurrentAccount();
   if (!account) redirect("/login");
   if (account.mustChangePassword) redirect("/change-password");
-  if (roles?.length && !roles.includes(account.role)) redirect(account.role === "manager" ? "/dashboard" : "/leave");
+  if (roles?.length && !roles.includes(account.role)) redirect(account.role === "manager" ? "/dashboard" : "/my-rota");
   return account;
 }
 

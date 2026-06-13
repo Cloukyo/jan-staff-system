@@ -21,6 +21,8 @@ describe("role-aware navigation", () => {
     const staffSection = shell.slice(shell.indexOf("const staffNavigation"), shell.indexOf("function itemIsActive"));
     expect(staffSection).toContain('label: "My leave"');
     expect(staffSection).toContain('label: "Request leave"');
+    expect(staffSection).toContain('label: "My rota"');
+    expect(staffSection).toContain('label: "My attendance"');
     expect(staffSection).toContain('label: "Profile"');
     expect(staffSection).not.toContain("/payroll");
     expect(staffSection).not.toContain("/compliance");
@@ -38,7 +40,7 @@ describe("role-aware navigation", () => {
 
   it("redirects staff directly to their own production area", () => {
     const actions = source("src/lib/auth/actions.ts");
-    expect(actions).toContain('account.role === "manager" ? "/dashboard" : "/leave"');
+    expect(actions).toContain('account.role === "manager" ? "/dashboard" : "/my-rota"');
   });
 
   it("points dashboard setup warnings to the current editing workflows", () => {

@@ -22,7 +22,7 @@ export async function signInAction(_state: AuthActionState, formData: FormData):
     await supabase.auth.signOut();
     return { message: "This account is inactive or has not been linked to a staff record." };
   }
-  redirect(account.must_change_password ? "/change-password" : account.role === "manager" ? "/dashboard" : "/leave");
+  redirect(account.must_change_password ? "/change-password" : account.role === "manager" ? "/dashboard" : "/my-rota");
 }
 
 export type ChangePasswordActionState = {
@@ -59,7 +59,7 @@ export async function changeRequiredPasswordAction(
   const { error: flagError } = await supabase.rpc("complete_required_password_change");
   if (flagError) return { ok: false, message: "The password changed, but the account flag could not be cleared. Please submit the new password again." };
   const { data: account } = await supabase.from("staff_accounts").select("role").eq("auth_user_id", (await supabase.auth.getUser()).data.user?.id ?? "").maybeSingle();
-  redirect(account?.role === "manager" ? "/dashboard" : "/leave");
+  redirect(account?.role === "manager" ? "/dashboard" : "/my-rota");
 }
 
 export async function resetRecoveredPasswordAction(

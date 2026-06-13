@@ -11,5 +11,5 @@ export default async function LeavePage() {
   if (getAppMode() === "demo") return <MyLeaveScreen />;
   const account = await requireAccount(["manager", "staff"]);
   const requests = await listLeaveRequestsForAccount(account);
-  return <AppShell role={account.role}><ProductionMyLeave requests={requests} /></AppShell>;
+  return <AppShell role={account.role}><ProductionMyLeave requests={requests} role={account.role} /></AppShell>;
 }

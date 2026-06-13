@@ -7,6 +7,6 @@ export const dynamic = "force-dynamic";
 export default async function ChangePasswordPage() {
   const account = await getCurrentAccount();
   if (!account) redirect("/login");
-  if (!account.mustChangePassword) redirect(account.role === "manager" ? "/dashboard" : "/leave");
+  if (!account.mustChangePassword) redirect(account.role === "manager" ? "/dashboard" : "/my-rota");
   return <ChangePasswordScreen />;
 }

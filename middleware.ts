@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { getAppMode } from "@/lib/app-mode";
 const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
 
-const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/change-password", "/reset-password"];
+const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/my-rota", "/my-attendance", "/change-password", "/reset-password"];
 
 export async function middleware(request: NextRequest) {
   const hasConfig = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);

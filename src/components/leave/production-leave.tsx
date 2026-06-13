@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
+import { LeaveNavigation } from "@/components/leave/leave-navigation";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { cancelLeaveRequestAction, createLeaveRequestAction, reviewLeaveRequestAction } from "@/lib/leave/server";
 import { calculateLeaveMinutes, leaveStatusTone, leaveTypeLabel } from "@/lib/calculations/leave";
@@ -49,9 +50,10 @@ function LeaveDetails({ request, staffName, canCancel = false }: { request: Leav
   );
 }
 
-export function ProductionMyLeave({ requests }: { requests: LeaveRequest[] }) {
+export function ProductionMyLeave({ requests, role }: { requests: LeaveRequest[]; role: StaffAccount["role"] }) {
   return (
     <div className="grid gap-5">
+      <LeaveNavigation role={role} current="mine" />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
@@ -83,6 +85,7 @@ export function ProductionLeaveRequest({ account }: { account: StaffAccount }) {
   const requestedMinutes = calculateLeaveMinutes(input);
   return (
     <div className="grid gap-5">
+      <LeaveNavigation role={account.role} current="request" />
       <div>
         <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
         <h1 className="mt-1 text-3xl font-black text-purple-950">Request leave</h1>
@@ -126,6 +129,7 @@ export function ProductionManagerLeave({ requests, accounts }: { requests: Leave
   const filtered = status === "all" ? requests : requests.filter((request) => request.status === status);
   return (
     <div className="grid gap-5">
+      <LeaveNavigation role="manager" current="manage" />
       <div>
         <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
         <h1 className="mt-1 text-3xl font-black text-purple-950">Leave requests</h1>

@@ -21,8 +21,9 @@ export function ProductionProfileScreen({ data }: { data: ProductionProfile }) {
           <div><dt className="text-sm font-bold text-slate-500">Staff profile</dt><dd className="mt-1"><StatusPill tone={data.profile.active ? "green" : "grey"}>{data.profile.active ? "Active" : "Inactive"}</StatusPill></dd></div>
         </dl>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link className="inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/leave">My leave</Link>
-          <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/leave/request">Request leave</Link>
+          {data.account.role === "staff" ? <Link className="inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/my-rota">My rota</Link> : null}
+          <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/leave">My leave</Link>
+          {data.account.role === "staff" ? <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/my-attendance">My attendance</Link> : null}
           <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/change-password">Change password</Link>
         </div>
       </Panel>
