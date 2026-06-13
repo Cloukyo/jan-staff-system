@@ -137,6 +137,71 @@ export async function duplicateRotaTemplateShiftAction(_state: RotaActionState, 
   return success("Template shift duplicated.");
 }
 
+export async function copyRotaTemplateStaffPatternAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
+  const account = await requireAccount(["manager"]);
+  const templateId = text(formData, "templateId");
+  const staffId = text(formData, "staffId");
+  const sourceDay = Number(text(formData, "sourceDay"));
+  const targetDays = formData.getAll("targetDays").map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7);
+  if (!templateId || !staffId || !Number.isInteger(sourceDay) || sourceDay < 1 || sourceDay > 7 || !targetDays.length) {
+    return failure("Choose a staff member, source day and at least one target day.");
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: source, error: sourceError } = await supabase.from("rota_template_shifts").select("*")
+    .eq("template_id", templateId)
+    .eq("staff_id", staffId)
+    .eq("day_of_week", sourceDay)
+    .is("archived_at", null);
+  if (sourceError || !source.length) return failure("No source shifts were found for that employee and day.");
+  const { data: existing, error: existingError } = await supabase.from("rota_template_shifts")
+    .select("day_of_week,start_time,end_time")
+    .eq("template_id", templateId)
+    .eq("staff_id", staffId)
+    .in("day_of_week", targetDays)
+    .is("archived_at", null);
+  if (existingError) return failure("The target pattern could not be checked.");
+  const existingKeys = new Set(existing.map((shift) => `${shift.day_of_week}:${shift.start_time}:${shift.end_time}`));
+  const rows = targetDays.flatMap((day) => source.map((shift) => ({
+    template_id: templateId,
+    staff_id: staffId,
+    day_of_week: day,
+    start_time: shift.start_time,
+    end_time: shift.end_time,
+    break_minutes: shift.break_minutes,
+    break_unspecified: shift.break_unspecified,
+    room_or_area: shift.room_or_area,
+    role_on_shift: shift.role_on_shift,
+    notes: shift.notes,
+    sort_order: shift.sort_order,
+    created_by: account.id,
+    updated_by: account.id,
+  }))).filter((shift) => !existingKeys.has(`${shift.day_of_week}:${shift.start_time}:${shift.end_time}`));
+  if (!rows.length) return success("Those shifts already exist on the selected days.");
+  const { error } = await supabase.from("rota_template_shifts").insert(rows);
+  if (error) return failure("The employee pattern could not be copied.");
+  refreshTemplates();
+  return success("Employee pattern copied to the selected days.");
+}
+
+export async function clearRotaTemplateStaffDayAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
+  const account = await requireAccount(["manager"]);
+  const templateId = text(formData, "templateId");
+  const staffId = text(formData, "staffId");
+  const dayOfWeek = Number(text(formData, "dayOfWeek"));
+  if (!templateId || !staffId || !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7) {
+    return failure("Choose an employee and weekday to clear.");
+  }
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("rota_template_shifts").update({
+    archived_at: new Date().toISOString(),
+    archived_by: account.id,
+    updated_by: account.id,
+  }).eq("template_id", templateId).eq("staff_id", staffId).eq("day_of_week", dayOfWeek).is("archived_at", null);
+  if (error) return failure("The employee day could not be cleared.");
+  refreshTemplates();
+  return success("Employee day cleared from the template.");
+}
+
 export async function archiveRotaTemplateAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
   const account = await requireAccount(["manager"]);
   const templateId = text(formData, "templateId");

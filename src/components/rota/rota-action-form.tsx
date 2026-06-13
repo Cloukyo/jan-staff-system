@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/primitives";
 import type { RotaActionState } from "@/lib/rota/actions";
@@ -15,6 +15,8 @@ export function RotaActionForm({
   variant = "primary",
   className = "",
   confirmMessage,
+  onSuccess,
+  submitDisabled = false,
 }: {
   action: (state: RotaActionState, formData: FormData) => Promise<RotaActionState>;
   children: React.ReactNode;
@@ -23,11 +25,20 @@ export function RotaActionForm({
   variant?: "primary" | "secondary" | "danger" | "ghost";
   className?: string;
   confirmMessage?: string;
+  onSuccess?: () => void;
+  submitDisabled?: boolean;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(action, initialState);
+  const onSuccessRef = useRef(onSuccess);
   useEffect(() => {
-    if (state.ok) router.refresh();
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+  useEffect(() => {
+    if (state.ok) {
+      router.refresh();
+      onSuccessRef.current?.();
+    }
   }, [router, state.ok]);
   return (
     <form
@@ -39,7 +50,7 @@ export function RotaActionForm({
     >
       {children}
       {state.message ? <p className={`mt-2 text-sm font-bold ${state.ok ? "text-green-700" : "text-red-700"}`}>{state.message}</p> : null}
-      <Button type="submit" variant={variant} disabled={pending}>{pending ? pendingLabel : submitLabel}</Button>
+      <Button type="submit" variant={variant} disabled={pending || submitDisabled}>{pending ? pendingLabel : submitLabel}</Button>
     </form>
   );
 }

@@ -50,7 +50,9 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
   const shiftDate = text(formData, "shiftDate");
   const startTime = text(formData, "startTime");
   const endTime = text(formData, "endTime");
-  const breakMinutes = Number(text(formData, "breakMinutes") ?? "0");
+  const breakText = text(formData, "breakMinutes");
+  const breakMinutes = Number(breakText ?? "0");
+  const breakUnspecified = breakText === null;
   if (!rotaWeekId || !staffId || !shiftDate || !startTime || !endTime) return failure("Staff, date, start time and finish time are required.");
   const duration = shiftDurationMinutes(startTime, endTime);
   if (duration <= 0) return failure("Finish time must be after start time. Overnight shifts are not supported.");
@@ -63,7 +65,7 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
     start_time: startTime,
     end_time: endTime,
     break_minutes: breakMinutes,
-    break_unspecified: false,
+    break_unspecified: breakUnspecified,
     room_or_area: text(formData, "roomOrArea"),
     role_on_shift: text(formData, "roleOnShift"),
     notes: text(formData, "notes"),
@@ -112,6 +114,7 @@ export async function duplicateRotaShiftAction(_state: RotaActionState, formData
     start_time: data.start_time,
     end_time: data.end_time,
     break_minutes: data.break_minutes,
+    break_unspecified: data.break_unspecified,
     room_or_area: data.room_or_area,
     role_on_shift: data.role_on_shift,
     notes: data.notes,
