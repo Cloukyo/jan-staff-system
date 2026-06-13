@@ -49,8 +49,8 @@ const cards: Array<{
   { key: "expiredCertificates", label: "Expired certificates", href: "/compliance", tone: "red", icon: ShieldAlert },
   { key: "certificatesExpiring30Days", label: "Certificates expiring in 30 days", href: "/compliance", tone: "amber", icon: ShieldAlert },
   { key: "incompleteCentralRecords", label: "Incomplete central records", href: "/compliance", tone: "amber", icon: ClipboardCheck },
-  { key: "staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/settings/kiosk", tone: "amber", icon: KeyRound },
-  { key: "staffMissingPayArrangement", label: "Missing active pay arrangement", href: "/payroll", tone: "amber", icon: CreditCard },
+  { key: "staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/attendance", tone: "amber", icon: KeyRound },
+  { key: "staffMissingPayArrangement", label: "Missing active pay arrangement", href: "/payroll/arrangements", tone: "amber", icon: CreditCard },
 ];
 
 export function ProductionDashboard({ data }: { data: ProductionDashboardSummary }) {

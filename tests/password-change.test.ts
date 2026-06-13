@@ -16,7 +16,7 @@ describe("forced password change", () => {
     const signIn = readFileSync(resolve("src/lib/auth/actions.ts"), "utf8");
     expect(middleware).toContain('url.pathname = "/change-password"');
     expect(permissions).toContain('redirect("/change-password")');
-    expect(signIn).toContain('account.must_change_password ? "/change-password" : "/dashboard"');
+    expect(signIn).toContain('account.role === "manager" ? "/dashboard" : "/leave"');
   });
 
   it("updates through the authenticated Supabase session and clears only the current account flag", () => {

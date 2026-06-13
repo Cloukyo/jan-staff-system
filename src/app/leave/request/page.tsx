@@ -9,5 +9,5 @@ export const dynamic = "force-dynamic";
 export default async function RequestLeavePage() {
   if (getAppMode() === "demo") return <RequestLeaveScreen />;
   const account = await requireAccount(["manager", "staff"]);
-  return <AppShell><ProductionLeaveRequest account={account} /></AppShell>;
+  return <AppShell role={account.role}><ProductionLeaveRequest account={account} /></AppShell>;
 }

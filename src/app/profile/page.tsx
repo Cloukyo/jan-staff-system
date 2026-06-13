@@ -9,5 +9,5 @@ export const dynamic = "force-dynamic";
 export default async function ProfilePage() {
   if (getAppMode() === "demo") return <ProfileScreen />;
   const data = await loadCurrentProductionProfile();
-  return <AppShell><ProductionProfileScreen data={data} /></AppShell>;
+  return <AppShell role={data.account.role}><ProductionProfileScreen data={data} /></AppShell>;
 }
