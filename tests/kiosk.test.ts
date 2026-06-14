@@ -169,6 +169,8 @@ describe("kiosk PIN safety", () => {
     expect(attendance).not.toContain("saveKioskSettingsAction");
     expect(setup).toContain("StaffKioskManagement");
     expect(setup).toContain("Kiosk Setup");
+    expect(setup).toContain('href="/clock"');
+    expect(setup).toContain("Open Staff Clock");
   });
 
   it("uses clear Staff Clock terminology", () => {
