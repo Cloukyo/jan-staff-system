@@ -91,12 +91,10 @@ export async function saveKioskSettingsAction(_state: KioskActionResult, formDat
   await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");
   const enabled = formData.get("kioskEnabled") === "on";
-  const resetRequired = formData.get("pinResetRequired") === "on";
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("staff_kiosk_settings").upsert({
     staff_id: staffId,
     kiosk_enabled: enabled,
-    pin_reset_required: resetRequired,
   }, { onConflict: "staff_id" });
   if (error) return { ok: false, code: "save_failed", message: "Kiosk settings could not be saved." };
   revalidatePath("/settings/kiosk");
@@ -108,19 +106,18 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
   await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");
   const pin = String(formData.get("pin") ?? "");
-  const requireChange = formData.get("requireChange") === "on";
   const validation = validateKioskPin(pin);
   if (validation) return { ok: false, code: "weak_pin", message: validation };
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("set_staff_kiosk_pin", {
     target_staff_id: staffId,
     new_pin: pin,
-    require_change: requireChange,
+    require_change: true,
   });
   if (error) return { ok: false, code: "save_failed", message: "The PIN could not be saved." };
   revalidatePath("/settings/kiosk");
   revalidatePath("/clock");
-  return { ok: true, code: "saved", message: "A new kiosk PIN has been saved securely." };
+  return { ok: true, code: "saved", message: "Temporary PIN saved. The employee must replace it at their next use." };
 }
 
 export async function addClockCorrectionAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {

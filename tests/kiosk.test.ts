@@ -159,7 +159,11 @@ describe("kiosk PIN safety", () => {
     expect(actions).toContain("changeTemporaryKioskPinAction");
     expect(kiosk).toContain('setMode("change")');
     expect(kiosk).toContain("<PinKeypad");
-    expect(manager).toContain('name="requireChange" defaultChecked');
+    expect(manager).not.toContain("pinResetRequired");
+    expect(manager).not.toContain('name="requireChange"');
+    expect(manager).toContain("Every temporary PIN must be replaced");
+    expect(actions).toContain("require_change: true");
+    expect(actions).not.toContain('formData.get("requireChange")');
   });
 
   it("keeps setup controls out of attendance", () => {

@@ -13,7 +13,7 @@ export function StaffKioskManagement({ staff }: { staff: ManagerKioskRow[] }) {
   return (
     <Panel>
       <h2 className="text-xl font-black text-purple-950">Staff kiosk access and PINs</h2>
-      <p className="mt-2 text-sm text-slate-600">Enable Staff Clock access, set a temporary PIN, and require the employee to replace it on first use.</p>
+      <p className="mt-2 text-sm text-slate-600">Enable Staff Clock access or set a temporary PIN. Every temporary PIN must be replaced by the employee at their next use.</p>
       <div className="mt-4 grid gap-4">
         {staff.map((person) => <StaffKioskControl key={person.staffId} person={person} />)}
       </div>
@@ -43,23 +43,17 @@ function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
       <div className="mt-3 grid gap-4 lg:grid-cols-2">
         <form action={settingsAction} className="rounded-lg bg-purple-50 p-3">
           <input type="hidden" name="staffId" value={person.staffId} />
-          <div className="grid gap-3">
-            <label className="flex min-h-11 items-center gap-3 font-bold"><input type="checkbox" name="kioskEnabled" defaultChecked={person.kioskEnabled} /> Staff Clock enabled</label>
-            <label className="flex min-h-11 items-center gap-3 font-bold"><input type="checkbox" name="pinResetRequired" defaultChecked={person.pinResetRequired} /> Require PIN change at next use</label>
-          </div>
+          <label className="flex min-h-11 items-center gap-3 font-bold"><input type="checkbox" name="kioskEnabled" defaultChecked={person.kioskEnabled} /> Staff Clock enabled</label>
           <button className="mt-3 min-h-11 rounded-lg bg-white px-4 font-bold text-purple-900 ring-1 ring-purple-200" type="submit">Save access</button>
           {settingsState.message ? <p className={`mt-2 text-sm font-bold ${settingsState.ok ? "text-green-700" : "text-red-700"}`}>{settingsState.message}</p> : null}
         </form>
         <form action={pinAction} className="rounded-lg bg-purple-50 p-3">
           <input type="hidden" name="staffId" value={person.staffId} />
-          <Field label="Temporary PIN">
+          <Field label={person.pinUpdatedAt ? "New temporary PIN" : "Temporary PIN"}>
             <input className={inputClassName()} name="pin" inputMode="numeric" type="password" minLength={4} maxLength={6} autoComplete="new-password" required />
           </Field>
-          <label className="mt-3 flex min-h-11 items-center gap-3 font-bold">
-            <input type="checkbox" name="requireChange" defaultChecked />
-            Require employee to choose a new PIN
-          </label>
-          <button className="mt-3 min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white" type="submit">Set temporary PIN</button>
+          <p className="mt-3 text-sm font-semibold text-purple-900">The employee will be required to choose a new private PIN before clocking in or out.</p>
+          <button className="mt-3 min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white" type="submit">{person.pinUpdatedAt ? "Reset with temporary PIN" : "Set temporary PIN"}</button>
           {pinState.message ? <p className={`mt-2 text-sm font-bold ${pinState.ok ? "text-green-700" : "text-red-700"}`}>{pinState.message}</p> : null}
         </form>
       </div>
