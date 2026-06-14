@@ -14,6 +14,16 @@ type KioskRosterRow = {
   pin_ready: boolean;
 };
 
+export class KioskDeviceAccessError extends Error {
+  constructor(
+    public readonly code: "device_missing" | "device_rejected" | "roster_failed",
+    message: string,
+  ) {
+    super(message);
+    this.name = "KioskDeviceAccessError";
+  }
+}
+
 export function kioskRepositorySource(mode = getAppMode(), configured = hasSupabaseConfig()): "demo" | "supabase" {
   if (mode === "demo") return "demo";
   if (!configured) throw new Error("Production kiosk mode requires Supabase configuration.");
@@ -41,10 +51,16 @@ export function createPublicKioskClient() {
 export async function loadProductionKioskRoster(): Promise<KioskRosterEntry[]> {
   if (kioskRepositorySource() !== "supabase") return [];
   const deviceToken = await getKioskDeviceToken();
-  if (!deviceToken) throw new Error("Kiosk device access has not been activated.");
+  if (!deviceToken) throw new KioskDeviceAccessError("device_missing", "Kiosk device access has not been activated.");
   const supabase = createPublicKioskClient();
   const { data, error } = await supabase.rpc("get_device_kiosk_roster", { device_token: deviceToken });
-  if (error) throw new Error(`The production kiosk roster could not be loaded: ${error.message}`);
+  if (error) {
+    const rejected = /kiosk device access required/i.test(error.message);
+    throw new KioskDeviceAccessError(
+      rejected ? "device_rejected" : "roster_failed",
+      rejected ? "The saved kiosk registration is no longer active." : "The Staff Clock roster could not be loaded.",
+    );
+  }
   return mapKioskRoster((data ?? []) as KioskRosterRow[]);
 }
 

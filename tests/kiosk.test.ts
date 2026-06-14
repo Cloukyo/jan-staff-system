@@ -94,6 +94,15 @@ describe("device-specific kiosk access", () => {
     expect(middleware).toContain('url.pathname = "/clock"');
   });
 
+  it("does not mislabel a roster error as an unregistered browser", () => {
+    const clockPage = readFileSync(resolve("src/app/clock/page.tsx"), "utf8");
+    expect(clockPage).toContain("Staff Clock could not load");
+    expect(clockPage).toContain("This browser is registered");
+    expect(clockPage).toContain("Remove saved registration");
+    expect(clockPage).toContain("Staff Clock setup required");
+    expect(kioskServer).toContain("KioskDeviceAccessError");
+  });
+
   it("does not expose payroll or compliance fields in the roster", () => {
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*hourly_rate/i);
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*annual_salary/i);
