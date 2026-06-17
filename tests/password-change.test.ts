@@ -32,8 +32,11 @@ describe("forced password change", () => {
   it("keeps private setup tooling ignored and password input hidden", () => {
     const gitignore = readFileSync(resolve(".gitignore"), "utf8");
     const screen = readFileSync(resolve("src/components/auth/change-password-screen.tsx"), "utf8");
+    const passwordInput = readFileSync(resolve("src/components/ui/password-input.tsx"), "utf8");
     expect(gitignore).toContain("private-imports/");
-    expect(screen).toContain('type="password"');
+    expect(screen).toContain("PasswordInput");
+    expect(passwordInput).toContain('type={visible ? "text" : "password"}');
+    expect(passwordInput).toContain("Eye");
     expect(screen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
 
@@ -49,7 +52,7 @@ describe("forced password change", () => {
     expect(callback).toContain("exchangeCodeForSession(code)");
     expect(callback).toContain('url.searchParams.get("next") === "/reset-password"');
     expect(resetPage).toContain("getCurrentAccount()");
-    expect(resetScreen).toContain('type="password"');
+    expect(resetScreen).toContain("PasswordInput");
     expect(resetScreen).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
 

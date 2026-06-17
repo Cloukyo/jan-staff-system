@@ -3,7 +3,8 @@
 import { useActionState } from "react";
 import { KeyRound } from "lucide-react";
 import { BrandMark } from "@/components/ui/brand";
-import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
+import { Button, Field, Panel } from "@/components/ui/primitives";
+import { PasswordInput } from "@/components/ui/password-input";
 import { resetRecoveredPasswordAction, type ChangePasswordActionState } from "@/lib/auth/actions";
 
 const initialState: ChangePasswordActionState = { ok: false, message: "" };
@@ -20,10 +21,10 @@ export function ResetPasswordScreen() {
         <p className="mt-2 text-sm leading-6 text-slate-600">Choose a new private password for your staff account.</p>
         <form className="mt-6 grid gap-4" action={action}>
           <Field label="New password">
-            <input className={inputClassName("w-full")} name="password" type="password" minLength={12} autoComplete="new-password" required />
+            <PasswordInput name="password" minLength={12} autoComplete="new-password" required />
           </Field>
           <Field label="Confirm new password">
-            <input className={inputClassName("w-full")} name="confirmation" type="password" minLength={12} autoComplete="new-password" required />
+            <PasswordInput name="confirmation" minLength={12} autoComplete="new-password" required />
           </Field>
           <p className="text-xs leading-5 text-slate-600">Use at least 12 characters with uppercase, lowercase, a number and a symbol. Do not include your email name.</p>
           {state.message ? <p className="rounded-lg bg-red-50 p-3 text-sm font-bold text-red-800">{state.message}</p> : null}

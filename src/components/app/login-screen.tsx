@@ -5,6 +5,7 @@ import { KeyRound, Mail } from "lucide-react";
 import { signInAction, resetPasswordAction, type AuthActionState } from "@/lib/auth/actions";
 import { BrandMark } from "@/components/ui/brand";
 import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const initialState: AuthActionState = { message: "" };
 
@@ -27,10 +28,12 @@ export function LoginScreen({ notice }: { notice?: string }) {
             </div>
           </Field>
           <Field label="Password">
-            <div className="relative">
-              <KeyRound className="absolute left-3 top-3 h-5 w-5 text-purple-400" aria-hidden />
-              <input className={inputClassName("w-full pl-10")} name="password" type="password" autoComplete="current-password" required />
-            </div>
+            <PasswordInput
+              autoComplete="current-password"
+              leftIcon={<KeyRound className="h-5 w-5" aria-hidden />}
+              name="password"
+              required
+            />
           </Field>
           {loginState.message && <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{loginState.message}</p>}
           <Button type="submit" disabled={loginPending}>{loginPending ? "Signing in..." : "Sign in"}</Button>

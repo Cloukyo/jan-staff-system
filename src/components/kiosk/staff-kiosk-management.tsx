@@ -4,7 +4,8 @@ import { useActionState } from "react";
 import { saveKioskSettingsAction, setKioskPinAction } from "@/lib/kiosk/actions";
 import type { KioskActionResult } from "@/lib/kiosk/types";
 import type { ManagerKioskRow } from "@/lib/kiosk/server";
-import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import { Field, Panel, StatusPill } from "@/components/ui/primitives";
+import { PasswordInput } from "@/components/ui/password-input";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
 
 const initial: KioskActionResult = { ok: false, code: "idle", message: "" };
@@ -50,7 +51,16 @@ function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
         <form action={pinAction} className="rounded-lg bg-purple-50 p-3">
           <input type="hidden" name="staffId" value={person.staffId} />
           <Field label={person.pinUpdatedAt ? "New temporary PIN" : "Temporary PIN"}>
-            <input className={inputClassName()} name="pin" inputMode="numeric" type="password" minLength={4} maxLength={6} autoComplete="new-password" required />
+            <PasswordInput
+              autoComplete="new-password"
+              hideLabel="Hide PIN"
+              inputMode="numeric"
+              maxLength={6}
+              minLength={4}
+              name="pin"
+              revealLabel="Show PIN"
+              required
+            />
           </Field>
           <p className="mt-3 text-sm font-semibold text-purple-900">The employee will be required to choose a new private PIN before clocking in or out.</p>
           <button className="mt-3 min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white" type="submit">{person.pinUpdatedAt ? "Reset with temporary PIN" : "Set temporary PIN"}</button>
