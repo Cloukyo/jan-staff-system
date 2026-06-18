@@ -35,6 +35,7 @@ describe("production kiosk separation", () => {
 
 describe("production kiosk migration safeguards", () => {
   const migration = readFileSync(resolve("supabase/migrations/202606110002_production_kiosk_attendance.sql"), "utf8");
+  const noLockoutMigration = readFileSync(resolve("supabase/migrations/20260618232128_remove_kiosk_pin_lockout.sql"), "utf8");
   const pgcryptoFix = readFileSync(resolve("supabase/migrations/202606110003_kiosk_pgcrypto_search_path.sql"), "utf8");
   const columnSecurity = readFileSync(resolve("supabase/migrations/202606110004_kiosk_pin_hash_column_security.sql"), "utf8");
 
@@ -48,9 +49,11 @@ describe("production kiosk migration safeguards", () => {
     expect(columnSecurity).not.toMatch(/grant select[\\s\\S]*pin_hash/i);
   });
 
-  it("locks repeated failures and prevents invalid clock transitions", () => {
-    expect(migration).toContain("failures >= 5");
-    expect(migration).toContain("interval '15 minutes'");
+  it("records failed attempts without locking staff out and prevents invalid clock transitions", () => {
+    expect(noLockoutMigration).toContain("failed_attempt_count = failed_attempt_count + 1");
+    expect(noLockoutMigration).toContain("locked_until = null");
+    expect(noLockoutMigration).not.toContain("interval '15 minutes'");
+    expect(noLockoutMigration).not.toContain("'locked'");
     expect(migration).toContain("'already_clocked_in'");
     expect(migration).toContain("'not_clocked_in'");
     expect(migration).toContain("interval '5 seconds'");
@@ -152,7 +155,7 @@ describe("kiosk PIN safety", () => {
   it("provides safe workflow errors", () => {
     expect(kioskResultMessage("already_clocked_in")).toMatch(/already clocked in/i);
     expect(kioskResultMessage("not_clocked_in")).toMatch(/cannot clock out/i);
-    expect(kioskResultMessage("locked")).toMatch(/15 minutes/i);
+    expect(kioskResultMessage("locked")).not.toMatch(/15 minutes/i);
   });
 
   it("forces temporary PIN replacement before clocking", () => {

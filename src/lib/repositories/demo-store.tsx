@@ -52,7 +52,7 @@ interface DemoRepository {
   copyPreviousWeek: (weekStart: string, staffId?: string) => void;
   clearWeek: (weekStart: string) => void;
   addClockEvent: (staffId: string, type: ClockEventType) => void;
-  verifyPin: (staffId: string, pin: string) => "ok" | "change_required" | "locked" | "error";
+  verifyPin: (staffId: string, pin: string) => "ok" | "change_required" | "error";
   changePin: (staffId: string, newPin: string) => void;
   addAdjustment: (adjustment: Omit<AttendanceAdjustment, "id" | "createdAt" | "managerName">) => void;
   approveCleanDays: (days: AttendanceDay[], method?: AttendanceApproval["approvalMethod"]) => { approved: number; skipped: string[] };
@@ -316,17 +316,15 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
       verifyPin: (staffId, pin) => {
         const person = state.staff.find((item) => item.id === staffId);
         if (!person) return "error";
-        if (person.lockedUntil && new Date(person.lockedUntil) > new Date()) return "locked";
         if (verifyPrototypePin(pin, person.pinHash)) return person.pinIsTemporary ? "change_required" : "ok";
         setState((current) => ({
           ...current,
           staff: current.staff.map((item) => {
             if (item.id !== staffId) return item;
-            const failedPinAttempts = item.failedPinAttempts + 1;
             return {
               ...item,
-              failedPinAttempts,
-              lockedUntil: failedPinAttempts >= 3 ? new Date(Date.now() + 60_000).toISOString() : null,
+              failedPinAttempts: item.failedPinAttempts + 1,
+              lockedUntil: null,
             };
           }),
         }));

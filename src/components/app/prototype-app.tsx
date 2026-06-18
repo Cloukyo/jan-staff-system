@@ -1058,7 +1058,6 @@ export function ClockKiosk() {
     setPin("");
     if (result === "ok") setMode("actions");
     if (result === "change_required") setMode("change");
-    if (result === "locked") setMessage("Too many attempts. Please wait before trying again.");
     if (result === "error") setMessage("PIN not recognised. Please try again.");
   }
   function completeAction(type: ClockEventType) {

@@ -11,7 +11,7 @@ export function validateKioskPin(pin: string): string | null {
 export function kioskResultMessage(code: string): string {
   const messages: Record<string, string> = {
     invalid_pin: "PIN not recognised. Please try again.",
-    locked: "Too many attempts. Please wait 15 minutes or ask a manager for help.",
+    locked: "PIN not recognised. Please try again or ask a manager for help.",
     reset_required: "A manager must set or reset your kiosk PIN.",
     change_required: "Choose your own private PIN before clocking in.",
     change_not_required: "This PIN no longer needs to be changed. Start again.",

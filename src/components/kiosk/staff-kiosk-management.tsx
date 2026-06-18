@@ -33,7 +33,6 @@ function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
           <p className="text-sm text-slate-600">{person.employmentRole}</p>
           <p className="mt-1 text-xs text-slate-500">
             PIN updated: {person.pinUpdatedAt ? formatDateUk(person.pinUpdatedAt) : "Never"} | Failed attempts: {person.failedAttemptCount}
-            {person.lockedUntil ? ` | Locked until ${formatTimeUk(person.lockedUntil)}` : ""}
           </p>
           <p className="mt-1 text-xs text-slate-500">Last Staff Clock use: {person.lastKioskUseAt ? `${formatDateUk(person.lastKioskUseAt)} ${formatTimeUk(person.lastKioskUseAt)}` : "Never"}</p>
         </div>
