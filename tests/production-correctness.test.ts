@@ -42,6 +42,15 @@ describe("production correctness routes", () => {
     expect(production).not.toContain("localStorage");
   });
 
+  it("mounts the browser demo store only in demo mode", () => {
+    const layout = source("src/app/layout.tsx");
+    const providers = source("src/app/providers.tsx");
+    expect(layout).toContain("getAppMode()");
+    expect(layout).toContain("appMode=");
+    expect(providers).toContain('appMode === "demo"');
+    expect(providers).toContain("DemoStoreProvider");
+  });
+
   it("records account access changes without storing credentials", () => {
     const migration = source("supabase/migrations/202606130005_production_account_access_audit.sql");
     expect(migration).toContain("staff_account_access_audit");

@@ -15,4 +15,10 @@ export type KioskActionResult = {
   message: string;
   currentStatus?: KioskStatus;
   recordedAt?: string;
+  weeklyHours?: {
+    weekStartDate: string;
+    weekEndDate: string;
+    completedMinutes: number;
+    openShiftInProgress: boolean;
+  };
 };

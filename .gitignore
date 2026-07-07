@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 .vs/
+.codex-remote-attachments/
 
 # debug
 npm-debug.log*

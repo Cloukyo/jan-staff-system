@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { kioskRepositorySource, mapKioskRoster } from "@/lib/kiosk/server";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
 import { KIOSK_DEVICE_COOKIE } from "@/lib/kiosk/device-session";
+import { currentWorkWeekRange, summariseCompletedClockMinutes } from "@/lib/attendance/hours";
 
 describe("production kiosk separation", () => {
   it("uses Supabase in production and never falls back to demo data", () => {
@@ -57,6 +58,17 @@ describe("production kiosk migration safeguards", () => {
     expect(migration).toContain("'already_clocked_in'");
     expect(migration).toContain("'not_clocked_in'");
     expect(migration).toContain("interval '5 seconds'");
+  });
+
+  it("locks on the fourth failed attempt and reports remaining attempts before lockout", () => {
+    const lockoutMigration = readFileSync(resolve("supabase/migrations/202607060001_kiosk_lockout_weekly_hours.sql"), "utf8");
+    expect(lockoutMigration).toContain("failures >= 4");
+    expect(lockoutMigration).toContain("now() + interval '15 minutes'");
+    expect(lockoutMigration).toContain("'invalid_pin_attempt_1'");
+    expect(lockoutMigration).toContain("'invalid_pin_attempt_2'");
+    expect(lockoutMigration).toContain("'invalid_pin_attempt_3'");
+    expect(lockoutMigration).toContain("'locked'");
+    expect(lockoutMigration).toContain("set failed_attempt_count = 0, locked_until = null");
   });
 
   it("keeps original events immutable and restricts corrections to managers", () => {
@@ -155,7 +167,10 @@ describe("kiosk PIN safety", () => {
   it("provides safe workflow errors", () => {
     expect(kioskResultMessage("already_clocked_in")).toMatch(/already clocked in/i);
     expect(kioskResultMessage("not_clocked_in")).toMatch(/cannot clock out/i);
-    expect(kioskResultMessage("locked")).not.toMatch(/15 minutes/i);
+    expect(kioskResultMessage("invalid_pin_attempt_1")).toMatch(/2 attempts remaining/i);
+    expect(kioskResultMessage("invalid_pin_attempt_2")).toMatch(/1 attempt remaining/i);
+    expect(kioskResultMessage("invalid_pin_attempt_3")).toMatch(/last attempt/i);
+    expect(kioskResultMessage("locked")).toMatch(/15 minutes/i);
   });
 
   it("forces temporary PIN replacement before clocking", () => {
@@ -195,5 +210,39 @@ describe("kiosk PIN safety", () => {
     expect(clock).not.toContain("Manager sign in");
     expect(clock).toContain("Staff Clock setup required");
     expect(kiosk).toContain(">Staff Clock<");
+  });
+});
+
+describe("kiosk weekly hours", () => {
+  it("defaults the current work week to Monday", () => {
+    expect(currentWorkWeekRange("2026-07-09", 1)).toEqual({ start: "2026-07-06", end: "2026-07-12" });
+  });
+
+  it("uses the configured work-week start day", () => {
+    expect(currentWorkWeekRange("2026-07-09", 7)).toEqual({ start: "2026-07-05", end: "2026-07-11" });
+    expect(currentWorkWeekRange("2026-07-09", 3)).toEqual({ start: "2026-07-08", end: "2026-07-14" });
+  });
+
+  it("summarises only the selected staff member's completed shifts", () => {
+    const summary = summariseCompletedClockMinutes([
+      { staffId: "staff-a", eventType: "clock_in", eventTimestamp: "2026-07-06T08:00:00+01:00" },
+      { staffId: "staff-a", eventType: "clock_out", eventTimestamp: "2026-07-06T12:30:00+01:00" },
+      { staffId: "staff-b", eventType: "clock_in", eventTimestamp: "2026-07-06T09:00:00+01:00" },
+      { staffId: "staff-b", eventType: "clock_out", eventTimestamp: "2026-07-06T17:00:00+01:00" },
+    ], "staff-a", "2026-07-06", "2026-07-12");
+
+    expect(summary.completedMinutes).toBe(270);
+    expect(summary.hasOpenShift).toBe(false);
+  });
+
+  it("excludes incomplete shifts and marks them as in progress", () => {
+    const summary = summariseCompletedClockMinutes([
+      { staffId: "staff-a", eventType: "clock_in", eventTimestamp: "2026-07-06T08:00:00+01:00" },
+      { staffId: "staff-a", eventType: "clock_out", eventTimestamp: "2026-07-06T12:00:00+01:00" },
+      { staffId: "staff-a", eventType: "clock_in", eventTimestamp: "2026-07-06T13:00:00+01:00" },
+    ], "staff-a", "2026-07-06", "2026-07-12");
+
+    expect(summary.completedMinutes).toBe(240);
+    expect(summary.hasOpenShift).toBe(true);
   });
 });

@@ -35,11 +35,11 @@ For the local demo, leave Supabase variables as placeholders and use the seeded 
 - `/payroll`: pay-preparation summaries and CSV export.
 - `/settings`: prototype settings and demo data reset.
 
-## Demo Data and Persistence
+## Demo Mode and Persistence
 
-The app uses seeded fictional demo data and browser localStorage. Changes survive refreshes in the same browser. Use Settings, then `Reset and reseed demo data`, to restore the seed records.
+Demo mode uses seeded fictional staff, rota, attendance, leave and pay-preparation records stored in browser localStorage. Changes survive refreshes in the same browser. Use Settings, then `Reset and reseed demo data`, to restore the seed records.
 
-The data layer lives behind a repository abstraction in `src/lib/repositories/demo-store.tsx` so Supabase can replace the local implementation later without spreading storage code through UI components.
+Production mode does not mount the browser demo store. Demo records are kept under `src/lib/demo-data` and `src/lib/repositories`, and production routes must load from Supabase or fail clearly rather than falling back to demo records.
 
 Current local data schema version: `5`.
 
@@ -83,7 +83,7 @@ In a production Next.js build, the default mode is `production`. In development,
 1. Create a Supabase project.
 2. Enable Email provider in Authentication.
 3. Set Site URL to your local URL for development and your Vercel URL for production.
-4. Run the migration:
+4. Run the migrations:
 
 ```bash
 supabase db push
@@ -92,7 +92,7 @@ supabase db push
 Or paste `supabase/migrations/202606100001_auth_leave_requests.sql` into the Supabase SQL editor.
 
 5. Create the first manager in Supabase Auth. Use a temporary password or invite email, then require the manager to reset it.
-6. Copy `supabase/seed-first-manager.example.sql`, replace the placeholder Auth user ID and email, then run it in Supabase SQL editor.
+6. Copy `supabase/seed-first-manager.example.sql`, replace the placeholder Auth user ID and email, then run it in Supabase SQL editor. This file is an example only and must not be filled with real production IDs in Git.
 
 Managers create further staff account links from `/accounts`, then invite the matching email in Supabase Auth and update `auth_user_id` on the account link. Disabled accounts are blocked by server login checks and RLS policies.
 
@@ -107,6 +107,12 @@ Managers create further staff account links from `/accounts`, then invite the ma
 7. Deploy with the default Next.js settings.
 
 The public kiosk route must never expose salary, pay-rate or private manager information. It continues to use staff PIN clocking only.
+
+## Production Settings
+
+Managers can edit `Work week starts on` from `/settings`. The default is Monday. Staff Clock weekly hours and the manager attendance hours preview both use this setting to calculate the current work week.
+
+Staff Clock PIN attempts are enforced in Supabase RPCs. The first, second and third failed attempts return clear warning messages. The fourth failed attempt locks that staff member's kiosk access for 15 minutes. A successful PIN entry resets the failed-attempt counter.
 
 ## Staff Compliance and Central Records
 
@@ -219,9 +225,11 @@ Approved leave appears as a rota conflict warning. Pending leave appears as a so
 
 Working-day calculation currently excludes Saturdays and Sundays. Nursery closure dates are not stored yet; the leave calculation accepts a closure-date list so that a future closure calendar can be added without rewriting the workflow.
 
-## Remaining Browser-Only Data
+## Production and Demo Separation
 
-Until further migration work is completed, rota shifts, clock events, attendance approvals/corrections, pay-preparation summaries and demo settings still use browser localStorage in local demo mode. Production staff profiles, login links, leave requests, qualifications, certificates and central-record compliance are now modelled for Supabase. Production mode should be configured with Supabase and should not silently depend on browser demo staff records.
+Demo mode remains available for local workflow testing and training. It uses browser localStorage and fictional seed records only when `APP_MODE=demo`.
+
+Production mode uses Supabase-backed routes for staff, accounts, rota, kiosk clock events, attendance corrections and review, leave, compliance, pay-preparation arrangements, payroll review/import, dashboard summaries and persisted production settings. Production pages must not read demo browser storage or show fictional seed records. If Supabase configuration or a production query fails, the app should show a clear production error instead of falling back to demo data.
 
 ## Architecture Notes
 
@@ -237,17 +245,15 @@ In development, Settings also shows scenario controls for creating clean attenda
 
 ## Security and Production Readiness
 
-The prototype PIN service is deliberately isolated in `src/lib/pin/service.ts`. It uses a clearly marked non-production representation so the UI workflow can be tested locally.
+The prototype PIN service is deliberately isolated in `src/lib/pin/service.ts` and is used only by demo mode. Production Staff Clock PINs are checked in Supabase RPCs with server-side hashing, failed-attempt counting and lockout enforcement.
 
-Before production use, add:
+Production readiness checks:
 
-- Supabase database tables and migrations.
-- Real authentication and role checks.
-- Row Level Security policies.
-- Server-side secure PIN hashing.
-- Rate limiting and audit logging.
-- Server timestamps for clock events.
-- Backups and operational monitoring.
+- Keep Supabase migrations applied in order.
+- Keep Row Level Security enabled on exposed production tables.
+- Keep service role keys server-only.
+- Preserve original clock events and store manager corrections separately.
+- Review backups, monitoring and operational access before each production rollout.
 
 Never store production PINs in plain text.
 
@@ -274,8 +280,6 @@ npm run build
 
 ## Deliberate Limitations
 
-- No production authentication.
-- No Supabase connection yet.
 - No payroll tax, pensions, payslips or HMRC submissions.
 - No child records or staff-to-child ratio calculations.
 - No email, SMS, biometrics, GPS or external integrations.

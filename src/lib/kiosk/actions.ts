@@ -8,7 +8,16 @@ import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
 import type { KioskActionResult, KioskStatus } from "@/lib/kiosk/types";
 
-type RpcResult = { ok: boolean; code: string; current_status: KioskStatus | null; recorded_at?: string | null };
+type RpcResult = {
+  ok: boolean;
+  code: string;
+  current_status: KioskStatus | null;
+  recorded_at?: string | null;
+  work_week_start_date?: string | null;
+  work_week_end_date?: string | null;
+  completed_minutes?: number | null;
+  open_shift_in_progress?: boolean | null;
+};
 
 function rpcResult(row: RpcResult | undefined): KioskActionResult {
   const code = row?.code ?? "request_failed";
@@ -18,6 +27,12 @@ function rpcResult(row: RpcResult | undefined): KioskActionResult {
     message: kioskResultMessage(code),
     currentStatus: row?.current_status ?? undefined,
     recordedAt: row?.recorded_at ?? undefined,
+    weeklyHours: row?.work_week_start_date && row.work_week_end_date ? {
+      weekStartDate: row.work_week_start_date,
+      weekEndDate: row.work_week_end_date,
+      completedMinutes: row.completed_minutes ?? 0,
+      openShiftInProgress: Boolean(row.open_shift_in_progress),
+    } : undefined,
   };
 }
 

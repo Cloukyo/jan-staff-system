@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildAttendanceReviewRow } from "@/lib/attendance/review-server";
+import { buildAttendanceReviewRow, mapManagerHoursPreview } from "@/lib/attendance/review-server";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
@@ -61,5 +61,37 @@ describe("production attendance review", () => {
     expect(server).toContain('from("attendance_correction_requests").insert');
     expect(form).toContain("It does not alter the original clock events.");
     expect(server).not.toMatch(/from\("clock_events"\)\.update/);
+  });
+
+  it("maps manager date-range hours with empty staff rows as 0 minutes", () => {
+    const rows = mapManagerHoursPreview([
+      { staff_id: "staff-a", display_name: "Areeg", full_name: "Areeg Shahzadi", completed_minutes: 450, open_shift_count: 0 },
+      { staff_id: "staff-b", display_name: "Maya", full_name: "Maya Patel", completed_minutes: null, open_shift_count: 1 },
+    ]);
+    expect(rows).toEqual([
+      { staffId: "staff-a", displayName: "Areeg", fullName: "Areeg Shahzadi", completedMinutes: 450, openShiftCount: 0 },
+      { staffId: "staff-b", displayName: "Maya", fullName: "Maya Patel", completedMinutes: 0, openShiftCount: 1 },
+    ]);
+  });
+
+  it("keeps manager hours preview manager-only and uses the configured work-week start", () => {
+    const migration = source("supabase/migrations/202607060001_kiosk_lockout_weekly_hours.sql");
+    expect(migration).toContain("work_week_starts_on");
+    expect(migration).toContain("default 1");
+    expect(migration).toContain("public.get_manager_hours_preview");
+    expect(migration).toContain("manager_account.role <> 'manager'");
+    expect(migration).toContain("public.get_current_work_week_range");
+    expect(migration).toContain("grant execute on function public.get_manager_hours_preview(date, date) to authenticated");
+    expect(migration).not.toMatch(/grant execute on function public\.get_manager_hours_preview\(date, date\) to anon/i);
+  });
+
+  it("renders a manager date range control for hours preview", () => {
+    const attendancePage = source("src/app/attendance/page.tsx");
+    const attendance = source("src/components/attendance/production-attendance.tsx");
+    expect(attendancePage).toContain("loadManagerHoursPreview");
+    expect(attendance).toContain('name="hoursFrom"');
+    expect(attendance).toContain('name="hoursTo"');
+    expect(attendance).toContain("Current work week");
+    expect(attendance).toContain("formatHours");
   });
 });

@@ -3,9 +3,11 @@ import { ProductionSettingsScreen } from "@/components/settings/production-setti
 import { AppShell } from "@/components/layout/app-shell";
 import { getAppMode } from "@/lib/app-mode";
 import { requireAccount } from "@/lib/auth/permissions";
+import { loadProductionNurserySettings } from "@/lib/settings/server";
 
 export default async function SettingsPage() {
   if (getAppMode() === "demo") return <SettingsScreen />;
   await requireAccount(["manager"]);
-  return <AppShell><ProductionSettingsScreen /></AppShell>;
+  const settings = await loadProductionNurserySettings();
+  return <AppShell><ProductionSettingsScreen settings={settings} /></AppShell>;
 }

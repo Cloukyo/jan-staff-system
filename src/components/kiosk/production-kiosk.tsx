@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/primitives";
 import { changeTemporaryKioskPinAction, recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
 import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
+import { formatDateUk, formatHours } from "@/lib/dates/format";
 
 type Mode = "select" | "pin" | "change" | "action" | "success";
 
@@ -20,6 +21,12 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   const [changeStep, setChangeStep] = useState<"new" | "confirm">("new");
   const [mode, setMode] = useState<Mode>("select");
   const [message, setMessage] = useState("");
+  const [weeklyHours, setWeeklyHours] = useState<{
+    weekStartDate: string;
+    weekEndDate: string;
+    completedMinutes: number;
+    openShiftInProgress: boolean;
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   function reset() {
@@ -29,6 +36,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     setConfirmPin("");
     setChangeStep("new");
     setMessage("");
+    setWeeklyHours(null);
     setMode("select");
   }
 
@@ -39,11 +47,13 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
       setMessage(result.message);
       if (result.ok && result.code === "change_required") {
         if (result.currentStatus) setSelected({ ...selected, currentStatus: result.currentStatus });
+        if (result.weeklyHours) setWeeklyHours(result.weeklyHours);
         setMode("change");
         return;
       }
       if (result.ok && result.currentStatus) {
         setSelected({ ...selected, currentStatus: result.currentStatus });
+        setWeeklyHours(result.weeklyHours ?? null);
         setMode("action");
       }
     });
@@ -64,6 +74,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
       setNewPin("");
       setConfirmPin("");
       setSelected({ ...selected, currentStatus: result.currentStatus ?? selected.currentStatus, pinReady: true });
+      setWeeklyHours(result.weeklyHours ?? null);
       setMode("action");
     });
   }
@@ -154,6 +165,16 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
         {mode === "action" && selected ? (
           <KioskPanel title={`Hello ${selected.displayName}`} message={`You are currently ${selected.currentStatus === "clocked_in" ? "clocked in" : "clocked out"}.`}>
             <div className="mx-auto max-w-xl">
+              {weeklyHours ? (
+                <div className="mb-5 rounded-lg bg-white p-5 text-center shadow-soft ring-1 ring-purple-100">
+                  <p className="text-sm font-bold text-slate-600">Completed hours this work week</p>
+                  <p className="mt-1 text-4xl font-black text-purple-950">{formatHours(weeklyHours.completedMinutes)}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">
+                    {formatDateUk(weeklyHours.weekStartDate)} to {formatDateUk(weeklyHours.weekEndDate)}
+                  </p>
+                  {weeklyHours.openShiftInProgress ? <p className="mt-2 text-sm font-bold text-amber-700">Current shift in progress is not included yet.</p> : null}
+                </div>
+              ) : null}
               {selected.currentStatus === "clocked_in" ? (
                 <button disabled={pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-lg bg-purple-700 p-6 text-2xl font-black text-white disabled:opacity-60" onClick={() => record("clock_out")}><LogOut className="h-8 w-8" /> Clock out</button>
               ) : (

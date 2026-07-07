@@ -136,13 +136,13 @@ export function AppShell({ children, role = "manager" }: { children: React.React
   }
 
   const menu = (
-    <nav className="grid gap-6" aria-label="Main navigation">
+    <nav className="app-shell__nav grid gap-6" aria-label="Main navigation">
       {navigation.map((group) => (
-        <section key={group.label} aria-labelledby={`nav-${group.label.toLowerCase().replaceAll(" ", "-")}`}>
-          <h2 id={`nav-${group.label.toLowerCase().replaceAll(" ", "-")}`} className="px-3 text-xs font-black uppercase text-slate-500">
+        <section className="app-shell__nav-group" key={group.label} aria-labelledby={`nav-${group.label.toLowerCase().replaceAll(" ", "-")}`}>
+          <h2 id={`nav-${group.label.toLowerCase().replaceAll(" ", "-")}`} className="app-shell__nav-heading px-3 text-xs font-black uppercase text-slate-500">
             {group.label}
           </h2>
-          <div className="mt-2 grid gap-1">
+          <div className="app-shell__nav-items mt-2 grid gap-1">
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = itemIsActive(item, pathname);
@@ -151,13 +151,13 @@ export function AppShell({ children, role = "manager" }: { children: React.React
                   key={`${group.label}-${item.href}`}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold transition ${
+                  className={`app-shell__nav-link flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold transition ${
                     active ? "bg-purple-700 text-white shadow-sm" : "text-purple-900 hover:bg-purple-50"
                   }`}
                   onClick={closeMenu}
                 >
-                  <Icon aria-hidden className="h-5 w-5 shrink-0" />
-                  {item.label}
+                  <Icon aria-hidden className="app-shell__nav-icon h-5 w-5 shrink-0" />
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
@@ -168,29 +168,29 @@ export function AppShell({ children, role = "manager" }: { children: React.React
   );
 
   const signOut = (
-    <form action={signOutAction} onSubmit={() => window.localStorage.removeItem("jan-staff-manager-session")}>
-      <Button type="submit" variant="ghost" className="w-full justify-start">
+    <form className="app-shell__signout" action={signOutAction} onSubmit={() => window.localStorage.removeItem("jan-staff-manager-session")}>
+      <Button type="submit" variant="ghost" className="w-full justify-start app-shell__signout-button">
         <LogOut className="h-4 w-4" /> Sign out
       </Button>
     </form>
   );
 
   return (
-    <div className="min-h-screen bg-lavender">
-      <aside className="fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-purple-100 bg-white/95 lg:flex">
-        <div className="border-b border-purple-100 p-5"><BrandMark /></div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">{menu}</div>
-        <div className="border-t border-purple-100 p-5">{signOut}</div>
+    <div className="app-shell min-h-screen bg-lavender">
+      <aside className="app-shell__sidebar fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-purple-100 bg-white/95 lg:flex">
+        <div className="app-shell__sidebar-brand border-b border-purple-100 p-5"><BrandMark /></div>
+        <div className="app-shell__sidebar-menu min-h-0 flex-1 overflow-y-auto px-5 py-6">{menu}</div>
+        <div className="app-shell__sidebar-footer border-t border-purple-100 p-5">{signOut}</div>
       </aside>
-      <header className="sticky top-0 z-30 border-b border-purple-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between">
+      <header className="app-shell__mobile-header sticky top-0 z-30 border-b border-purple-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
+        <div className="app-shell__mobile-header-inner flex items-center justify-between">
           <BrandMark compact />
           <button
             ref={menuButtonRef}
             type="button"
             aria-label="Open navigation"
             aria-expanded={open}
-            className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-purple-900 shadow-sm ring-1 ring-purple-200 transition hover:bg-purple-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700"
+            className="app-shell__menu-button inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-purple-900 shadow-sm ring-1 ring-purple-200 transition hover:bg-purple-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700"
             onClick={() => setOpen(true)}
           >
             <Menu className="h-5 w-5" />
@@ -198,26 +198,26 @@ export function AppShell({ children, role = "manager" }: { children: React.React
         </div>
       </header>
       {open ? (
-        <div className="fixed inset-0 z-40 bg-purple-950/30 lg:hidden" role="presentation" onClick={closeMenu}>
+        <div className="app-shell__drawer-backdrop fixed inset-0 z-40 bg-purple-950/30 lg:hidden" role="presentation" onClick={closeMenu}>
           <div
             ref={drawerRef}
             role="dialog"
             aria-modal="true"
             aria-label="Navigation"
-            className="flex h-full w-[min(22rem,90vw)] flex-col bg-white shadow-2xl"
+            className="app-shell__drawer flex h-full w-[min(22rem,90vw)] flex-col bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-purple-100 p-5">
+            <div className="app-shell__drawer-header flex items-center justify-between border-b border-purple-100 p-5">
               <BrandMark />
               <Button variant="ghost" aria-label="Close navigation" onClick={closeMenu}><X className="h-5 w-5" /></Button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">{menu}</div>
-            <div className="border-t border-purple-100 p-5">{signOut}</div>
+            <div className="app-shell__drawer-menu min-h-0 flex-1 overflow-y-auto p-5">{menu}</div>
+            <div className="app-shell__drawer-footer border-t border-purple-100 p-5">{signOut}</div>
           </div>
         </div>
       ) : null}
-      <main className="px-4 py-6 lg:ml-72 lg:px-8">
-        <div className="mx-auto max-w-7xl">{children}</div>
+      <main className="app-shell__main px-4 py-6 lg:ml-72 lg:px-8">
+        <div className="app-shell__content mx-auto max-w-7xl">{children}</div>
       </main>
     </div>
   );

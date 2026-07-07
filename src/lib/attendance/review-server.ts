@@ -40,6 +40,30 @@ type ClockRow = {
   manager_correction: boolean;
 };
 
+type ManagerHoursPreviewRpcRow = {
+  staff_id: string;
+  display_name: string;
+  full_name: string;
+  completed_minutes: number | null;
+  open_shift_count: number | null;
+};
+
+export type ManagerHoursPreviewRow = {
+  staffId: string;
+  displayName: string;
+  fullName: string;
+  completedMinutes: number;
+  openShiftCount: number;
+};
+
+export type ManagerHoursPreview = {
+  rangeStart: string;
+  rangeEnd: string;
+  currentWeekStart: string;
+  currentWeekEnd: string;
+  rows: ManagerHoursPreviewRow[];
+};
+
 function timeMinutes(value: string | null): number | null {
   if (!value) return null;
   const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
@@ -56,6 +80,20 @@ function eventTimeMinutes(value: string | null): number | null {
   }).formatToParts(new Date(value));
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return Number(values.hour) * 60 + Number(values.minute);
+}
+
+function validIsoDate(value: string | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+export function mapManagerHoursPreview(rows: ManagerHoursPreviewRpcRow[]): ManagerHoursPreviewRow[] {
+  return rows.map((row) => ({
+    staffId: row.staff_id,
+    displayName: row.display_name,
+    fullName: row.full_name,
+    completedMinutes: row.completed_minutes ?? 0,
+    openShiftCount: row.open_shift_count ?? 0,
+  }));
 }
 
 export function buildAttendanceReviewRow(input: {
@@ -190,5 +228,30 @@ export async function loadAttendanceReviewReadiness(from: string, to: string): P
   return {
     unresolved: [...workedDays].filter((key) => !reviewed.has(key)).length,
     pendingRequests: requests.data?.length ?? 0,
+  };
+}
+
+export async function loadManagerHoursPreview(from?: string, to?: string): Promise<ManagerHoursPreview> {
+  await requireAccount(["manager"]);
+  const supabase = await createSupabaseServerClient();
+  const today = isoDateInLondon();
+  const { data: weekRange, error: weekError } = await supabase.rpc("get_current_work_week_range", { reference_date: today });
+  const weekRow = Array.isArray(weekRange) ? weekRange[0] : null;
+  if (weekError || !weekRow?.start_date || !weekRow?.end_date) throw new Error("Current work week range could not be loaded.");
+
+  const rangeStart = validIsoDate(from) ? from : String(weekRow.start_date);
+  const rangeEnd = validIsoDate(to) ? to : String(weekRow.end_date);
+  const { data, error } = await supabase.rpc("get_manager_hours_preview", {
+    range_start: rangeStart,
+    range_end: rangeEnd,
+  });
+  if (error) throw new Error("Manager hours preview could not be loaded.");
+
+  return {
+    rangeStart,
+    rangeEnd,
+    currentWeekStart: String(weekRow.start_date),
+    currentWeekEnd: String(weekRow.end_date),
+    rows: mapManagerHoursPreview((data ?? []) as ManagerHoursPreviewRpcRow[]),
   };
 }
