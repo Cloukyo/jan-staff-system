@@ -25,6 +25,7 @@
 *.pem
 .vs/
 .codex-remote-attachments/
+.worktrees/
 
 # debug
 npm-debug.log*
