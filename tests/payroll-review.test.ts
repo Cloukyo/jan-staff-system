@@ -148,7 +148,9 @@ describe("payroll Excel export", () => {
     const buffer = await createPayrollPreparationWorkbook([preparation], "2026-06-01", "2026-06-30");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
-    expect(workbook.getWorksheet("Payroll Preparation")?.rowCount).toBe(2);
+    const preparationSheet = workbook.getWorksheet("Payroll Preparation");
+    expect(preparationSheet?.rowCount).toBe(2);
+    expect(preparationSheet?.getCell("N2").value).toBeNull();
     expect(workbook.getWorksheet("Read Me")).toBeTruthy();
   });
 
@@ -227,6 +229,7 @@ describe("payroll Excel export", () => {
 
     const daily = workbook.getWorksheet("Daily Clocking")!;
     expect(daily.getCell("C2").value).toBeInstanceOf(Date);
+    expect((daily.getCell("C2").value as Date).toISOString()).toBe("2026-07-01T12:00:00.000Z");
     expect(daily.getCell("C2").numFmt).toBe("dd/mm/yyyy");
     expect(daily.getCell("H2").value).toBe("08:00");
     expect(daily.getCell("I2").value).toBe("16:00");
@@ -237,7 +240,7 @@ describe("payroll Excel export", () => {
     expect(daily.getCell("N2").value).toBe("corrected");
     expect(daily.getCell("O2").value).toBe("Manager corrected arrival");
     expect(daily.getCell("C3").value).toBeInstanceOf(Date);
-    expect(daily.getCell("H3").value).toBe("");
+    expect(daily.getCell("H3").value).toBeNull();
     expect(daily.getCell("M3").value).toBe(0);
   });
 });

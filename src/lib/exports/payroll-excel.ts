@@ -55,14 +55,14 @@ export async function createPayrollPreparationWorkbook(
       end: periodEnd,
       payType: row.payType ?? "",
       hoursBasis: row.hoursBasis?.replaceAll("_", " ") ?? "",
-      contracted: row.contractedWeeklyHours ?? "",
+      contracted: row.contractedWeeklyHours,
       raw: decimalHours(row.recordedMinutes),
       reviewed: decimalHours(row.adjustedMinutes),
       ordinary: decimalHours(row.ordinaryMinutes),
       overtime: decimalHours(row.overtimeMinutes),
-      hourlyRate: row.hourlyRate ?? "",
-      estimatedGross: row.estimatedGross ?? "",
-      salaryBasis: row.salaryBasis ?? "",
+      hourlyRate: row.hourlyRate,
+      estimatedGross: row.estimatedGross,
+      salaryBasis: row.salaryBasis,
       reviewStatus: row.reviewStatus.replaceAll("_", " "),
       adjustments: row.adjustmentNotes.join("; "),
       warnings: row.warnings.join("; "),
@@ -79,6 +79,7 @@ export async function createPayrollPreparationWorkbook(
 
   const planned = workbook.addWorksheet("Planned Rota", {
     views: [{ state: "frozen", xSplit: 2, ySplit: 2 }],
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
   const totalColumnNumber = detail.dates.length + 3;
   planned.mergeCells(1, 1, 1, totalColumnNumber);
@@ -135,6 +136,7 @@ export async function createPayrollPreparationWorkbook(
 
   const daily = workbook.addWorksheet("Daily Clocking", {
     views: [{ state: "frozen", xSplit: 2, ySplit: 1 }],
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
   daily.columns = [
     { header: "Staff name", key: "staff", width: 30 },
@@ -158,20 +160,20 @@ export async function createPayrollPreparationWorkbook(
     daily.addRow({
       staff: row.fullName,
       role: row.employmentRole,
-      date: parseISO(row.date),
-      plannedStart: row.plannedStart ?? "",
-      plannedEnd: row.plannedEnd ?? "",
+      date: new Date(`${row.date}T12:00:00.000Z`),
+      plannedStart: row.plannedStart,
+      plannedEnd: row.plannedEnd,
       plannedBreak: row.plannedBreakMinutes,
       plannedHours: decimalHours(row.plannedMinutes),
-      originalIns: row.originalClockIns.map(formatTimeUk).join(", "),
-      originalOuts: row.originalClockOuts.map(formatTimeUk).join(", "),
-      managerIns: row.managerClockIns.map(formatTimeUk).join(", "),
-      managerOuts: row.managerClockOuts.map(formatTimeUk).join(", "),
+      originalIns: row.originalClockIns.length ? row.originalClockIns.map(formatTimeUk).join(", ") : null,
+      originalOuts: row.originalClockOuts.length ? row.originalClockOuts.map(formatTimeUk).join(", ") : null,
+      managerIns: row.managerClockIns.length ? row.managerClockIns.map(formatTimeUk).join(", ") : null,
+      managerOuts: row.managerClockOuts.length ? row.managerClockOuts.map(formatTimeUk).join(", ") : null,
       rawHours: decimalHours(row.rawWorkedMinutes),
       workedHours: decimalHours(row.workedMinutes),
       reviewStatus: row.reviewStatus.replaceAll("_", " "),
-      reviewReason: row.reviewReason ?? "",
-      warnings: row.warnings.join("; "),
+      reviewReason: row.reviewReason,
+      warnings: row.warnings.length ? row.warnings.join("; ") : null,
     });
   }
   daily.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
