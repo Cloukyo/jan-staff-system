@@ -279,6 +279,76 @@ describe("payroll Excel export", () => {
     expect(workbookXml).toContain('fullCalcOnLoad="1"');
   });
 
+  it("creates a planned-only workbook without attendance-derived sheets", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-07-01",
+      "2026-07-10",
+      { unresolved: 12, pendingRequests: 0 },
+      weeklyDetail,
+      { hours: "planned" },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Week 1",
+      "Week 2",
+      "Read Me",
+    ]);
+    expect(workbook.getWorksheet("Pay Summary")).toBeUndefined();
+    expect(workbook.getWorksheet("Daily Clocking")).toBeUndefined();
+    const week1 = workbook.getWorksheet("Week 1")!;
+    expect(week1.getCell("C2").value).toBe("Wed 01/07");
+    expect(week1.getCell("G2").value).toBe("Sun 05/07");
+    expect(week1.getCell("A3").value).toBe("Staff Member");
+    expect(week1.getCell("H3").value).toEqual({
+      formula: "SUM(C3:G3)",
+      result: 15.5,
+    });
+    expect(week1.getRow(2).values).not.toContain("Hours type");
+    expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
+    const readMe = workbook.getWorksheet("Read Me")!;
+    expect(readMe.getColumn(1).values.map(String).join(" ")).toContain(
+      "Planned hours only",
+    );
+  });
+
+  it("creates a clocked-only workbook with attendance support sheets", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-07-01",
+      "2026-07-10",
+      { unresolved: 12, pendingRequests: 0 },
+      weeklyDetail,
+      { hours: "clocked" },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Pay Summary",
+      "Week 1",
+      "Week 2",
+      "Daily Clocking",
+      "Read Me",
+    ]);
+    const week1 = workbook.getWorksheet("Week 1")!;
+    expect(week1.getCell("C2").value).toBe("Wed 01/07");
+    expect(week1.getCell("G2").value).toBe("Sun 05/07");
+    expect(week1.getCell("A3").value).toBe("Staff Member");
+    expect(week1.getCell("H3").value).toEqual({
+      formula: "SUM(C3:G3)",
+      result: 8,
+    });
+    expect(week1.getRow(2).values).not.toContain("Hours type");
+    expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
+    const readMe = workbook.getWorksheet("Read Me")!;
+    expect(readMe.getColumn(1).values.map(String).join(" ")).toContain(
+      "Clocked hours only",
+    );
+  });
+
   it("adds daily clocking rows with original and manager events in separate columns", async () => {
     const buffer = await createPayrollPreparationWorkbook(
       [preparation],

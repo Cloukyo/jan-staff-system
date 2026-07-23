@@ -2,6 +2,11 @@ import ExcelJS from "exceljs";
 import { format, parseISO } from "date-fns";
 import { formatTimeUk } from "@/lib/dates/format";
 import { splitPayrollDatesIntoWeeks } from "@/lib/exports/payroll-detail";
+import {
+  payrollModeIncludesClocked,
+  payrollModeIncludesPlanned,
+  type PayrollExportHoursMode,
+} from "@/lib/exports/payroll-options";
 import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/types";
 
 const decimalHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
@@ -11,23 +16,35 @@ export type PayrollWorkbookReviewState = {
   pendingRequests: number;
 };
 
+export type PayrollWorkbookOptions = {
+  hours: PayrollExportHoursMode;
+};
+
 export async function createPayrollPreparationWorkbook(
   rows: PayrollPreparationRow[],
   periodStart: string,
   periodEnd: string,
   reviewState: PayrollWorkbookReviewState = { unresolved: 0, pendingRequests: 0 },
   detail: PayrollExportDetail = { dates: [], plannedRows: [], dailyRows: [] },
+  options: PayrollWorkbookOptions = { hours: "both" },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Jan Pre-School Staff System";
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
-  const isUnreviewed = reviewState.unresolved > 0 || reviewState.pendingRequests > 0;
-  const workbookLabel = isUnreviewed
-    ? "UNREVIEWED PAYROLL PREPARATION"
-    : "Jan Pre-School payroll preparation";
+  const includePlanned = payrollModeIncludesPlanned(options.hours);
+  const includeClocked = payrollModeIncludesClocked(options.hours);
+  const isUnreviewed =
+    includeClocked && (reviewState.unresolved > 0 || reviewState.pendingRequests > 0);
+  const workbookLabel =
+    options.hours === "planned"
+      ? "Jan Pre-School planned hours export"
+      : isUnreviewed
+        ? "UNREVIEWED PAYROLL PREPARATION"
+        : "Jan Pre-School payroll preparation";
   workbook.subject = workbookLabel;
-  const sheet = workbook.addWorksheet("Pay Summary", {
+  if (includeClocked) {
+    const sheet = workbook.addWorksheet("Pay Summary", {
     views: [{ state: "frozen", ySplit: 1 }],
   });
   sheet.columns = [
@@ -75,29 +92,35 @@ export async function createPayrollPreparationWorkbook(
   sheet.autoFilter = { from: "A1", to: "Q1" };
   for (const key of ["L", "M", "N"]) sheet.getColumn(key).numFmt = '£#,##0.00';
   for (const key of ["G", "H", "I", "J", "K"]) sheet.getColumn(key).numFmt = "0.00";
-  sheet.eachRow((row, rowNumber) => {
-    row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
-  });
+    sheet.eachRow((row, rowNumber) => {
+      row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
+    });
+  }
 
   const rawMinutesByStaffDate = new Map(
     detail.dailyRows.map((row) => [`${row.staffId}:${row.date}`, row.rawWorkedMinutes]),
   );
   for (const [weekIndex, weekDates] of splitPayrollDatesIntoWeeks(detail.dates).entries()) {
+    const isCombined = options.hours === "both";
+    const firstDateColumnNumber = isCombined ? 4 : 3;
+    const totalColumnNumber = firstDateColumnNumber + weekDates.length;
     const weekly = workbook.addWorksheet(`Week ${weekIndex + 1}`, {
-      views: [{ state: "frozen", xSplit: 3, ySplit: 2 }],
+      views: [{ state: "frozen", xSplit: isCombined ? 3 : 2, ySplit: 2 }],
       pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
-    const totalColumnNumber = weekDates.length + 4;
     weekly.mergeCells(1, 1, 1, totalColumnNumber);
-    weekly.getCell(1, 1).value =
-      "Planned hours deduct rota breaks. Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid.";
+    weekly.getCell(1, 1).value = isCombined
+      ? "Planned hours deduct rota breaks. Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid."
+      : includePlanned
+        ? "Planned hours deduct planned rota breaks."
+        : "Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid.";
     weekly.getCell(1, 1).font = { bold: true, color: { argb: "FF4C1D95" } };
     weekly.getCell(1, 1).alignment = { wrapText: true, vertical: "middle" };
     weekly.getRow(1).height = 32;
     weekly.addRow([
       "Staff name",
       "Role",
-      "Hours type",
+      ...(isCombined ? ["Hours type"] : []),
       ...weekDates.map((date) => format(parseISO(date), "EEE dd/MM")),
       "Weekly total",
     ]);
@@ -109,49 +132,48 @@ export async function createPayrollPreparationWorkbook(
       const clockedMinutes = weekDates.map(
         (date) => rawMinutesByStaffDate.get(`${staffRow.staffId}:${date}`) ?? 0,
       );
-      const plannedRow = weekly.addRow([
-        staffRow.fullName,
-        staffRow.employmentRole,
-        "Planned hours",
-        ...plannedMinutes.map(decimalHours),
-        null,
-      ]);
-      const clockedRow = weekly.addRow([
-        null,
-        null,
-        "Clocked hours",
-        ...clockedMinutes.map(decimalHours),
-        null,
-      ]);
-      weekly.mergeCells(plannedRow.number, 1, clockedRow.number, 1);
-      weekly.mergeCells(plannedRow.number, 2, clockedRow.number, 2);
+      const firstDateColumn = weekly.getColumn(firstDateColumnNumber).letter;
+      const lastDateColumn = weekly.getColumn(totalColumnNumber - 1).letter;
+      const addHoursRow = (
+        label: "Planned hours" | "Clocked hours",
+        minutes: number[],
+        includeIdentity: boolean,
+      ) => {
+        const row = weekly.addRow([
+          includeIdentity ? staffRow.fullName : null,
+          includeIdentity ? staffRow.employmentRole : null,
+          ...(isCombined ? [label] : []),
+          ...minutes.map(decimalHours),
+          null,
+        ]);
+        row.getCell(totalColumnNumber).value = {
+          formula: `SUM(${firstDateColumn}${row.number}:${lastDateColumn}${row.number})`,
+          result: decimalHours(minutes.reduce((sum, value) => sum + value, 0)),
+        };
+        row.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: label === "Planned hours" ? "FFF5F3FF" : "FFFAFAFA" },
+        };
+        return row;
+      };
 
-      const firstDateColumn = weekly.getColumn(4).letter;
-      const lastDateColumn = weekly.getColumn(weekDates.length + 3).letter;
-      plannedRow.getCell(totalColumnNumber).value = {
-        formula: `SUM(${firstDateColumn}${plannedRow.number}:${lastDateColumn}${plannedRow.number})`,
-        result: decimalHours(plannedMinutes.reduce((sum, minutes) => sum + minutes, 0)),
-      };
-      clockedRow.getCell(totalColumnNumber).value = {
-        formula: `SUM(${firstDateColumn}${clockedRow.number}:${lastDateColumn}${clockedRow.number})`,
-        result: decimalHours(clockedMinutes.reduce((sum, minutes) => sum + minutes, 0)),
-      };
-      plannedRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFF5F3FF" },
-      };
-      clockedRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFFAFAFA" },
-      };
+      if (isCombined) {
+        const plannedRow = addHoursRow("Planned hours", plannedMinutes, true);
+        const clockedRow = addHoursRow("Clocked hours", clockedMinutes, false);
+        weekly.mergeCells(plannedRow.number, 1, clockedRow.number, 1);
+        weekly.mergeCells(plannedRow.number, 2, clockedRow.number, 2);
+      } else if (includePlanned) {
+        addHoursRow("Planned hours", plannedMinutes, true);
+      } else {
+        addHoursRow("Clocked hours", clockedMinutes, true);
+      }
     }
 
     weekly.getColumn(1).width = 30;
     weekly.getColumn(2).width = 26;
-    weekly.getColumn(3).width = 18;
-    for (let column = 4; column < totalColumnNumber; column += 1) {
+    if (isCombined) weekly.getColumn(3).width = 18;
+    for (let column = firstDateColumnNumber; column < totalColumnNumber; column += 1) {
       weekly.getColumn(column).width = 13;
       weekly.getColumn(column).numFmt = "0.00";
     }
@@ -168,7 +190,8 @@ export async function createPayrollPreparationWorkbook(
     });
   }
 
-  const daily = workbook.addWorksheet("Daily Clocking", {
+  if (includeClocked) {
+    const daily = workbook.addWorksheet("Daily Clocking", {
     views: [{ state: "frozen", xSplit: 2, ySplit: 1 }],
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
@@ -219,26 +242,40 @@ export async function createPayrollPreparationWorkbook(
   daily.autoFilter = { from: "A1", to: "P1" };
   daily.getColumn("C").numFmt = "dd/mm/yyyy";
   for (const column of ["G", "L", "M"]) daily.getColumn(column).numFmt = "0.00";
-  daily.eachRow((row, rowNumber) => {
-    row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
-  });
+    daily.eachRow((row, rowNumber) => {
+      row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
+    });
+  }
 
   const notes = workbook.addWorksheet("Read Me");
+  const hoursModeLabel =
+    options.hours === "planned"
+      ? "Planned hours only"
+      : options.hours === "clocked"
+        ? "Clocked hours only"
+        : "Both planned and clocked hours";
   notes.addRows([
     [workbookLabel],
     [`Period: ${periodStart} to ${periodEnd}`],
-    ...(isUnreviewed
-      ? [
-          [`${reviewState.unresolved} worked day(s) are not reviewed.`],
-          [`${reviewState.pendingRequests} staff correction request(s) remain open.`],
-          ["Check and correct these hours manually before using them for payroll."],
-        ]
-      : [["This workbook contains manager-reviewed preparation figures only."]]),
+    [`Hours included: ${hoursModeLabel}`],
+    ...(options.hours === "planned"
+      ? [["This workbook contains rota planned hours only."]]
+      : isUnreviewed
+        ? [
+            [`${reviewState.unresolved} worked day(s) are not reviewed.`],
+            [`${reviewState.pendingRequests} staff correction request(s) remain open.`],
+            ["Check and correct these hours manually before using them for payroll."],
+          ]
+        : [["This workbook contains manager-reviewed preparation figures only."]]),
     ["It does not calculate PAYE, National Insurance, pensions, student loans or payslips."],
-    ["Original clock events remain unchanged. Manager correction events and review notes are shown separately."],
+    ...(includeClocked
+      ? [["Original clock events remain unchanged. Manager correction events and review notes are shown separately."]]
+      : []),
     ["Each numbered worksheet covers one Monday-to-Sunday week within the selected period."],
-    ["Planned hours deduct planned rota breaks."],
-    ["Clocked hours sum original completed clock-in/out sessions. Clocked-out breaks are unpaid."],
+    ...(includePlanned ? [["Planned hours deduct planned rota breaks."]] : []),
+    ...(includeClocked
+      ? [["Clocked hours sum original completed clock-in/out sessions. Clocked-out breaks are unpaid."]]
+      : []),
   ]);
   notes.getColumn(1).width = 100;
   notes.getRow(1).font = { bold: true, size: 14 };
