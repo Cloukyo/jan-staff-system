@@ -11,7 +11,8 @@ import {
   findCertificate,
   overallComplianceIndicator,
 } from "@/lib/calculations/compliance";
-import { createStaffProfileAction, quickUpdateStaffProfileAction } from "@/lib/compliance/actions";
+import { quickUpdateStaffProfileAction } from "@/lib/compliance/actions";
+import { createStaffProfileAction } from "@/lib/staff/actions";
 import type { ComplianceDataset } from "@/lib/compliance/repository";
 import { formatDateUk } from "@/lib/dates/format";
 

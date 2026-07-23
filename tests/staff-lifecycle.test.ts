@@ -33,3 +33,29 @@ describe("staff lifecycle database operation", () => {
     expect(migration).not.toMatch(/if p_active then[\s\S]*update public\.staff_kiosk_settings/);
   });
 });
+
+describe("production staff lifecycle actions", () => {
+  const actions = source("src/lib/staff/actions.ts");
+  const complianceActions = source("src/lib/compliance/actions.ts");
+
+  it("owns creation and lifecycle actions in the staff module", () => {
+    expect(actions).toContain("createStaffProfileAction");
+    expect(actions).toContain("deactivateStaffProfileAction");
+    expect(actions).toContain("reactivateStaffProfileAction");
+    expect(complianceActions).not.toContain("createStaffProfileAction");
+  });
+
+  it("requires manager access and rejects current-manager deactivation", () => {
+    expect(actions).toContain('requireAccount(["manager"])');
+    expect(actions).toContain("manager.staffId === staffId");
+    expect(actions).toContain("You cannot deactivate your own staff profile.");
+  });
+
+  it("uses the atomic RPC and refreshes affected manager routes", () => {
+    expect(actions).toContain('rpc("set_staff_profile_active"');
+    expect(actions).toContain('revalidatePath("/staff")');
+    expect(actions).toContain('revalidatePath("/accounts")');
+    expect(actions).toContain('revalidatePath("/settings/kiosk")');
+    expect(actions).toContain('revalidatePath("/compliance")');
+  });
+});
