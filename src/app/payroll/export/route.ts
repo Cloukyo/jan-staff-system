@@ -18,24 +18,35 @@ export async function GET(request: Request) {
   const includeInactive = params.get("inactive") === "1";
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
+  const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
   const [staff, events, reviews, readiness] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionClockEvents(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
   ]);
-  if (readiness.unresolved > 0 || readiness.pendingRequests > 0) {
-    return NextResponse.json({ error: "Attendance review must be completed before export." }, { status: 409 });
+  if ((readiness.unresolved > 0 || readiness.pendingRequests > 0) && !confirmUnreviewed) {
+    return NextResponse.json(
+      { error: "Confirm the unreviewed payroll export before downloading." },
+      { status: 409 },
+    );
   }
   const rows = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
     .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews))
     .filter((row) => includeZero || row.adjustedMinutes > 0);
-  const workbook = await createPayrollPreparationWorkbook(rows, periodStart, periodEnd);
+  const workbook = await createPayrollPreparationWorkbook(
+    rows,
+    periodStart,
+    periodEnd,
+    readiness,
+  );
+  const unreviewedPrefix =
+    readiness.unresolved > 0 || readiness.pendingRequests > 0 ? "unreviewed-" : "";
   return new NextResponse(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="jan-payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
+      "Content-Disposition": `attachment; filename="jan-${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
       "Cache-Control": "private, no-store",
     },
   });
