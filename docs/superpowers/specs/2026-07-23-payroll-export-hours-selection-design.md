@@ -58,6 +58,12 @@ does not require the unreviewed-attendance confirmation.
 The default remains the current full workbook. Existing filtering for dates,
 inactive staff, manager profiles, and zero hours remains unchanged.
 
+When **Include zero hours** is off, the relevant selected hours determine whether a
+staff member is included. Planned mode uses planned rota minutes, clocked mode uses
+clocked minutes, and both mode includes staff with either planned or clocked minutes.
+This ensures staff scheduled later in an unfinished month are not removed from a
+planned-hours export merely because they have not clocked those shifts yet.
+
 Original clock events and manager corrections remain unchanged. Clocked weekly
 hours continue to use original completed clock-in/out sessions and exclude
 clocked-out breaks.
@@ -75,6 +81,7 @@ Automated tests will verify:
 - both-mode exports preserve the current two-subrow weekly layout;
 - planned-only exports bypass the unreviewed-attendance confirmation, while modes
   containing clocked hours still require it;
+- zero-hours filtering uses the hours type selected for the export;
 - weekly formulas and cached totals remain correct in every mode.
 
 The full lint, type-check, test, and production-build commands will run before
