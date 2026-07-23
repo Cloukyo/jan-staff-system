@@ -265,6 +265,20 @@ describe("payroll Excel export", () => {
     expect(week1.getCell("I3").value).toEqual({ formula: "SUM(D3:H3)", result: 15.5 });
     expect(week1.getCell("I4").value).toEqual({ formula: "SUM(D4:H4)", result: 8 });
     expect(week1.getCell("I3").numFmt).toBe("0.00");
+    expect(week1.getCell("J2").value).toBe("Hourly pay");
+    expect(week1.getCell("K2").value).toBe("Estimated pay");
+    expect(week1.getCell("J3").value).toBe(12);
+    expect(week1.getCell("J3").isMerged).toBe(true);
+    expect(week1.getCell("K3").value).toEqual({
+      formula: 'IF(J3="","",I3*J3)',
+      result: 186,
+    });
+    expect(week1.getCell("K4").value).toEqual({
+      formula: 'IF(J3="","",I4*J3)',
+      result: 96,
+    });
+    expect(week1.getCell("J3").numFmt).toBe('"£"#,##0.00');
+    expect(week1.getCell("K3").numFmt).toBe('"£"#,##0.00');
     expect(week1.getCell("A3").isMerged).toBe(true);
     expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 3, ySplit: 2 });
 
@@ -306,6 +320,13 @@ describe("payroll Excel export", () => {
       formula: "SUM(C3:G3)",
       result: 15.5,
     });
+    expect(week1.getCell("I2").value).toBe("Hourly pay");
+    expect(week1.getCell("J2").value).toBe("Estimated pay");
+    expect(week1.getCell("I3").value).toBe(12);
+    expect(week1.getCell("J3").value).toEqual({
+      formula: 'IF(I3="","",H3*I3)',
+      result: 186,
+    });
     expect(week1.getRow(2).values).not.toContain("Hours type");
     expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
     const readMe = workbook.getWorksheet("Read Me")!;
@@ -341,12 +362,46 @@ describe("payroll Excel export", () => {
       formula: "SUM(C3:G3)",
       result: 8,
     });
+    expect(week1.getCell("I3").value).toBe(12);
+    expect(week1.getCell("J3").value).toEqual({
+      formula: 'IF(I3="","",H3*I3)',
+      result: 96,
+    });
     expect(week1.getRow(2).values).not.toContain("Hours type");
     expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
     const readMe = workbook.getWorksheet("Read Me")!;
     expect(readMe.getColumn(1).values.map(String).join(" ")).toContain(
       "Clocked hours only",
     );
+  });
+
+  it.each([
+    { label: "missing", payrollRow: { ...preparation, hourlyRate: null } },
+    {
+      label: "salaried",
+      payrollRow: {
+        ...preparation,
+        payType: "salaried" as const,
+        hourlyRate: null,
+      },
+    },
+  ])("leaves the $label hourly rate editable and blank", async ({ payrollRow }) => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [payrollRow],
+      "2026-07-01",
+      "2026-07-10",
+      { unresolved: 0, pendingRequests: 0 },
+      weeklyDetail,
+      { hours: "planned" },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+    const week1 = workbook.getWorksheet("Week 1")!;
+
+    expect(week1.getCell("I3").value).toBeNull();
+    expect(week1.getCell("J3").value).toMatchObject({
+      formula: 'IF(I3="","",H3*I3)',
+    });
   });
 
   it("adds daily clocking rows with original and manager events in separate columns", async () => {
