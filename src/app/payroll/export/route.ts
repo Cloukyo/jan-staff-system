@@ -18,14 +18,18 @@ export async function GET(request: Request) {
   const includeInactive = params.get("inactive") === "1";
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
+  const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
   const [staff, events, reviews, readiness] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionClockEvents(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
   ]);
-  if (readiness.unresolved > 0 || readiness.pendingRequests > 0) {
-    return NextResponse.json({ error: "Attendance review must be completed before export." }, { status: 409 });
+  if ((readiness.unresolved > 0 || readiness.pendingRequests > 0) && !confirmUnreviewed) {
+    return NextResponse.json(
+      { error: "Confirm the unreviewed payroll export before downloading." },
+      { status: 409 },
+    );
   }
   const rows = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
