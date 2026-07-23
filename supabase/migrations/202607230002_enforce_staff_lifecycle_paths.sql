@@ -1,3 +1,30 @@
+do $$
+declare
+  inconsistent_active_accounts bigint;
+  inconsistent_kiosk_settings bigint;
+begin
+  select count(*)
+  into inconsistent_active_accounts
+  from public.staff_profiles profile
+  join public.staff_accounts account on account.staff_id = profile.id
+  where profile.active is not true
+    and account.active is true;
+
+  select count(*)
+  into inconsistent_kiosk_settings
+  from public.staff_profiles profile
+  join public.staff_kiosk_settings kiosk on kiosk.staff_id = profile.id
+  where profile.active is not true
+    and kiosk.kiosk_enabled is true;
+
+  if inconsistent_active_accounts > 0 or inconsistent_kiosk_settings > 0 then
+    raise exception 'Staff lifecycle migration is blocked until inconsistent access is remediated. Found % active account link(s) and % kiosk access setting(s) for inactive staff profiles.',
+      inconsistent_active_accounts,
+      inconsistent_kiosk_settings;
+  end if;
+end;
+$$;
+
 revoke update on table public.staff_profiles from authenticated;
 
 grant update (

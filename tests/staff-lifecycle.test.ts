@@ -72,6 +72,24 @@ describe("staff lifecycle database operation", () => {
     expect(enforcementMigration).toContain("Reactivate the staff profile before enabling login.");
     expect(enforcementMigration).toMatch(/before insert or update of active, staff_id\s+on public\.staff_accounts/i);
   });
+
+  it("blocks installation when an inactive profile has an active account", () => {
+    expect(enforcementMigration).toMatch(
+      /select count\(\*\)[\s\S]*from public\.staff_profiles profile[\s\S]*join public\.staff_accounts account on account\.staff_id = profile\.id[\s\S]*where profile\.active is not true[\s\S]*and account\.active is true/i,
+    );
+  });
+
+  it("blocks installation when an inactive profile has kiosk access", () => {
+    expect(enforcementMigration).toMatch(
+      /select count\(\*\)[\s\S]*from public\.staff_profiles profile[\s\S]*join public\.staff_kiosk_settings kiosk on kiosk\.staff_id = profile\.id[\s\S]*where profile\.active is not true[\s\S]*and kiosk\.kiosk_enabled is true/i,
+    );
+  });
+
+  it("reports both preflight counts before installing lifecycle enforcement", () => {
+    expect(enforcementMigration).toContain("if inconsistent_active_accounts > 0 or inconsistent_kiosk_settings > 0 then");
+    expect(enforcementMigration).toContain("Staff lifecycle migration is blocked until inconsistent access is remediated.");
+    expect(enforcementMigration.indexOf("select count(*)")).toBeLessThan(enforcementMigration.indexOf("revoke update on table public.staff_profiles"));
+  });
 });
 
 describe("production staff lifecycle actions", () => {
@@ -136,7 +154,9 @@ describe("production staff lifecycle interface", () => {
   it("shows explicit deactivate, confirmation and reactivate controls", () => {
     expect(staffScreen).toContain("Deactivate staff member");
     expect(staffScreen).toContain("Confirm deactivation");
-    expect(staffScreen).toContain("History will be preserved");
+    expect(staffScreen).toContain("removed from active staff, rota and kiosk lists");
+    expect(staffScreen).toContain("Attendance, rota, pay, audit and compliance history remains preserved");
+    expect(staffScreen).not.toContain("—");
     expect(staffScreen).toContain("Reactivate staff member");
     expect(staffScreen).toContain("Login and kiosk access will remain disabled");
   });
