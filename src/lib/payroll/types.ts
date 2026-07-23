@@ -49,6 +49,50 @@ export type PayrollAttendanceReview = {
   reason: string | null;
 };
 
+export type PayrollRotaShift = {
+  id: string;
+  staffId: string;
+  shiftDate: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  status: "scheduled" | "cancelled" | "completed";
+  archivedAt: string | null;
+};
+
+export type PayrollPlannedRow = {
+  staffId: string;
+  fullName: string;
+  employmentRole: string;
+  plannedMinutesByDate: Record<string, number>;
+};
+
+export type PayrollDailyRow = {
+  staffId: string;
+  fullName: string;
+  employmentRole: string;
+  date: string;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  plannedBreakMinutes: number;
+  plannedMinutes: number;
+  originalClockIns: string[];
+  originalClockOuts: string[];
+  managerClockIns: string[];
+  managerClockOuts: string[];
+  rawWorkedMinutes: number;
+  workedMinutes: number;
+  reviewStatus: PayrollAttendanceReview["status"] | "not_reviewed";
+  reviewReason: string | null;
+  warnings: string[];
+};
+
+export type PayrollExportDetail = {
+  dates: string[];
+  plannedRows: PayrollPlannedRow[];
+  dailyRows: PayrollDailyRow[];
+};
+
 export type PayrollPreparationRow = {
   staffId: string;
   fullName: string;
