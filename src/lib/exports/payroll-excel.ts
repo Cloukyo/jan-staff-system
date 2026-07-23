@@ -100,20 +100,28 @@ export async function createPayrollPreparationWorkbook(
   const rawMinutesByStaffDate = new Map(
     detail.dailyRows.map((row) => [`${row.staffId}:${row.date}`, row.rawWorkedMinutes]),
   );
+  const hourlyRateByStaffId = new Map(
+    rows.map((row) => [
+      row.staffId,
+      row.payType === "hourly" ? row.hourlyRate : null,
+    ]),
+  );
   for (const [weekIndex, weekDates] of splitPayrollDatesIntoWeeks(detail.dates).entries()) {
     const isCombined = options.hours === "both";
     const firstDateColumnNumber = isCombined ? 4 : 3;
     const totalColumnNumber = firstDateColumnNumber + weekDates.length;
+    const hourlyPayColumnNumber = totalColumnNumber + 1;
+    const estimatedPayColumnNumber = totalColumnNumber + 2;
     const weekly = workbook.addWorksheet(`Week ${weekIndex + 1}`, {
       views: [{ state: "frozen", xSplit: isCombined ? 3 : 2, ySplit: 2 }],
       pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
-    weekly.mergeCells(1, 1, 1, totalColumnNumber);
+    weekly.mergeCells(1, 1, 1, estimatedPayColumnNumber);
     weekly.getCell(1, 1).value = isCombined
-      ? "Planned hours deduct rota breaks. Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid."
+      ? "Planned hours deduct rota breaks. Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll."
       : includePlanned
-        ? "Planned hours deduct planned rota breaks."
-        : "Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid.";
+        ? "Planned hours deduct planned rota breaks. Hourly pay is editable and estimated pay is not completed payroll."
+        : "Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll.";
     weekly.getCell(1, 1).font = { bold: true, color: { argb: "FF4C1D95" } };
     weekly.getCell(1, 1).alignment = { wrapText: true, vertical: "middle" };
     weekly.getRow(1).height = 32;
@@ -123,6 +131,8 @@ export async function createPayrollPreparationWorkbook(
       ...(isCombined ? ["Hours type"] : []),
       ...weekDates.map((date) => format(parseISO(date), "EEE dd/MM")),
       "Weekly total",
+      "Hourly pay",
+      "Estimated pay",
     ]);
 
     for (const staffRow of detail.plannedRows) {
@@ -134,21 +144,38 @@ export async function createPayrollPreparationWorkbook(
       );
       const firstDateColumn = weekly.getColumn(firstDateColumnNumber).letter;
       const lastDateColumn = weekly.getColumn(totalColumnNumber - 1).letter;
+      const hourlyRate = hourlyRateByStaffId.get(staffRow.staffId) ?? null;
       const addHoursRow = (
         label: "Planned hours" | "Clocked hours",
         minutes: number[],
         includeIdentity: boolean,
+        hourlyRateRowNumber?: number,
       ) => {
+        const totalHours = decimalHours(minutes.reduce((sum, value) => sum + value, 0));
         const row = weekly.addRow([
           includeIdentity ? staffRow.fullName : null,
           includeIdentity ? staffRow.employmentRole : null,
           ...(isCombined ? [label] : []),
           ...minutes.map(decimalHours),
           null,
+          hourlyRateRowNumber === undefined ? hourlyRate : null,
+          null,
         ]);
         row.getCell(totalColumnNumber).value = {
           formula: `SUM(${firstDateColumn}${row.number}:${lastDateColumn}${row.number})`,
-          result: decimalHours(minutes.reduce((sum, value) => sum + value, 0)),
+          result: totalHours,
+        };
+        const rateCell = weekly.getCell(
+          hourlyRateRowNumber ?? row.number,
+          hourlyPayColumnNumber,
+        );
+        const totalCell = row.getCell(totalColumnNumber);
+        row.getCell(estimatedPayColumnNumber).value = {
+          formula: `IF(${rateCell.address}="","",${totalCell.address}*${rateCell.address})`,
+          result:
+            hourlyRate === null
+              ? ""
+              : Math.round(totalHours * hourlyRate * 100) / 100,
         };
         row.fill = {
           type: "pattern",
@@ -160,9 +187,20 @@ export async function createPayrollPreparationWorkbook(
 
       if (isCombined) {
         const plannedRow = addHoursRow("Planned hours", plannedMinutes, true);
-        const clockedRow = addHoursRow("Clocked hours", clockedMinutes, false);
+        const clockedRow = addHoursRow(
+          "Clocked hours",
+          clockedMinutes,
+          false,
+          plannedRow.number,
+        );
         weekly.mergeCells(plannedRow.number, 1, clockedRow.number, 1);
         weekly.mergeCells(plannedRow.number, 2, clockedRow.number, 2);
+        weekly.mergeCells(
+          plannedRow.number,
+          hourlyPayColumnNumber,
+          clockedRow.number,
+          hourlyPayColumnNumber,
+        );
       } else if (includePlanned) {
         addHoursRow("Planned hours", plannedMinutes, true);
       } else {
@@ -179,6 +217,10 @@ export async function createPayrollPreparationWorkbook(
     }
     weekly.getColumn(totalColumnNumber).width = 16;
     weekly.getColumn(totalColumnNumber).numFmt = "0.00";
+    weekly.getColumn(hourlyPayColumnNumber).width = 15;
+    weekly.getColumn(hourlyPayColumnNumber).numFmt = '"£"#,##0.00';
+    weekly.getColumn(estimatedPayColumnNumber).width = 17;
+    weekly.getColumn(estimatedPayColumnNumber).numFmt = '"£"#,##0.00';
     weekly.getRow(2).font = { bold: true, color: { argb: "FFFFFFFF" } };
     weekly.getRow(2).fill = {
       type: "pattern",
@@ -276,6 +318,8 @@ export async function createPayrollPreparationWorkbook(
     ...(includeClocked
       ? [["Clocked hours sum original completed clock-in/out sessions. Clocked-out breaks are unpaid."]]
       : []),
+    ["Hourly pay on each weekly sheet is editable. Blank or salaried rates are left blank."],
+    ["Estimated pay is weekly hours multiplied by hourly pay. It is a simple estimate, not completed payroll."],
   ]);
   notes.getColumn(1).width = 100;
   notes.getRow(1).font = { bold: true, size: 14 };
