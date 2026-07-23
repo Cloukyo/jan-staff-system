@@ -61,7 +61,7 @@ describe("production rota validation", () => {
 describe("production rota migration safeguards", () => {
   const migration = readFileSync(resolve("supabase/migrations/202606120003_production_rota.sql"), "utf8");
   const bulkGuards = readFileSync(resolve("supabase/migrations/202606120004_rota_bulk_operation_guards.sql"), "utf8");
-  const copyHours = readFileSync(resolve("supabase/migrations/202607230001_rota_copy_hours.sql"), "utf8");
+  const copyHours = readFileSync(resolve("supabase/migrations/20260723162015_rota_copy_hours.sql"), "utf8");
 
   it("enforces canonical links, time checks and audit fields", () => {
     expect(migration).toContain("references public.staff_profiles(id)");

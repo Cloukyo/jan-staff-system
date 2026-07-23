@@ -61,7 +61,7 @@ export function laterWeekDates(weekStart: string, sourceDate: string): string[] 
 ### Task 2: Atomic database copy operations
 
 **Files:**
-- Create: `supabase/migrations/202607230001_rota_copy_hours.sql`
+- Create: `supabase/migrations/20260723162015_rota_copy_hours.sql`
 - Test: `tests/rota-production.test.ts`
 
 **Interfaces:**
