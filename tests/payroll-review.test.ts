@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
 import { validatePayrollReview, type PayrollImportBatch, type PayrollImportReviewRow } from "@/lib/payroll/review";
@@ -143,12 +144,60 @@ describe("payroll Excel export", () => {
       warnings: [],
     }],
   };
+  const weeklyDetail: PayrollExportDetail = {
+    ...detail,
+    dates: [
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+      "2026-07-04",
+      "2026-07-05",
+      "2026-07-06",
+      "2026-07-07",
+      "2026-07-08",
+      "2026-07-09",
+      "2026-07-10",
+    ],
+    plannedRows: [{
+      ...detail.plannedRows[0],
+      plannedMinutesByDate: {
+        ...detail.plannedRows[0].plannedMinutesByDate,
+        "2026-07-04": 0,
+        "2026-07-05": 0,
+        "2026-07-06": 420,
+        "2026-07-07": 0,
+        "2026-07-08": 0,
+        "2026-07-09": 0,
+        "2026-07-10": 0,
+      },
+    }],
+    dailyRows: [
+      ...detail.dailyRows,
+      {
+        ...detail.dailyRows[0],
+        date: "2026-07-06",
+        plannedStart: "09:00",
+        plannedEnd: "16:30",
+        plannedBreakMinutes: 30,
+        plannedMinutes: 420,
+        originalClockIns: ["2026-07-06T09:00:00+01:00"],
+        originalClockOuts: ["2026-07-06T16:00:00+01:00"],
+        managerClockIns: [],
+        managerClockOuts: [],
+        rawWorkedMinutes: 420,
+        workedMinutes: 420,
+        reviewStatus: "approved",
+        reviewReason: null,
+        warnings: [],
+      },
+    ],
+  };
 
   it("creates a valid workbook with preparation and warning data", async () => {
     const buffer = await createPayrollPreparationWorkbook([preparation], "2026-06-01", "2026-06-30");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
-    const preparationSheet = workbook.getWorksheet("Payroll Preparation");
+    const preparationSheet = workbook.getWorksheet("Pay Summary");
     expect(preparationSheet?.rowCount).toBe(2);
     expect(preparationSheet?.getCell("N2").value).toBeNull();
     expect(workbook.getWorksheet("Read Me")).toBeTruthy();
@@ -170,6 +219,9 @@ describe("payroll Excel export", () => {
     expect(values).toContain("12 worked day(s) are not reviewed");
     expect(values).toContain("2 staff correction request(s) remain open");
     expect(values).toContain("Check and correct these hours manually");
+    expect(values).toContain("Each numbered worksheet covers one Monday-to-Sunday week");
+    expect(values).toContain("Planned hours deduct planned rota breaks");
+    expect(values).toContain("Clocked-out breaks are unpaid");
   });
 
   it("keeps the normal label when attendance is fully reviewed", async () => {
@@ -187,33 +239,44 @@ describe("payroll Excel export", () => {
     );
   });
 
-  it("adds a planned rota matrix with every selected date and formula totals", async () => {
+  it("creates numbered weekly sheets with planned and clocked sub-rows and visible totals", async () => {
     const buffer = await createPayrollPreparationWorkbook(
       [preparation],
       "2026-07-01",
-      "2026-07-03",
+      "2026-07-10",
       { unresolved: 0, pendingRequests: 0 },
-      detail,
+      weeklyDetail,
     );
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
 
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Payroll Preparation",
-      "Planned Rota",
+      "Pay Summary",
+      "Week 1",
+      "Week 2",
       "Daily Clocking",
       "Read Me",
     ]);
-    const planned = workbook.getWorksheet("Planned Rota")!;
-    expect(planned.getCell("A1").value).toContain("future scheduled shifts");
-    expect(planned.getCell("C2").value).toBe("Wed 01/07");
-    expect(planned.getCell("D2").value).toBe("Thu 02/07");
-    expect(planned.getCell("E2").value).toBe("Fri 03/07");
-    expect(planned.getCell("C3").value).toBe(7.5);
-    expect(planned.getCell("D3").value).toBe(8);
-    expect(planned.getCell("F3").formula).toBe("SUM(C3:E3)");
-    expect(planned.getCell("C3").numFmt).toBe("0.00");
-    expect(planned.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
+    const week1 = workbook.getWorksheet("Week 1")!;
+    expect(week1.getCell("D2").value).toBe("Wed 01/07");
+    expect(week1.getCell("H2").value).toBe("Sun 05/07");
+    expect(week1.getCell("C3").value).toBe("Planned hours");
+    expect(week1.getCell("C4").value).toBe("Clocked hours");
+    expect(week1.getCell("I3").value).toEqual({ formula: "SUM(D3:H3)", result: 15.5 });
+    expect(week1.getCell("I4").value).toEqual({ formula: "SUM(D4:H4)", result: 8 });
+    expect(week1.getCell("I3").numFmt).toBe("0.00");
+    expect(week1.getCell("A3").isMerged).toBe(true);
+    expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 3, ySplit: 2 });
+
+    const week2 = workbook.getWorksheet("Week 2")!;
+    expect(week2.getCell("D2").value).toBe("Mon 06/07");
+    expect(week2.getCell("H2").value).toBe("Fri 10/07");
+    expect(week2.getCell("I3").value).toEqual({ formula: "SUM(D3:H3)", result: 7 });
+    expect(week2.getCell("I4").value).toEqual({ formula: "SUM(D4:H4)", result: 7 });
+    expect(workbook.getWorksheet("Planned Rota")).toBeUndefined();
+    const zip = await JSZip.loadAsync(buffer);
+    const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
+    expect(workbookXml).toContain('fullCalcOnLoad="1"');
   });
 
   it("adds daily clocking rows with original and manager events in separate columns", async () => {
