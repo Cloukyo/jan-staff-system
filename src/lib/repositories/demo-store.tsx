@@ -34,6 +34,7 @@ interface DemoRepository {
   reseed: () => void;
   addStaff: (staff: Omit<StaffMember, "id" | "createdAt" | "updatedAt" | "pinHash" | "failedPinAttempts" | "lockedUntil"> & { temporaryPin: string }) => void;
   updateStaff: (staff: StaffMember, rate?: Omit<PayRateHistory, "id" | "createdAt">) => void;
+  setStaffActive: (staffId: string, active: boolean) => void;
   addStaffAccount: (account: Omit<StaffAccount, "id" | "authUserId" | "createdAt" | "updatedAt">) => { ok: boolean; message: string };
   deactivateAccount: (accountId: string) => void;
   submitLeaveRequest: (input: {
@@ -134,6 +135,23 @@ export function migrateState(input: Partial<DemoState>): DemoState {
   };
 }
 
+export function setDemoStaffActive(state: DemoState, staffId: string, active: boolean): DemoState {
+  const updatedAt = new Date().toISOString();
+  return {
+    ...state,
+    staff: state.staff.map((person) =>
+      person.id === staffId
+        ? { ...person, active, employmentStatus: active ? "employed" : "former", updatedAt }
+        : person,
+    ),
+    staffAccounts: active
+      ? state.staffAccounts
+      : state.staffAccounts.map((account) =>
+          account.staffId === staffId ? { ...account, active: false, updatedAt } : account,
+        ),
+  };
+}
+
 export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DemoState>(() => createSeedState());
   const [hydrated, setHydrated] = useState(false);
@@ -213,6 +231,8 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
               ]
             : current.payRates,
         })),
+      setStaffActive: (staffId, active) =>
+        setState((current) => setDemoStaffActive(current, staffId, active)),
       addStaffAccount: (account) => {
         const email = account.email.trim().toLowerCase();
         if (state.staffAccounts.some((item) => item.email.toLowerCase() === email)) return { ok: false, message: "An account already exists for this email address." };

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createSeedState } from "@/lib/demo-data/seed";
+import { setDemoStaffActive } from "@/lib/repositories/demo-store";
 
 function source(path: string): string {
   return readFileSync(resolve(path), "utf8");
@@ -96,5 +98,39 @@ describe("production staff lifecycle interface", () => {
     expect(staffPage).toContain("showStaffLifecycleControls");
     expect(staffPage).toContain("currentStaffId={manager.staffId}");
     expect(payPage).not.toContain("showStaffLifecycleControls");
+  });
+});
+
+describe("demo staff lifecycle", () => {
+  it("deactivates the profile and linked account without deleting history", () => {
+    const state = createSeedState();
+    const staffId = state.staffAccounts[0].staffId;
+    const before = {
+      clockEvents: state.clockEvents.length,
+      rota: state.rota.length,
+      payRates: state.payRates.length,
+    };
+    const next = setDemoStaffActive(state, staffId, false);
+    expect(next.staff.find((person) => person.id === staffId)?.active).toBe(false);
+    expect(next.staffAccounts.find((account) => account.staffId === staffId)?.active).toBe(false);
+    expect(next.clockEvents).toHaveLength(before.clockEvents);
+    expect(next.rota).toHaveLength(before.rota);
+    expect(next.payRates).toHaveLength(before.payRates);
+  });
+
+  it("reactivates only the profile", () => {
+    const state = createSeedState();
+    const staffId = state.staffAccounts[0].staffId;
+    const deactivated = setDemoStaffActive(state, staffId, false);
+    const reactivated = setDemoStaffActive(deactivated, staffId, true);
+    expect(reactivated.staff.find((person) => person.id === staffId)?.active).toBe(true);
+    expect(reactivated.staffAccounts.find((account) => account.staffId === staffId)?.active).toBe(false);
+  });
+
+  it("shows explicit demo lifecycle controls", () => {
+    const screen = source("src/components/app/prototype-app.tsx");
+    expect(screen).toContain("Deactivate staff member");
+    expect(screen).toContain("Reactivate staff member");
+    expect(screen).toContain("History will be preserved");
   });
 });

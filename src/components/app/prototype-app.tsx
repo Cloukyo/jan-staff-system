@@ -238,6 +238,7 @@ function StaffScreen() {
   const [activeFilter, setActiveFilter] = useState("active");
   const [payFilter, setPayFilter] = useState("all");
   const [editing, setEditing] = useState<StaffMember | "new" | null>(null);
+  const [confirmingStaffId, setConfirmingStaffId] = useState<string | null>(null);
   const filtered = repo.state.staff.filter((person) => {
     const matchesQuery = `${person.fullName} ${person.role}`.toLowerCase().includes(query.toLowerCase());
     const matchesActive = activeFilter === "all" || (activeFilter === "active" ? person.active : !person.active);
@@ -278,10 +279,41 @@ function StaffScreen() {
             formatDurationCompact(person.contractedWeeklyMinutes),
             <span key="rate">{person.payType === "hourly" ? `${formatMoney(person.hourlyRatePence)} / hour` : `${formatMoney(person.monthlySalaryPence)} / month`}{(person.payType === "hourly" && !person.hourlyRatePence) || (person.payType === "salaried" && !person.monthlySalaryPence) ? <span className="ml-2 text-xs font-bold text-red-700">Missing active rate</span> : null}</span>,
             <StatusPill key="status" tone={person.active ? "green" : "grey"}>{person.active ? "Active" : "Inactive"}</StatusPill>,
-            <Button key="edit" variant="secondary" onClick={() => setEditing(person)}><Edit3 className="h-4 w-4" /> Edit</Button>,
+            <div key="actions" className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setEditing(person)}><Edit3 className="h-4 w-4" /> Edit</Button>
+              {person.active ? (
+                <Button variant="danger" onClick={() => setConfirmingStaffId(person.id)}>
+                  Deactivate staff member
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => repo.setStaffActive(person.id, true)}>
+                  Reactivate staff member
+                </Button>
+              )}
+            </div>,
           ])}
         />
       </Panel>
+      {confirmingStaffId && (
+        <Panel className="mt-4 border-red-200 bg-red-50">
+          <h2 className="font-black text-red-950">Confirm deactivation</h2>
+          <p className="mt-2 text-sm text-red-900">
+            Login and kiosk access will be disabled. History will be preserved.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              onClick={() => {
+                repo.setStaffActive(confirmingStaffId, false);
+                setConfirmingStaffId(null);
+              }}
+            >
+              Confirm deactivation
+            </Button>
+            <Button variant="secondary" onClick={() => setConfirmingStaffId(null)}>Cancel</Button>
+          </div>
+        </Panel>
+      )}
       {editing && <StaffModal staff={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
     </>
   );
