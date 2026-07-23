@@ -105,17 +105,21 @@ describe("demo staff lifecycle", () => {
   it("deactivates the profile and linked account without deleting history", () => {
     const state = createSeedState();
     const staffId = state.staffAccounts[0].staffId;
-    const before = {
-      clockEvents: state.clockEvents.length,
-      rota: state.rota.length,
-      payRates: state.payRates.length,
-    };
     const next = setDemoStaffActive(state, staffId, false);
     expect(next.staff.find((person) => person.id === staffId)?.active).toBe(false);
     expect(next.staffAccounts.find((account) => account.staffId === staffId)?.active).toBe(false);
-    expect(next.clockEvents).toHaveLength(before.clockEvents);
-    expect(next.rota).toHaveLength(before.rota);
-    expect(next.payRates).toHaveLength(before.payRates);
+    [
+      ["clock events", next.clockEvents, state.clockEvents],
+      ["rota", next.rota, state.rota],
+      ["pay rates", next.payRates, state.payRates],
+      ["leave requests", next.leaveRequests, state.leaveRequests],
+      ["attendance adjustments", next.attendanceAdjustments, state.attendanceAdjustments],
+      ["attendance approvals", next.attendanceApprovals, state.attendanceApprovals],
+      ["pay summaries", next.paySummaries, state.paySummaries],
+    ].forEach(([name, after, before]) => {
+      expect(after, `${name} should retain its collection identity`).toBe(before);
+      expect(after, `${name} should retain its content`).toEqual(before);
+    });
   });
 
   it("reactivates only the profile", () => {
@@ -132,5 +136,17 @@ describe("demo staff lifecycle", () => {
     expect(screen).toContain("Deactivate staff member");
     expect(screen).toContain("Reactivate staff member");
     expect(screen).toContain("History will be preserved");
+  });
+
+  it("keeps lifecycle changes out of the existing-staff edit route", () => {
+    const screen = source("src/components/app/prototype-app.tsx");
+    const staffModal = screen.slice(screen.indexOf("function StaffModal"), screen.indexOf("function RotaScreen"));
+    const existingStaffSave = staffModal.slice(staffModal.indexOf("} else {"), staffModal.indexOf("repo.updateStaff(next"));
+
+    expect(staffModal).toContain("{!staff && (");
+    expect(staffModal).toContain("Active staff member");
+    expect(existingStaffSave).toContain("active: staff.active");
+    expect(existingStaffSave).toContain("employmentStatus: staff.employmentStatus");
+    expect(existingStaffSave).not.toContain("active: form.active");
   });
 });

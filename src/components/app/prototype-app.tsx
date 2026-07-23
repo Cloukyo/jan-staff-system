@@ -377,8 +377,8 @@ function StaffModal({ staff, onClose }: { staff: StaffMember | null; onClose: ()
         monthlySalaryPence: form.payType === "salaried" ? Math.round(Number(form.monthlySalary) * 100) : null,
         contractedWeeklyMinutes: Math.round(Number(form.contractedWeeklyHours) * 60),
         defaultBreakMinutes: Number(form.defaultBreakMinutes),
-        active: form.active,
-        employmentStatus: form.active ? "employed" : "former",
+        active: staff.active,
+        employmentStatus: staff.employmentStatus,
         endDate: form.endDate || null,
       };
       repo.updateStaff(next, {
@@ -419,10 +419,12 @@ function StaffModal({ staff, onClose }: { staff: StaffMember | null; onClose: ()
           {staff && <Field label="Rate effective from"><input className={inputClassName()} value={form.effectiveFrom} onChange={(event) => set("effectiveFrom", event.target.value)} type="date" /></Field>}
           {staff && <Field label="End date"><input className={inputClassName()} value={form.endDate} onChange={(event) => set("endDate", event.target.value)} type="date" /></Field>}
         </div>
-        <label className="flex items-center gap-3 text-sm font-semibold text-purple-950">
-          <input checked={form.active} onChange={(event) => set("active", event.target.checked)} type="checkbox" className="h-5 w-5 accent-purple-700" />
-          Active staff member
-        </label>
+        {!staff && (
+          <label className="flex items-center gap-3 text-sm font-semibold text-purple-950">
+            <input checked={form.active} onChange={(event) => set("active", event.target.checked)} type="checkbox" className="h-5 w-5 accent-purple-700" />
+            Active staff member
+          </label>
+        )}
         {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
         <div className="flex justify-end gap-3"><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit"><Save className="h-4 w-4" /> Save</Button></div>
       </form>
