@@ -54,7 +54,7 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
       <Panel className="mt-4">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-sm">
-            <thead><tr>{["Staff", "Quick role/qualification/status edit", "First aid", "Safeguarding", "DBS", "Central", "Next expiry", "Login", "Overall", "View"].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
+            <thead><tr>{["Staff", "Quick role/qualification edit", "First aid", "Safeguarding", "DBS", "Central", "Next expiry", "Login", "Overall", "View"].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
             <tbody>
               {data.staff.map((person) => {
                 const firstAid = findCertificate(data.certificates, person.id, ["first aid"]);
@@ -76,7 +76,6 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
                         <div className="grid gap-2">
                           <input className={inputClassName("w-44")} name="employmentRole" defaultValue={person.employmentRole} />
                           <input className={inputClassName("w-44")} name="mainQualificationLevel" defaultValue={person.mainQualificationLevel ?? ""} />
-                          <label className="flex items-center gap-2 font-bold"><input name="active" type="checkbox" defaultChecked={person.active} /> Active</label>
                         </div>
                       </ProductionActionForm>
                     </td>

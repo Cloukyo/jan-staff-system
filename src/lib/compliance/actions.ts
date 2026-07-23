@@ -37,7 +37,6 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
   const { error } = await supabase.from("staff_profiles").update({
     employment_role: employmentRole,
     main_qualification_level: text(formData, "mainQualificationLevel"),
-    active: bool(formData, "active"),
   }).eq("id", staffId);
   if (error) return fail("Quick edit could not be saved.");
   revalidatePath("/compliance");
@@ -60,7 +59,6 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
     is_apprentice: bool(formData, "isApprentice"),
     is_cover_staff: bool(formData, "isCoverStaff"),
     appointment_date: text(formData, "appointmentDate"),
-    active: bool(formData, "active"),
     email: text(formData, "email"),
     notes: text(formData, "notes"),
   }).eq("id", staffId);

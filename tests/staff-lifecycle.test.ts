@@ -37,6 +37,8 @@ describe("staff lifecycle database operation", () => {
 describe("production staff lifecycle actions", () => {
   const actions = source("src/lib/staff/actions.ts");
   const complianceActions = source("src/lib/compliance/actions.ts");
+  const complianceScreen = source("src/components/compliance/production-compliance-screen.tsx");
+  const complianceDetail = source("src/components/compliance/production-compliance-detail.tsx");
 
   it("owns creation and lifecycle actions in the staff module", () => {
     expect(actions).toContain("createStaffProfileAction");
@@ -57,5 +59,14 @@ describe("production staff lifecycle actions", () => {
     expect(actions).toContain('revalidatePath("/accounts")');
     expect(actions).toContain('revalidatePath("/settings/kiosk")');
     expect(actions).toContain('revalidatePath("/compliance")');
+  });
+
+  it("does not let compliance actions update staff active status", () => {
+    expect(complianceActions).not.toContain('active: bool(formData, "active")');
+  });
+
+  it("does not expose active status in compliance quick edits or detail forms", () => {
+    expect(complianceScreen).not.toContain("defaultChecked={person.active}");
+    expect(complianceDetail).not.toContain('name="active" type="checkbox"');
   });
 });
