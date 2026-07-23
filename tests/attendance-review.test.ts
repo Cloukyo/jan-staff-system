@@ -48,10 +48,11 @@ describe("production attendance review", () => {
     expect(migration).not.toMatch(/alter table public\.clock_events disable row level security/i);
   });
 
-  it("keeps payroll export blocked while attendance review is unresolved", () => {
+  it("keeps the incomplete-review warning while allowing confirmed export", () => {
     const payroll = source("src/components/payroll/production-payroll-screen.tsx");
     expect(payroll).toContain("Attendance review is incomplete");
-    expect(payroll).toContain("disabled={reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0}");
+    expect(payroll).not.toContain("disabled={reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0}");
+    expect(payroll).toContain("Export unreviewed Excel");
   });
 
   it("lets staff request corrections without editing clock events", () => {
