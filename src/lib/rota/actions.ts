@@ -17,6 +17,11 @@ function text(formData: FormData, key: string): string | null {
 
 function friendlyDatabaseError(message?: string): string {
   if (!message) return "The rota change could not be saved.";
+  if (message.includes("draft rota")) return "Hours can only be copied in a draft rota.";
+  if (message.includes("previous day")) return "The previous day must be in the same rota week.";
+  if (message.includes("Source shift not found")) return "The source shift could not be found.";
+  if (message.includes("Choose at least one target day")) return "Choose at least one day to copy the hours to.";
+  if (message.includes("Target days must be later")) return "Choose later days in the same rota week.";
   if (message.includes("Approved leave conflict")) return "This shift overlaps approved leave. Add a manager override reason.";
   if (message.includes("Overlapping shift")) return "This shift overlaps another shift. Add a manager override reason.";
   if (message.includes("duplicate key")) return "An identical active shift already exists.";
@@ -128,6 +133,45 @@ export async function duplicateRotaShiftAction(_state: RotaActionState, formData
   if (error) return failure(friendlyDatabaseError(error.message));
   revalidatePath("/rota");
   return success("Shift duplicated.");
+}
+
+export async function copyPreviousDayPatternAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
+  await requireAccount(["manager"]);
+  const weekId = text(formData, "weekId");
+  const staffId = text(formData, "staffId");
+  const targetDate = text(formData, "targetDate");
+  if (!weekId || !staffId || !targetDate) return failure("The rota week, staff member and target date are required.");
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("copy_staff_previous_day_pattern", {
+    target_week_id: weekId,
+    target_staff_id: staffId,
+    target_shift_date: targetDate,
+  });
+  if (error) return failure(friendlyDatabaseError(error.message));
+  const result = data as { mode?: "copied" | "not_working"; shifts_created?: number } | null;
+  revalidatePath("/rota");
+  if (result?.mode === "not_working") return success("This day was changed to not working.");
+  const count = Number(result?.shifts_created ?? 0);
+  return success(count === 1 ? "Previous day hours copied." : `${count} previous day shifts copied.`);
+}
+
+export async function copyShiftHoursToDaysAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
+  await requireAccount(["manager"]);
+  const shiftId = text(formData, "shiftId");
+  const targetDates = formData.getAll("targetDates")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  if (!shiftId) return failure("The source shift could not be found.");
+  if (!targetDates.length) return failure("Choose at least one day to copy the hours to.");
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("copy_shift_hours_to_days", {
+    source_shift_id: shiftId,
+    target_shift_dates: targetDates,
+  });
+  if (error) return failure(friendlyDatabaseError(error.message));
+  const count = Number((data as { days_updated?: number } | null)?.days_updated ?? 0);
+  revalidatePath("/rota");
+  return success(count === 1 ? "Hours copied to 1 day." : `Hours copied to ${count} days.`);
 }
 
 export async function setRotaWeekStatusAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {

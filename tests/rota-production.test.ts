@@ -61,6 +61,7 @@ describe("production rota validation", () => {
 describe("production rota migration safeguards", () => {
   const migration = readFileSync(resolve("supabase/migrations/202606120003_production_rota.sql"), "utf8");
   const bulkGuards = readFileSync(resolve("supabase/migrations/202606120004_rota_bulk_operation_guards.sql"), "utf8");
+  const copyHours = readFileSync(resolve("supabase/migrations/202607230001_rota_copy_hours.sql"), "utf8");
 
   it("enforces canonical links, time checks and audit fields", () => {
     expect(migration).toContain("references public.staff_profiles(id)");
@@ -90,5 +91,14 @@ describe("production rota migration safeguards", () => {
     expect(migration).toContain("get diagnostics copied_count = row_count");
     expect(bulkGuards).toContain("target_week.status <> 'draft'");
     expect(bulkGuards).toContain("Previous week can only be copied into a draft rota");
+  });
+
+  it("copies staff hours atomically while retaining archived target records", () => {
+    expect(copyHours).toContain("copy_staff_previous_day_pattern");
+    expect(copyHours).toContain("copy_shift_hours_to_days");
+    expect(copyHours).toContain("archived_at = now()");
+    expect(copyHours).toContain("manager_account.role <> 'manager'");
+    expect(copyHours).toContain("target_week.status <> 'draft'");
+    expect(copyHours).toContain("break_unspecified");
   });
 });

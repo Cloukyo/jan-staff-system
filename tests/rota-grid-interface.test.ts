@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { dayCoverage, groupTemplatePreview, scheduledMinutes, templateConfirmationLabel } from "@/lib/rota/grid";
+import { dayCoverage, groupTemplatePreview, laterWeekDates, previousDayShifts, scheduledMinutes, templateConfirmationLabel } from "@/lib/rota/grid";
 import type { ProductionRotaDataset, ProductionRotaShift } from "@/lib/rota/types";
 import type { RotaTemplate, TemplateApplicationPreview } from "@/lib/rota/template-types";
 
 const rotaGrid = readFileSync(resolve("src/components/rota/production-rota-grid.tsx"), "utf8");
+const rotaActions = readFileSync(resolve("src/lib/rota/actions.ts"), "utf8");
 const templateGrid = readFileSync(resolve("src/components/rota/template-week-grid.tsx"), "utf8");
 const templatePreview = readFileSync(resolve("src/components/rota/template-rota-controls.tsx"), "utf8");
 
@@ -58,6 +59,23 @@ function preview(overrides: Partial<TemplateApplicationPreview> = {}): TemplateA
 }
 
 describe("weekly rota grid interface", () => {
+  it("provides manager actions for previous-day and multi-day hour copying", () => {
+    expect(rotaActions).toContain("export async function copyPreviousDayPatternAction");
+    expect(rotaActions).toContain('.rpc("copy_staff_previous_day_pattern"');
+    expect(rotaActions).toContain("changed to not working");
+    expect(rotaActions).toContain("export async function copyShiftHoursToDaysAction");
+    expect(rotaActions).toContain('.rpc("copy_shift_hours_to_days"');
+  });
+
+  it("offers accessible previous-day and later-day copy controls in the shift editor", () => {
+    expect(rotaGrid).toContain("Copy hours");
+    expect(rotaGrid).toContain("Copy previous day");
+    expect(rotaGrid).toContain("Copy to other days");
+    expect(rotaGrid).toContain('name="targetDates"');
+    expect(rotaGrid).toContain("This will replace existing shifts");
+    expect(rotaGrid).toContain("min-h-11");
+  });
+
   it("renders staff rows, weekday cells, sticky headers and accessible cell actions", () => {
     expect(rotaGrid).toContain('scope="row"');
     expect(rotaGrid).toContain('scope="col"');
@@ -105,6 +123,18 @@ describe("weekly rota grid interface", () => {
       latestFinish: "16:30",
       minutes: 450,
     });
+  });
+
+  it("finds later target days and the previous active working pattern", () => {
+    expect(laterWeekDates("2026-06-15", "2026-06-17")).toEqual([
+      "2026-06-18",
+      "2026-06-19",
+      "2026-06-20",
+      "2026-06-21",
+    ]);
+    expect(previousDayShifts("staff-1", "2026-06-16", [shift])).toEqual([shift]);
+    expect(previousDayShifts("staff-1", "2026-06-15", [shift])).toEqual([]);
+    expect(previousDayShifts("staff-1", "2026-06-16", [{ ...shift, status: "cancelled" }])).toEqual([]);
   });
 });
 
