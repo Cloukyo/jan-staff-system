@@ -18,3 +18,17 @@ describe("payroll export confirmation policy", () => {
     expect(route).toContain('requireAccount(["manager"])');
   });
 });
+
+describe("payroll export confirmation interface", () => {
+  it("keeps export available and confirms incomplete attendance inline", () => {
+    const screen = source("src/components/payroll/production-payroll-screen.tsx");
+
+    expect(screen).not.toContain(
+      "disabled={reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0}",
+    );
+    expect(screen).toContain('confirmUnreviewed: confirmed ? "1" : "0"');
+    expect(screen).toContain("Export unreviewed Excel");
+    expect(screen).toContain("These hours may be inaccurate");
+    expect(screen).toContain('role="alert"');
+  });
+});
