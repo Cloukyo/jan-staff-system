@@ -19,7 +19,7 @@ Only the start time, finish time, and break duration or unspecified-break state 
 - It is unavailable on Monday because the previous day is outside the displayed rota week.
 - If the previous day contains one active shift, its start time, finish time, and break values replace the selected day's working pattern.
 - If the previous day contains no active shift, the selected day becomes not working. Any active shift or shifts on the selected day are archived only after the manager confirms the removal.
-- If the previous day contains multiple active shifts, the manager chooses which shift to copy. A "Not working" choice is not inferred when shifts exist.
+- If the previous day contains multiple active shifts, all of them are copied so split-shift working patterns remain intact. A "Not working" state is not inferred when shifts exist.
 - Copying into a day that already has active shifts requires confirmation and archives those shifts before creating the copied shift.
 - The result message states whether hours were copied or the day was changed to not working.
 

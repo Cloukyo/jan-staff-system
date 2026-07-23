@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  Copy,
   Pencil,
   Plus,
   Users,
@@ -15,8 +16,20 @@ import {
 import { useMemo, useState } from "react";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
 import { Button, Field, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { archiveRotaShiftAction, saveRotaShiftAction } from "@/lib/rota/actions";
-import { dayCoverage, formatScheduledHours, scheduledMinutes, shiftWarningSummary } from "@/lib/rota/grid";
+import {
+  archiveRotaShiftAction,
+  copyPreviousDayPatternAction,
+  copyShiftHoursToDaysAction,
+  saveRotaShiftAction,
+} from "@/lib/rota/actions";
+import {
+  dayCoverage,
+  formatScheduledHours,
+  laterWeekDates,
+  previousDayShifts,
+  scheduledMinutes,
+  shiftWarningSummary,
+} from "@/lib/rota/grid";
 import type { ProductionRotaDataset, ProductionRotaShift, ProductionRotaStaff } from "@/lib/rota/types";
 
 const weekdayLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -41,6 +54,12 @@ function ShiftEditorDrawer({
   onClose: () => void;
 }) {
   const shift = editor.shift;
+  const previousDate = format(addDays(parseISO(editor.date), -1), "yyyy-MM-dd");
+  const previousShifts = previousDayShifts(editor.staff.id, editor.date, data.shifts);
+  const laterDates = shift ? laterWeekDates(data.weekStart, editor.date) : [];
+  const previousDayConfirmation = previousShifts.length
+    ? `This will replace existing shifts for ${editor.staff.fullName} on ${format(parseISO(editor.date), "EEEE d MMMM")} with the previous day's hours. Continue?`
+    : `${editor.staff.fullName} was not working on ${format(parseISO(previousDate), "EEEE d MMMM")}. This will remove existing shifts on ${format(parseISO(editor.date), "EEEE d MMMM")}. Continue?`;
   return (
     <div className="fixed inset-0 z-50 bg-purple-950/35" role="presentation" onMouseDown={onClose}>
       <section
@@ -62,6 +81,61 @@ function ShiftEditorDrawer({
             <X className="h-5 w-5" />
           </Button>
         </div>
+
+        <section className="border-b border-purple-100 bg-purple-50/60 p-5" aria-labelledby="copy-hours-title">
+          <div className="flex items-start gap-3">
+            <span className="rounded-xl bg-white p-2 text-purple-700 shadow-sm"><Copy className="h-5 w-5" /></span>
+            <div>
+              <h3 id="copy-hours-title" className="font-black text-purple-950">Copy hours</h3>
+              <p className="mt-1 text-sm text-slate-600">Copies start, finish and break only. Room, role and notes stay separate.</p>
+            </div>
+          </div>
+
+          <RotaActionForm
+            action={copyPreviousDayPatternAction}
+            submitLabel="Copy previous day"
+            pendingLabel="Copying..."
+            variant="secondary"
+            className="mt-4 grid gap-3 rounded-xl border border-purple-100 bg-white p-4"
+            confirmMessage={previousDayConfirmation}
+            onSuccess={onClose}
+            submitDisabled={!data.week || editor.date === data.weekStart}
+          >
+            {hidden("weekId", data.week?.id ?? "")}
+            {hidden("staffId", editor.staff.id)}
+            {hidden("targetDate", editor.date)}
+            <p className="text-sm font-bold text-purple-950">
+              {editor.date === data.weekStart
+                ? "Previous-day copying is available from Tuesday onwards."
+                : `Use ${format(parseISO(previousDate), "EEEE")}'s ${previousShifts.length ? previousShifts.map((item) => `${item.startTime} to ${item.endTime}`).join(" and ") : "not working"} pattern.`}
+            </p>
+          </RotaActionForm>
+
+          {shift && shift.status !== "cancelled" && laterDates.length ? (
+            <RotaActionForm
+              action={copyShiftHoursToDaysAction}
+              submitLabel="Copy to other days"
+              pendingLabel="Copying..."
+              variant="secondary"
+              className="mt-4 grid gap-3 rounded-xl border border-purple-100 bg-white p-4"
+              confirmMessage={`This will replace existing shifts on the selected days with ${shift.startTime} to ${shift.endTime}. Continue?`}
+              onSuccess={onClose}
+            >
+              {hidden("shiftId", shift.id)}
+              <fieldset>
+                <legend className="text-sm font-black text-purple-950">Choose later days this week</legend>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {laterDates.map((date) => (
+                    <label key={date} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-purple-100 px-3 py-2 text-sm font-bold text-purple-950 hover:bg-purple-50">
+                      <input className="h-5 w-5 accent-purple-700" type="checkbox" name="targetDates" value={date} />
+                      {format(parseISO(date), "EEEE d MMMM")}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </RotaActionForm>
+          ) : null}
+        </section>
 
         <RotaActionForm
           action={saveRotaShiftAction}

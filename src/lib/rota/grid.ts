@@ -1,3 +1,4 @@
+import { addDays, format, parseISO } from "date-fns";
 import type { ProductionRotaShift, RotaLeaveWarning } from "@/lib/rota/types";
 import type { TemplateApplicationPreview, TemplatePreviewRow } from "@/lib/rota/template-types";
 import { leaveWarningsForShift, overlapWarningsForShift, shiftDurationMinutes } from "@/lib/rota/validation";
@@ -6,6 +7,31 @@ export type ScheduledMinutes = {
   minutes: number;
   hasUnknownBreak: boolean;
 };
+
+export function laterWeekDates(weekStart: string, sourceDate: string): string[] {
+  const weekEnd = addDays(parseISO(weekStart), 6);
+  const dates: string[] = [];
+  for (let date = addDays(parseISO(sourceDate), 1); date <= weekEnd; date = addDays(date, 1)) {
+    dates.push(format(date, "yyyy-MM-dd"));
+  }
+  return dates;
+}
+
+export function previousDayShifts(
+  staffId: string,
+  targetDate: string,
+  shifts: ProductionRotaShift[],
+): ProductionRotaShift[] {
+  const previousDate = format(addDays(parseISO(targetDate), -1), "yyyy-MM-dd");
+  return shifts
+    .filter((shift) => (
+      shift.staffId === staffId
+      && shift.shiftDate === previousDate
+      && shift.status !== "cancelled"
+      && !shift.archivedAt
+    ))
+    .toSorted((left, right) => left.startTime.localeCompare(right.startTime));
+}
 
 export function scheduledMinutes(
   shift: Pick<ProductionRotaShift, "startTime" | "endTime" | "breakMinutes" | "breakUnspecified" | "status">,
