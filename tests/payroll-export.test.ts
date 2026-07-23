@@ -50,5 +50,11 @@ describe("payroll export confirmation interface", () => {
     expect(screen).toContain("Export unreviewed Excel");
     expect(screen).toContain("These hours may be inaccurate");
     expect(screen).toContain('role="alert"');
+    expect(screen).toContain('label="Hours to include"');
+    expect(screen).toContain("Both planned and clocked");
+    expect(screen).toContain("Planned hours only");
+    expect(screen).toContain("Clocked hours only");
+    expect(screen).toContain("hours: exportHours");
+    expect(screen).toContain('exportHours !== "planned"');
   });
 });

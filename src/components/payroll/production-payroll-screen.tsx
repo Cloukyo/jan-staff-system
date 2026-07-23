@@ -6,6 +6,7 @@ import { FileSpreadsheet } from "lucide-react";
 import type { PayrollPreparationRow } from "@/lib/payroll/types";
 import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatHours, formatMoney } from "@/lib/dates/format";
+import type { PayrollExportHoursMode } from "@/lib/exports/payroll-options";
 
 export function ProductionPayrollScreen({
   rows,
@@ -28,6 +29,7 @@ export function ProductionPayrollScreen({
   const [start, setStart] = useState(periodStart);
   const [end, setEnd] = useState(periodEnd);
   const [confirmExportOpen, setConfirmExportOpen] = useState(false);
+  const [exportHours, setExportHours] = useState<PayrollExportHoursMode>("both");
   const attendanceIncomplete =
     reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0;
   function apply() {
@@ -40,12 +42,13 @@ export function ProductionPayrollScreen({
       inactive: includeInactive ? "1" : "0",
       managers: includeManagers ? "1" : "0",
       zero: includeZero ? "1" : "0",
+      hours: exportHours,
       confirmUnreviewed: confirmed ? "1" : "0",
     });
     window.location.assign(`/payroll/export?${query.toString()}`);
   }
   function requestDownload() {
-    if (attendanceIncomplete) {
+    if (attendanceIncomplete && exportHours !== "planned") {
       setConfirmExportOpen(true);
       return;
     }
@@ -68,13 +71,29 @@ export function ProductionPayrollScreen({
           <label className="flex items-end gap-2 pb-3 font-bold"><input type="checkbox" defaultChecked={includeManagers} onChange={(event) => router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${event.target.checked ? "1" : "0"}&zero=${includeZero ? "1" : "0"}`)} /> Include manager profile</label>
           <label className="flex items-end gap-2 pb-3 font-bold"><input type="checkbox" defaultChecked={includeZero} onChange={(event) => router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${includeManagers ? "1" : "0"}&zero=${event.target.checked ? "1" : "0"}`)} /> Include zero hours</label>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button onClick={apply}>Preview period</Button>
-          <Button variant="secondary" onClick={requestDownload}>
-            <FileSpreadsheet className="h-4 w-4" /> Export Excel
-          </Button>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(16rem,22rem)_auto] sm:items-end">
+          <Field label="Hours to include">
+            <select
+              className={inputClassName()}
+              value={exportHours}
+              onChange={(event) => {
+                setExportHours(event.target.value as PayrollExportHoursMode);
+                setConfirmExportOpen(false);
+              }}
+            >
+              <option value="both">Both planned and clocked</option>
+              <option value="planned">Planned hours only</option>
+              <option value="clocked">Clocked hours only</option>
+            </select>
+          </Field>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={apply}>Preview period</Button>
+            <Button variant="secondary" onClick={requestDownload}>
+              <FileSpreadsheet className="h-4 w-4" /> Export Excel
+            </Button>
+          </div>
         </div>
-        {confirmExportOpen && attendanceIncomplete ? (
+        {confirmExportOpen && attendanceIncomplete && exportHours !== "planned" ? (
           <div
             className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4"
             role="alert"
