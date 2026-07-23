@@ -2,6 +2,7 @@ import { addDays, differenceInMinutes, eachDayOfInterval, format, parseISO } fro
 import { calculateClockTotals } from "@/lib/payroll/calculations";
 import type {
   PayrollAttendanceReview,
+  PayrollDailyRow,
   PayrollExportDetail,
   PayrollRotaShift,
   ProductionClockEvent,
@@ -65,7 +66,7 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
     ),
   }));
 
-  const dailyRows = input.staff.flatMap((person) =>
+  const dailyRows = input.staff.flatMap<PayrollDailyRow>((person) =>
     dates.flatMap((date) => {
       const key = detailKey(person.id, date);
       const shifts = (shiftsByDay.get(key) ?? [])

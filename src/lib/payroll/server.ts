@@ -2,7 +2,13 @@ import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { londonDateStartUtc } from "@/lib/dates/format";
-import type { PayArrangement, PayrollAttendanceReview, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
+import type {
+  PayArrangement,
+  PayrollAttendanceReview,
+  PayrollRotaShift,
+  ProductionClockEvent,
+  ProductionStaffRow,
+} from "@/lib/payroll/types";
 
 export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
@@ -93,5 +99,43 @@ export async function loadPayrollAttendanceReviews(periodStart: string, periodEn
     reviewDate: row.review_date,
     status: row.status,
     reason: row.reason,
+  }));
+}
+
+export async function loadPayrollRotaShifts(
+  periodStart: string,
+  periodEnd: string,
+): Promise<PayrollRotaShift[]> {
+  const supabase = await createSupabaseServerClient();
+  const weeks = await supabase
+    .from("rota_weeks")
+    .select("id")
+    .neq("status", "archived")
+    .is("archived_at", null);
+  if (weeks.error) throw new Error("Production rota data could not be loaded.");
+  const weekIds = (weeks.data ?? []).map((week) => week.id);
+  if (weekIds.length === 0) return [];
+
+  const shifts = await supabase
+    .from("rota_shifts")
+    .select("id,staff_id,shift_date,start_time,end_time,break_minutes,status,archived_at")
+    .in("rota_week_id", weekIds)
+    .gte("shift_date", periodStart)
+    .lte("shift_date", periodEnd)
+    .is("archived_at", null)
+    .neq("status", "cancelled")
+    .order("shift_date")
+    .order("start_time");
+  if (shifts.error) throw new Error("Production rota data could not be loaded.");
+
+  return (shifts.data ?? []).map((shift) => ({
+    id: shift.id,
+    staffId: shift.staff_id,
+    shiftDate: shift.shift_date,
+    startTime: String(shift.start_time).slice(0, 5),
+    endTime: String(shift.end_time).slice(0, 5),
+    breakMinutes: Number(shift.break_minutes),
+    status: shift.status,
+    archivedAt: shift.archived_at,
   }));
 }
