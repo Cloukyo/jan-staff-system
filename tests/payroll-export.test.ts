@@ -11,8 +11,10 @@ describe("payroll export confirmation policy", () => {
     const route = source("src/app/payroll/export/route.ts");
 
     expect(route).toContain('params.get("confirmUnreviewed") === "1"');
+    expect(route).toContain("parsePayrollExportHoursMode(params)");
+    expect(route).toContain("payrollModeIncludesClocked(hoursMode)");
     expect(route).toMatch(
-      /if \(\(readiness\.unresolved > 0 \|\| readiness\.pendingRequests > 0\) && !confirmUnreviewed\)/,
+      /if \(\s*payrollModeIncludesClocked\(hoursMode\)[\s\S]*readiness\.unresolved > 0[\s\S]*!confirmUnreviewed\s*\)/,
     );
     expect(route).toContain("Confirm the unreviewed payroll export before downloading.");
     expect(route).toContain('requireAccount(["manager"])');
@@ -29,8 +31,10 @@ describe("payroll export confirmation policy", () => {
     expect(server).toContain('.is("archived_at", null)');
     expect(route).toContain("loadPayrollRotaShifts(periodStart, periodEnd)");
     expect(route).toContain("createPayrollExportDetail");
+    expect(route).toContain("payrollRowHasSelectedHours");
+    expect(route).toContain("{ hours: hoursMode }");
     expect(route).toMatch(
-      /createPayrollPreparationWorkbook\(\s*rows,\s*periodStart,\s*periodEnd,\s*readiness,\s*detail,\s*\)/,
+      /createPayrollPreparationWorkbook\(\s*rows,\s*periodStart,\s*periodEnd,\s*readiness,\s*detail,\s*\{ hours: hoursMode \},\s*\)/,
     );
   });
 });

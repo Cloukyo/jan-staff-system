@@ -5,6 +5,11 @@ import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
 import {
+  parsePayrollExportHoursMode,
+  payrollModeIncludesClocked,
+  payrollRowHasSelectedHours,
+} from "@/lib/exports/payroll-options";
+import {
   loadPayrollAttendanceReviews,
   loadPayrollRotaShifts,
   loadProductionClockEvents,
@@ -25,6 +30,7 @@ export async function GET(request: Request) {
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
   const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
+  const hoursMode = parsePayrollExportHoursMode(params);
   const [staff, events, reviews, readiness, shifts] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionClockEvents(periodStart, periodEnd),
@@ -32,7 +38,11 @@ export async function GET(request: Request) {
     loadAttendanceReviewReadiness(periodStart, periodEnd),
     loadPayrollRotaShifts(periodStart, periodEnd),
   ]);
-  if ((readiness.unresolved > 0 || readiness.pendingRequests > 0) && !confirmUnreviewed) {
+  if (
+    payrollModeIncludesClocked(hoursMode) &&
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0) &&
+    !confirmUnreviewed
+  ) {
     return NextResponse.json(
       { error: "Confirm the unreviewed payroll export before downloading." },
       { status: 409 },
@@ -40,27 +50,53 @@ export async function GET(request: Request) {
   }
   const includedStaff = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager));
-  const rows = includedStaff
-    .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews))
-    .filter((row) => includeZero || row.adjustedMinutes > 0);
-  const includedIds = new Set(rows.map((row) => row.staffId));
-  const detail = createPayrollExportDetail({
-    staff: includedStaff.filter((person) => includedIds.has(person.id)),
+  const allRows = includedStaff
+    .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews));
+  const allDetail = createPayrollExportDetail({
+    staff: includedStaff,
     shifts,
     events,
     reviews,
     periodStart,
     periodEnd,
   });
+  const plannedMinutesByStaff = new Map(
+    allDetail.plannedRows.map((row) => [
+      row.staffId,
+      Object.values(row.plannedMinutesByDate).reduce(
+        (sum, minutes) => sum + minutes,
+        0,
+      ),
+    ]),
+  );
+  const rows = allRows.filter(
+    (row) =>
+      includeZero ||
+      payrollRowHasSelectedHours(
+        hoursMode,
+        row.adjustedMinutes,
+        plannedMinutesByStaff.get(row.staffId) ?? 0,
+      ),
+  );
+  const includedIds = new Set(rows.map((row) => row.staffId));
+  const detail = {
+    ...allDetail,
+    plannedRows: allDetail.plannedRows.filter((row) => includedIds.has(row.staffId)),
+    dailyRows: allDetail.dailyRows.filter((row) => includedIds.has(row.staffId)),
+  };
   const workbook = await createPayrollPreparationWorkbook(
     rows,
     periodStart,
     periodEnd,
     readiness,
     detail,
+    { hours: hoursMode },
   );
   const unreviewedPrefix =
-    readiness.unresolved > 0 || readiness.pendingRequests > 0 ? "unreviewed-" : "";
+    payrollModeIncludesClocked(hoursMode) &&
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0)
+      ? "unreviewed-"
+      : "";
   return new NextResponse(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
