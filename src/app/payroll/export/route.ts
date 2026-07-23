@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { requireAccount } from "@/lib/auth/permissions";
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
+import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
-import { loadPayrollAttendanceReviews, loadProductionClockEvents, loadProductionStaffRows } from "@/lib/payroll/server";
+import {
+  loadPayrollAttendanceReviews,
+  loadPayrollRotaShifts,
+  loadProductionClockEvents,
+  loadProductionStaffRows,
+} from "@/lib/payroll/server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +25,12 @@ export async function GET(request: Request) {
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
   const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
-  const [staff, events, reviews, readiness] = await Promise.all([
+  const [staff, events, reviews, readiness, shifts] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionClockEvents(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
+    loadPayrollRotaShifts(periodStart, periodEnd),
   ]);
   if ((readiness.unresolved > 0 || readiness.pendingRequests > 0) && !confirmUnreviewed) {
     return NextResponse.json(
@@ -31,15 +38,26 @@ export async function GET(request: Request) {
       { status: 409 },
     );
   }
-  const rows = staff
-    .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
+  const includedStaff = staff
+    .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager));
+  const rows = includedStaff
     .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews))
     .filter((row) => includeZero || row.adjustedMinutes > 0);
+  const includedIds = new Set(rows.map((row) => row.staffId));
+  const detail = createPayrollExportDetail({
+    staff: includedStaff.filter((person) => includedIds.has(person.id)),
+    shifts,
+    events,
+    reviews,
+    periodStart,
+    periodEnd,
+  });
   const workbook = await createPayrollPreparationWorkbook(
     rows,
     periodStart,
     periodEnd,
     readiness,
+    detail,
   );
   const unreviewedPrefix =
     readiness.unresolved > 0 || readiness.pendingRequests > 0 ? "unreviewed-" : "";

@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
 import { validatePayrollReview, type PayrollImportBatch, type PayrollImportReviewRow } from "@/lib/payroll/review";
-import type { PayrollPreparationRow } from "@/lib/payroll/types";
+import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/types";
 
 const batch: PayrollImportBatch = {
   id: "batch",
@@ -93,12 +93,64 @@ describe("payroll Excel export", () => {
     adjustmentNotes: ["Manager correction events included"],
     warnings: ["Manager correction"],
   };
+  const detail: PayrollExportDetail = {
+    dates: ["2026-07-01", "2026-07-02", "2026-07-03"],
+    plannedRows: [{
+      staffId: "staff",
+      fullName: "Staff Member",
+      employmentRole: "Practitioner",
+      plannedMinutesByDate: {
+        "2026-07-01": 450,
+        "2026-07-02": 480,
+        "2026-07-03": 0,
+      },
+    }],
+    dailyRows: [{
+      staffId: "staff",
+      fullName: "Staff Member",
+      employmentRole: "Practitioner",
+      date: "2026-07-01",
+      plannedStart: "08:00",
+      plannedEnd: "16:30",
+      plannedBreakMinutes: 30,
+      plannedMinutes: 480,
+      originalClockIns: ["2026-07-01T08:00:00+01:00"],
+      originalClockOuts: ["2026-07-01T16:00:00+01:00"],
+      managerClockIns: ["2026-07-01T08:15:00+01:00"],
+      managerClockOuts: ["2026-07-01T16:00:00+01:00"],
+      rawWorkedMinutes: 480,
+      workedMinutes: 465,
+      reviewStatus: "corrected",
+      reviewReason: "Manager corrected arrival",
+      warnings: ["Manager correction"],
+    }, {
+      staffId: "staff",
+      fullName: "Staff Member",
+      employmentRole: "Practitioner",
+      date: "2026-07-02",
+      plannedStart: "08:00",
+      plannedEnd: "17:00",
+      plannedBreakMinutes: 60,
+      plannedMinutes: 480,
+      originalClockIns: [],
+      originalClockOuts: [],
+      managerClockIns: [],
+      managerClockOuts: [],
+      rawWorkedMinutes: 0,
+      workedMinutes: 0,
+      reviewStatus: "not_reviewed",
+      reviewReason: null,
+      warnings: [],
+    }],
+  };
 
   it("creates a valid workbook with preparation and warning data", async () => {
     const buffer = await createPayrollPreparationWorkbook([preparation], "2026-06-01", "2026-06-30");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
-    expect(workbook.getWorksheet("Payroll Preparation")?.rowCount).toBe(2);
+    const preparationSheet = workbook.getWorksheet("Payroll Preparation");
+    expect(preparationSheet?.rowCount).toBe(2);
+    expect(preparationSheet?.getCell("N2").value).toBeNull();
     expect(workbook.getWorksheet("Read Me")).toBeTruthy();
   });
 
@@ -133,5 +185,62 @@ describe("payroll Excel export", () => {
     expect(workbook.getWorksheet("Read Me")?.getCell("A1").value).toBe(
       "Jan Pre-School payroll preparation",
     );
+  });
+
+  it("adds a planned rota matrix with every selected date and formula totals", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-07-01",
+      "2026-07-03",
+      { unresolved: 0, pendingRequests: 0 },
+      detail,
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Payroll Preparation",
+      "Planned Rota",
+      "Daily Clocking",
+      "Read Me",
+    ]);
+    const planned = workbook.getWorksheet("Planned Rota")!;
+    expect(planned.getCell("A1").value).toContain("future scheduled shifts");
+    expect(planned.getCell("C2").value).toBe("Wed 01/07");
+    expect(planned.getCell("D2").value).toBe("Thu 02/07");
+    expect(planned.getCell("E2").value).toBe("Fri 03/07");
+    expect(planned.getCell("C3").value).toBe(7.5);
+    expect(planned.getCell("D3").value).toBe(8);
+    expect(planned.getCell("F3").formula).toBe("SUM(C3:E3)");
+    expect(planned.getCell("C3").numFmt).toBe("0.00");
+    expect(planned.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
+  });
+
+  it("adds daily clocking rows with original and manager events in separate columns", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-07-01",
+      "2026-07-03",
+      { unresolved: 1, pendingRequests: 0 },
+      detail,
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const daily = workbook.getWorksheet("Daily Clocking")!;
+    expect(daily.getCell("C2").value).toBeInstanceOf(Date);
+    expect((daily.getCell("C2").value as Date).toISOString()).toBe("2026-07-01T12:00:00.000Z");
+    expect(daily.getCell("C2").numFmt).toBe("dd/mm/yyyy");
+    expect(daily.getCell("H2").value).toBe("08:00");
+    expect(daily.getCell("I2").value).toBe("16:00");
+    expect(daily.getCell("J2").value).toBe("08:15");
+    expect(daily.getCell("K2").value).toBe("16:00");
+    expect(daily.getCell("L2").value).toBe(8);
+    expect(daily.getCell("M2").value).toBe(7.75);
+    expect(daily.getCell("N2").value).toBe("corrected");
+    expect(daily.getCell("O2").value).toBe("Manager corrected arrival");
+    expect(daily.getCell("C3").value).toBeInstanceOf(Date);
+    expect(daily.getCell("H3").value).toBeNull();
+    expect(daily.getCell("M3").value).toBe(0);
   });
 });
