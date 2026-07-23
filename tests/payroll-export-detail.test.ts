@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createPayrollExportDetail, plannedShiftMinutes } from "@/lib/exports/payroll-detail";
+import {
+  createPayrollExportDetail,
+  plannedShiftMinutes,
+  splitPayrollDatesIntoWeeks,
+} from "@/lib/exports/payroll-detail";
 import type {
   PayrollAttendanceReview,
   PayrollRotaShift,
@@ -54,6 +58,24 @@ const event = (
 });
 
 describe("payroll export detail calculations", () => {
+  it("splits selected dates into partial and complete UK calendar weeks", () => {
+    expect(splitPayrollDatesIntoWeeks([
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+      "2026-07-04",
+      "2026-07-05",
+      "2026-07-06",
+      "2026-07-07",
+      "2026-07-08",
+      "2026-07-09",
+      "2026-07-10",
+    ])).toEqual([
+      ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"],
+      ["2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10"],
+    ]);
+  });
+
   it("calculates net planned minutes for ordinary and overnight shifts", () => {
     expect(plannedShiftMinutes(shift("day", "2026-07-01", "08:00", "17:00", 60))).toBe(480);
     expect(plannedShiftMinutes(shift("night", "2026-07-01", "20:00", "04:00", 30))).toBe(450);
@@ -144,5 +166,24 @@ describe("payroll export detail calculations", () => {
 
     expect(detail.dailyRows[0].reviewStatus).toBe("not_reviewed");
     expect(detail.dailyRows[0].warnings).toContain("Attendance review incomplete");
+  });
+
+  it("sums completed sessions and excludes the clocked-out break", () => {
+    const detail = createPayrollExportDetail({
+      staff: [staff],
+      shifts: [],
+      events: [
+        event("morning-in", "clock_in", "2026-07-01T08:00:00+01:00"),
+        event("break-out", "clock_out", "2026-07-01T12:00:00+01:00"),
+        event("afternoon-in", "clock_in", "2026-07-01T13:00:00+01:00"),
+        event("day-out", "clock_out", "2026-07-01T17:00:00+01:00"),
+        event("manager-in", "clock_in", "2026-07-01T07:45:00+01:00", true),
+      ],
+      reviews: [],
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-01",
+    });
+
+    expect(detail.dailyRows[0].rawWorkedMinutes).toBe(480);
   });
 });

@@ -1,4 +1,11 @@
-import { addDays, differenceInMinutes, eachDayOfInterval, format, parseISO } from "date-fns";
+import {
+  addDays,
+  differenceInMinutes,
+  eachDayOfInterval,
+  format,
+  parseISO,
+  startOfWeek,
+} from "date-fns";
 import { calculateClockTotals } from "@/lib/payroll/calculations";
 import type {
   PayrollAttendanceReview,
@@ -26,6 +33,21 @@ export function plannedShiftMinutes(shift: PayrollRotaShift): number {
 }
 
 const detailKey = (staffId: string, date: string) => `${staffId}:${date}`;
+
+export function splitPayrollDatesIntoWeeks(dates: string[]): string[][] {
+  const weeks: string[][] = [];
+  let currentWeekKey: string | null = null;
+  for (const date of dates) {
+    const weekKey = format(startOfWeek(parseISO(date), { weekStartsOn: 1 }), "yyyy-MM-dd");
+    if (weekKey !== currentWeekKey) {
+      weeks.push([date]);
+      currentWeekKey = weekKey;
+    } else {
+      weeks.at(-1)?.push(date);
+    }
+  }
+  return weeks;
+}
 
 export function createPayrollExportDetail(input: PayrollExportDetailInput): PayrollExportDetail {
   const dates = eachDayOfInterval({
