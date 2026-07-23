@@ -72,32 +72,66 @@ describe("payroll import review", () => {
 });
 
 describe("payroll Excel export", () => {
+  const preparation: PayrollPreparationRow = {
+    staffId: "staff",
+    fullName: "Staff Member",
+    employmentRole: "Practitioner",
+    payType: "hourly",
+    contractedWeeklyHours: 35,
+    hoursBasis: "contracted",
+    recordedMinutes: 450,
+    adjustedMinutes: 480,
+    ordinaryMinutes: 480,
+    overtimeMinutes: 0,
+    hourlyRate: 12,
+    estimatedGross: 96,
+    salaryBasis: null,
+    workedDays: 1,
+    reviewedDays: 1,
+    unresolvedDays: 0,
+    reviewStatus: "ready",
+    adjustmentNotes: ["Manager correction events included"],
+    warnings: ["Manager correction"],
+  };
+
   it("creates a valid workbook with preparation and warning data", async () => {
-    const preparation: PayrollPreparationRow = {
-      staffId: "staff",
-      fullName: "Staff Member",
-      employmentRole: "Practitioner",
-      payType: "hourly",
-      contractedWeeklyHours: 35,
-      hoursBasis: "contracted",
-      recordedMinutes: 450,
-      adjustedMinutes: 480,
-      ordinaryMinutes: 480,
-      overtimeMinutes: 0,
-      hourlyRate: 12,
-      estimatedGross: 96,
-      salaryBasis: null,
-      workedDays: 1,
-      reviewedDays: 1,
-      unresolvedDays: 0,
-      reviewStatus: "ready",
-      adjustmentNotes: ["Manager correction events included"],
-      warnings: ["Manager correction"],
-    };
     const buffer = await createPayrollPreparationWorkbook([preparation], "2026-06-01", "2026-06-30");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
     expect(workbook.getWorksheet("Payroll Preparation")?.rowCount).toBe(2);
     expect(workbook.getWorksheet("Read Me")).toBeTruthy();
+  });
+
+  it("labels incomplete attendance as unreviewed and includes readiness counts", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-06-01",
+      "2026-06-30",
+      { unresolved: 12, pendingRequests: 2 },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const readMe = workbook.getWorksheet("Read Me");
+    const values = readMe?.getColumn(1).values.map(String).join(" ") ?? "";
+    expect(values).toContain("UNREVIEWED PAYROLL PREPARATION");
+    expect(values).toContain("12 worked day(s) are not reviewed");
+    expect(values).toContain("2 staff correction request(s) remain open");
+    expect(values).toContain("Check and correct these hours manually");
+  });
+
+  it("keeps the normal label when attendance is fully reviewed", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-06-01",
+      "2026-06-30",
+      { unresolved: 0, pendingRequests: 0 },
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    expect(workbook.getWorksheet("Read Me")?.getCell("A1").value).toBe(
+      "Jan Pre-School payroll preparation",
+    );
   });
 });

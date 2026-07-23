@@ -3,14 +3,25 @@ import type { PayrollPreparationRow } from "@/lib/payroll/types";
 
 const decimalHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
 
+export type PayrollWorkbookReviewState = {
+  unresolved: number;
+  pendingRequests: number;
+};
+
 export async function createPayrollPreparationWorkbook(
   rows: PayrollPreparationRow[],
   periodStart: string,
   periodEnd: string,
+  reviewState: PayrollWorkbookReviewState = { unresolved: 0, pendingRequests: 0 },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Jan Pre-School Staff System";
   workbook.created = new Date();
+  const isUnreviewed = reviewState.unresolved > 0 || reviewState.pendingRequests > 0;
+  const workbookLabel = isUnreviewed
+    ? "UNREVIEWED PAYROLL PREPARATION"
+    : "Jan Pre-School payroll preparation";
+  workbook.subject = workbookLabel;
   const sheet = workbook.addWorksheet("Payroll Preparation", {
     views: [{ state: "frozen", ySplit: 1 }],
   });
@@ -65,9 +76,15 @@ export async function createPayrollPreparationWorkbook(
 
   const notes = workbook.addWorksheet("Read Me");
   notes.addRows([
-    ["Jan Pre-School payroll preparation"],
+    [workbookLabel],
     [`Period: ${periodStart} to ${periodEnd}`],
-    ["This workbook contains manager-reviewed preparation figures only."],
+    ...(isUnreviewed
+      ? [
+          [`${reviewState.unresolved} worked day(s) are not reviewed.`],
+          [`${reviewState.pendingRequests} staff correction request(s) remain open.`],
+          ["Check and correct these hours manually before using them for payroll."],
+        ]
+      : [["This workbook contains manager-reviewed preparation figures only."]]),
     ["It does not calculate PAYE, National Insurance, pensions, student loans or payslips."],
     ["Original clock events remain unchanged. Manager correction events and review notes are shown separately."],
   ]);

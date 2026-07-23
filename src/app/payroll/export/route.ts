@@ -35,11 +35,18 @@ export async function GET(request: Request) {
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
     .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews))
     .filter((row) => includeZero || row.adjustedMinutes > 0);
-  const workbook = await createPayrollPreparationWorkbook(rows, periodStart, periodEnd);
+  const workbook = await createPayrollPreparationWorkbook(
+    rows,
+    periodStart,
+    periodEnd,
+    readiness,
+  );
+  const unreviewedPrefix =
+    readiness.unresolved > 0 || readiness.pendingRequests > 0 ? "unreviewed-" : "";
   return new NextResponse(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="jan-payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
+      "Content-Disposition": `attachment; filename="jan-${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
       "Cache-Control": "private, no-store",
     },
   });
