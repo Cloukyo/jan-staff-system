@@ -2,13 +2,27 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import { closePayArrangementAction, savePayArrangementAction } from "@/lib/payroll/actions";
+import {
+  createStaffProfileAction,
+  deactivateStaffProfileAction,
+  reactivateStaffProfileAction,
+} from "@/lib/staff/actions";
 import type { ProductionStaffRow } from "@/lib/payroll/types";
 import { PayrollActionForm } from "@/components/payroll/payroll-action-form";
 import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, formatMoney, isoDateInLondon } from "@/lib/dates/format";
 
-export function ProductionStaffScreen({ staff }: { staff: ProductionStaffRow[] }) {
+export function ProductionStaffScreen({
+  staff,
+  showStaffLifecycleControls = false,
+  currentStaffId,
+}: {
+  staff: ProductionStaffRow[];
+  showStaffLifecycleControls?: boolean;
+  currentStaffId?: string;
+}) {
   const [query, setQuery] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
   const filtered = useMemo(() => staff.filter((person) =>
@@ -17,19 +31,55 @@ export function ProductionStaffScreen({ staff }: { staff: ProductionStaffRow[] }
   ), [includeInactive, query, staff]);
   return (
     <div className="grid gap-5">
+      {showStaffLifecycleControls && (
+        <Panel>
+          <h2 className="text-xl font-black text-purple-950">Add staff member</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Create the staff profile here, then complete account, kiosk, pay and compliance setup as needed.
+          </p>
+          <ProductionActionForm action={createStaffProfileAction} className="mt-4">
+            <div className="grid gap-4 md:grid-cols-5">
+              <Field label="Full name"><input className={inputClassName()} name="fullName" required /></Field>
+              <Field label="Preferred name"><input className={inputClassName()} name="displayName" /></Field>
+              <Field label="Role"><input className={inputClassName()} name="employmentRole" required /></Field>
+              <Field label="Qualification"><input className={inputClassName()} name="mainQualificationLevel" /></Field>
+              <Field label="Start date"><input className={inputClassName()} name="appointmentDate" type="date" /></Field>
+            </div>
+            <label className="mt-3 flex min-h-11 items-center gap-2 font-bold text-purple-950">
+              <input name="active" type="checkbox" defaultChecked /> Active
+            </label>
+          </ProductionActionForm>
+        </Panel>
+      )}
       <Panel>
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
           <input className={inputClassName()} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff" />
           <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} /> Include inactive staff</label>
         </div>
       </Panel>
-      {filtered.map((person) => <StaffPayCard key={person.id} person={person} />)}
+      {filtered.map((person) => (
+        <StaffPayCard
+          key={person.id}
+          person={person}
+          showStaffLifecycleControls={showStaffLifecycleControls}
+          currentStaffId={currentStaffId}
+        />
+      ))}
     </div>
   );
 }
 
-function StaffPayCard({ person }: { person: ProductionStaffRow }) {
+function StaffPayCard({
+  person,
+  showStaffLifecycleControls,
+  currentStaffId,
+}: {
+  person: ProductionStaffRow;
+  showStaffLifecycleControls: boolean;
+  currentStaffId?: string;
+}) {
   const [showEditor, setShowEditor] = useState(false);
+  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const today = isoDateInLondon();
   const current = person.payArrangements.find((item) => item.isActive && item.effectiveFrom <= today && (!item.effectiveTo || item.effectiveTo >= today));
   return (
@@ -46,11 +96,48 @@ function StaffPayCard({ person }: { person: ProductionStaffRow }) {
             {person.isManager && <StatusPill tone="purple">Manager profile</StatusPill>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href={`/compliance/staff/${person.id}`}>Staff record</Link>
-          <button className="min-h-11 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" onClick={() => setShowEditor((value) => !value)}>{showEditor ? "Close pay editor" : "Manage pay"}</button>
+          <button className="min-h-11 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" type="button" onClick={() => setShowEditor((value) => !value)}>{showEditor ? "Close pay editor" : "Manage pay"}</button>
+          {showStaffLifecycleControls && person.active && person.id !== currentStaffId && (
+            <button
+              className="min-h-11 rounded-xl bg-red-700 px-4 text-sm font-bold text-white"
+              type="button"
+              onClick={() => setConfirmingDeactivation(true)}
+            >
+              Deactivate staff member
+            </button>
+          )}
+          {showStaffLifecycleControls && !person.active && (
+            <div>
+              <ProductionActionForm action={reactivateStaffProfileAction} submitLabel="Reactivate staff member">
+                <input type="hidden" name="staffId" value={person.id} />
+              </ProductionActionForm>
+              <p className="mt-2 text-xs text-slate-600">Login and kiosk access will remain disabled.</p>
+            </div>
+          )}
         </div>
       </div>
+      {confirmingDeactivation && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4" role="alert">
+          <p className="font-black text-red-950">Confirm deactivation</p>
+          <p className="mt-2 text-sm text-red-900">
+            This disables the staff login and kiosk clocking access. History will be preserved.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <ProductionActionForm action={deactivateStaffProfileAction} submitLabel="Confirm deactivation" submitVariant="danger">
+              <input type="hidden" name="staffId" value={person.id} />
+            </ProductionActionForm>
+            <button
+              className="min-h-11 rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200"
+              type="button"
+              onClick={() => setConfirmingDeactivation(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {showEditor && (
         <div className="mt-5 grid gap-5 border-t border-purple-100 pt-5">
           <div>

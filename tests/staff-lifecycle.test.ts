@@ -70,3 +70,31 @@ describe("production staff lifecycle actions", () => {
     expect(complianceDetail).not.toContain('name="active" type="checkbox"');
   });
 });
+
+describe("production staff lifecycle interface", () => {
+  const staffScreen = source("src/components/staff/production-staff-screen.tsx");
+  const complianceScreen = source("src/components/compliance/production-compliance-screen.tsx");
+  const staffPage = source("src/app/staff/page.tsx");
+  const payPage = source("src/app/payroll/arrangements/page.tsx");
+
+  it("creates staff from Staff and not Compliance", () => {
+    expect(staffScreen).toContain("Add staff member");
+    expect(staffScreen).toContain("createStaffProfileAction");
+    expect(complianceScreen).not.toContain("Add staff member");
+    expect(complianceScreen).not.toContain("createStaffProfileAction");
+  });
+
+  it("shows explicit deactivate, confirmation and reactivate controls", () => {
+    expect(staffScreen).toContain("Deactivate staff member");
+    expect(staffScreen).toContain("Confirm deactivation");
+    expect(staffScreen).toContain("History will be preserved");
+    expect(staffScreen).toContain("Reactivate staff member");
+    expect(staffScreen).toContain("Login and kiosk access will remain disabled");
+  });
+
+  it("enables lifecycle controls on Staff but not Pay arrangements", () => {
+    expect(staffPage).toContain("showStaffLifecycleControls");
+    expect(staffPage).toContain("currentStaffId={manager.staffId}");
+    expect(payPage).not.toContain("showStaffLifecycleControls");
+  });
+});
