@@ -121,7 +121,7 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
       setMessage("Full name and role are required.");
       return;
     }
-    persist({ ...state, staff: state.staff.map((item) => item.id === staffId ? { ...item, updatedAt: new Date().toISOString() } : item) }, "Staff details saved.");
+    persist({ ...state, staff: state.staff.map((item) => item.id === staffId ? { ...item, active: item.active, updatedAt: new Date().toISOString() } : item) }, "Staff details saved.");
   }
 
   function upsertQualification(qualification: StaffQualification) {
@@ -178,7 +178,6 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
           <div className="mt-4 flex flex-wrap gap-4">
             <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={staff.isApprentice} onChange={(e) => patchStaff("isApprentice", e.target.checked)} /> Apprentice</label>
             <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={staff.isCoverStaff} onChange={(e) => patchStaff("isCoverStaff", e.target.checked)} /> Cover staff</label>
-            <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={staff.active} onChange={(e) => patchStaff("active", e.target.checked)} /> Active</label>
           </div>
           <Field label="Notes"><textarea className={inputClassName("mt-3 min-h-20 w-full")} value={staff.notes ?? ""} onChange={(e) => patchStaff("notes", e.target.value || null)} /></Field>
           <div className="mt-4 flex gap-3"><Button onClick={saveStaff}><Save className="h-4 w-4" /> Save details</Button><Button variant="secondary" onClick={() => { setState(loadState()); setDirty(false); }}>Cancel</Button></div>

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Plus, Save, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Button, EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import {
   centralRecordCompletion,
   certificateStatus,
@@ -33,17 +33,11 @@ function saveDemoCompliance(state: DemoComplianceState) {
   window.localStorage.setItem(demoComplianceStorageKey, JSON.stringify(state));
 }
 
-function newStaffId(fullName: string): string {
-  return `staff-${fullName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-}
-
 export function StaffComplianceScreen() {
   const [state, setState] = useState<DemoComplianceState>(() => loadDemoCompliance());
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [message, setMessage] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [newStaff, setNewStaff] = useState({ fullName: "", employmentRole: "", mainQualificationLevel: "", appointmentDate: "", active: true });
   const today = new Date("2026-06-10T12:00:00+01:00");
 
   function persist(next: DemoComplianceState, success: string) {
@@ -70,44 +64,12 @@ export function StaffComplianceScreen() {
     return matchesQuery && matchesFilter;
   });
 
-  function quickSave(person: StaffProfile, field: "employmentRole" | "mainQualificationLevel" | "active", value: string | boolean) {
+  function quickSave(person: StaffProfile, field: "employmentRole" | "mainQualificationLevel", value: string) {
     const next = {
       ...state,
       staff: state.staff.map((item) => (item.id === person.id ? { ...item, [field]: field === "mainQualificationLevel" && value === "" ? null : value, updatedAt: new Date().toISOString() } : item)),
     };
     persist(next, "Quick edit saved in demo mode.");
-  }
-
-  function addStaff() {
-    if (!newStaff.fullName.trim() || !newStaff.employmentRole.trim()) {
-      setMessage("Full name and role are required.");
-      return;
-    }
-    const id = newStaffId(newStaff.fullName);
-    if (state.staff.some((person) => person.id === id)) {
-      setMessage("A staff profile with this generated ID already exists.");
-      return;
-    }
-    const createdAt = new Date().toISOString();
-    const profile: StaffProfile = {
-      id,
-      fullName: newStaff.fullName.trim(),
-      displayName: newStaff.fullName.trim().split(" ")[0],
-      employmentRole: newStaff.employmentRole.trim(),
-      mainQualificationLevel: newStaff.mainQualificationLevel.trim() || null,
-      isApprentice: false,
-      isCoverStaff: false,
-      appointmentDate: newStaff.appointmentDate || null,
-      active: newStaff.active,
-      authUserId: null,
-      email: null,
-      notes: null,
-      createdAt,
-      updatedAt: createdAt,
-    };
-    persist({ ...state, staff: [profile, ...state.staff] }, "Staff profile added in demo mode. Open View to complete the record.");
-    setAdding(false);
-    setNewStaff({ fullName: "", employmentRole: "", mainQualificationLevel: "", appointmentDate: "", active: true });
   }
 
   return (
@@ -120,7 +82,6 @@ export function StaffComplianceScreen() {
             Editable central-record, qualification and certificate tracking. Local demo edits are stored in this browser; configured production saves use Supabase manager actions.
           </p>
         </div>
-        <Button onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> Add staff member</Button>
       </div>
       <p className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Demo mode: these compliance rows are non-sensitive sample records. Do not enter real DBS or medical information here.</p>
       {message && <p className="mb-4 rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">{message}</p>}
@@ -144,19 +105,6 @@ export function StaffComplianceScreen() {
               </Panel>
             ))}
           </div>
-          {adding && (
-            <Panel className="mt-4">
-              <h2 className="text-xl font-black text-purple-950">Add staff profile</h2>
-              <div className="mt-4 grid gap-4 md:grid-cols-5">
-                <Field label="Full name"><input className={inputClassName()} value={newStaff.fullName} onChange={(event) => setNewStaff({ ...newStaff, fullName: event.target.value })} /></Field>
-                <Field label="Role"><input className={inputClassName()} value={newStaff.employmentRole} onChange={(event) => setNewStaff({ ...newStaff, employmentRole: event.target.value })} /></Field>
-                <Field label="Qualification"><input className={inputClassName()} value={newStaff.mainQualificationLevel} onChange={(event) => setNewStaff({ ...newStaff, mainQualificationLevel: event.target.value })} /></Field>
-                <Field label="Start date"><input className={inputClassName()} type="date" value={newStaff.appointmentDate} onChange={(event) => setNewStaff({ ...newStaff, appointmentDate: event.target.value })} /></Field>
-                <label className="flex items-center gap-3 pt-6 text-sm font-bold text-purple-950"><input type="checkbox" checked={newStaff.active} onChange={(event) => setNewStaff({ ...newStaff, active: event.target.checked })} /> Active</label>
-              </div>
-              <div className="mt-4 flex gap-3"><Button onClick={addStaff}><Save className="h-4 w-4" /> Save</Button><Button variant="secondary" onClick={() => setAdding(false)}>Cancel</Button></div>
-            </Panel>
-          )}
           <Panel className="mt-4">
             <div className="grid gap-3 md:grid-cols-[1fr_220px]">
               <label className="relative">
@@ -198,10 +146,7 @@ export function StaffComplianceScreen() {
                           <td className="border-b border-purple-50 px-3 py-3">{nextExpiry ? formatDateUk(nextExpiry) : "No expiry"}</td>
                           <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={overall === "urgent" ? "red" : overall === "complete" ? "green" : "amber"}>{overall}</StatusPill></td>
                           <td className="border-b border-purple-50 px-3 py-3">
-                            <div className="flex gap-2">
-                              <Link className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-purple-900 shadow-sm ring-1 ring-purple-200 hover:bg-purple-50" href={`/compliance/staff/${person.id}`}>View</Link>
-                              <Button variant="secondary" onClick={() => quickSave(person, "active", !person.active)}>{person.active ? "Deactivate" : "Activate"}</Button>
-                            </div>
+                            <Link className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-purple-900 shadow-sm ring-1 ring-purple-200 hover:bg-purple-50" href={`/compliance/staff/${person.id}`}>View</Link>
                           </td>
                         </tr>
                       );

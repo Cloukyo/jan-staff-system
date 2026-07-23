@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createSeedState } from "@/lib/demo-data/seed";
@@ -10,6 +10,8 @@ function source(path: string): string {
 
 describe("staff lifecycle database operation", () => {
   const migration = source("supabase/migrations/202607230001_staff_lifecycle_management.sql");
+  const enforcementMigrationPath = "supabase/migrations/202607230002_enforce_staff_lifecycle_paths.sql";
+  const enforcementMigration = existsSync(resolve(enforcementMigrationPath)) ? source(enforcementMigrationPath) : "";
 
   it("restricts profile lifecycle changes to managers", () => {
     expect(migration).toContain("create or replace function public.set_staff_profile_active");
@@ -33,6 +35,42 @@ describe("staff lifecycle database operation", () => {
     expect(migration).toMatch(/if not p_active then[\s\S]*update public\.staff_accounts/);
     expect(migration).not.toMatch(/if p_active then[\s\S]*update public\.staff_accounts/);
     expect(migration).not.toMatch(/if p_active then[\s\S]*update public\.staff_kiosk_settings/);
+  });
+
+  it("limits authenticated staff profile updates to compliance fields", () => {
+    expect(enforcementMigration).toMatch(/revoke update on table\s+public\.staff_profiles\s+from authenticated;/i);
+    const grantedColumns = enforcementMigration
+      .match(/grant update\s*\(([^)]+)\)\s*on table\s+public\.staff_profiles\s+to authenticated;/i)?.[1]
+      .split(",")
+      .map((column) => column.trim()) ?? [];
+    expect(grantedColumns).toEqual([
+      "full_name",
+      "display_name",
+      "employment_role",
+      "main_qualification_level",
+      "is_apprentice",
+      "is_cover_staff",
+      "appointment_date",
+      "email",
+      "notes",
+      "updated_at",
+    ]);
+    expect(grantedColumns).not.toContain("active");
+    expect(grantedColumns).not.toContain("auth_user_id");
+    expect(grantedColumns).not.toContain("id");
+    expect(grantedColumns).not.toContain("created_at");
+  });
+
+  it("removes direct authenticated account writes", () => {
+    expect(enforcementMigration).toMatch(/revoke insert, update on table\s+public\.staff_accounts\s+from authenticated;/i);
+  });
+
+  it("guards every account activation and linking path with the profile status", () => {
+    expect(enforcementMigration).toContain("create or replace function public.ensure_staff_account_profile_is_active");
+    expect(enforcementMigration).toMatch(/if new\.active is true then[\s\S]*from public\.staff_profiles[\s\S]*where id = new\.staff_id/i);
+    expect(enforcementMigration).toContain("linked_profile_active is not true");
+    expect(enforcementMigration).toContain("Reactivate the staff profile before enabling login.");
+    expect(enforcementMigration).toMatch(/before insert or update of active, staff_id\s+on public\.staff_accounts/i);
   });
 });
 
@@ -71,6 +109,15 @@ describe("production staff lifecycle actions", () => {
     expect(complianceScreen).not.toContain("defaultChecked={person.active}");
     expect(complianceDetail).not.toContain('name="active" type="checkbox"');
   });
+
+  it("checks the linked profile before enabling a staff account", () => {
+    const reactivation = source("src/lib/accounts/server.ts").slice(
+      source("src/lib/accounts/server.ts").indexOf("export async function reactivateStaffAccountAction"),
+    );
+    expect(reactivation).toContain('from("staff_profiles").select("active").eq("id", account.staffId).maybeSingle()');
+    expect(reactivation).toContain("Reactivate the staff profile before enabling login.");
+    expect(reactivation.indexOf('select("active")')).toBeLessThan(reactivation.indexOf('rpc("set_staff_account_active"'));
+  });
 });
 
 describe("production staff lifecycle interface", () => {
@@ -105,20 +152,30 @@ describe("demo staff lifecycle", () => {
   it("deactivates the profile and linked account without deleting history", () => {
     const state = createSeedState();
     const staffId = state.staffAccounts[0].staffId;
+    const historicReferences = {
+      clockEvents: state.clockEvents,
+      rota: state.rota,
+      payRates: state.payRates,
+      leaveRequests: state.leaveRequests,
+      attendanceAdjustments: state.attendanceAdjustments,
+      attendanceApprovals: state.attendanceApprovals,
+      paySummaries: state.paySummaries,
+    };
+    const historicSnapshots = structuredClone(historicReferences);
     const next = setDemoStaffActive(state, staffId, false);
     expect(next.staff.find((person) => person.id === staffId)?.active).toBe(false);
     expect(next.staffAccounts.find((account) => account.staffId === staffId)?.active).toBe(false);
     [
-      ["clock events", next.clockEvents, state.clockEvents],
-      ["rota", next.rota, state.rota],
-      ["pay rates", next.payRates, state.payRates],
-      ["leave requests", next.leaveRequests, state.leaveRequests],
-      ["attendance adjustments", next.attendanceAdjustments, state.attendanceAdjustments],
-      ["attendance approvals", next.attendanceApprovals, state.attendanceApprovals],
-      ["pay summaries", next.paySummaries, state.paySummaries],
-    ].forEach(([name, after, before]) => {
-      expect(after, `${name} should retain its collection identity`).toBe(before);
-      expect(after, `${name} should retain its content`).toEqual(before);
+      ["clock events", next.clockEvents, historicReferences.clockEvents, historicSnapshots.clockEvents],
+      ["rota", next.rota, historicReferences.rota, historicSnapshots.rota],
+      ["pay rates", next.payRates, historicReferences.payRates, historicSnapshots.payRates],
+      ["leave requests", next.leaveRequests, historicReferences.leaveRequests, historicSnapshots.leaveRequests],
+      ["attendance adjustments", next.attendanceAdjustments, historicReferences.attendanceAdjustments, historicSnapshots.attendanceAdjustments],
+      ["attendance approvals", next.attendanceApprovals, historicReferences.attendanceApprovals, historicSnapshots.attendanceApprovals],
+      ["pay summaries", next.paySummaries, historicReferences.paySummaries, historicSnapshots.paySummaries],
+    ].forEach(([name, after, beforeReference, beforeSnapshot]) => {
+      expect(after, `${name} should retain its collection identity`).toBe(beforeReference);
+      expect(after, `${name} should retain its content`).toEqual(beforeSnapshot);
     });
   });
 
@@ -148,5 +205,25 @@ describe("demo staff lifecycle", () => {
     expect(existingStaffSave).toContain("active: staff.active");
     expect(existingStaffSave).toContain("employmentStatus: staff.employmentStatus");
     expect(existingStaffSave).not.toContain("active: form.active");
+  });
+
+  it("keeps staff creation and lifecycle controls out of demo Compliance", () => {
+    const complianceScreen = source("src/components/compliance/staff-compliance-screen.tsx");
+    expect(complianceScreen).not.toContain("Add staff member");
+    expect(complianceScreen).not.toContain("function addStaff");
+    expect(complianceScreen).not.toContain("newStaff");
+    expect(complianceScreen).not.toContain('quickSave(person, "active"');
+    expect(complianceScreen).not.toMatch(/field:\s*"employmentRole"\s*\|\s*"mainQualificationLevel"\s*\|\s*"active"/);
+  });
+
+  it("preserves active status when demo Compliance saves profile details", () => {
+    const complianceDetail = source("src/components/compliance/staff-compliance-detail.tsx");
+    const saveStaff = complianceDetail.slice(
+      complianceDetail.indexOf("function saveStaff"),
+      complianceDetail.indexOf("function upsertQualification"),
+    );
+    expect(complianceDetail).not.toContain('patchStaff("active"');
+    expect(complianceDetail).not.toContain("checked={staff.active}");
+    expect(saveStaff).toContain("active: item.active");
   });
 });
