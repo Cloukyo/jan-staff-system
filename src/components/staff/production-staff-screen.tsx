@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import type { StaffDirectoryRow } from "@/lib/payroll/types";
+import {
+  deactivateStaffProfileAction,
+  reactivateStaffProfileAction,
+} from "@/lib/staff/actions";
 import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 
 export type StaffDirectoryFilter = "active" | "needs-setup" | "needs-checks" | "inactive";
@@ -52,12 +57,17 @@ export function filterStaffDirectoryRows(
 export function ProductionStaffScreen({
   staff,
   initialFilter = "active",
+  showStaffLifecycleControls = false,
+  currentStaffId,
 }: {
   staff: StaffDirectoryRow[];
   initialFilter?: StaffDirectoryFilter;
+  showStaffLifecycleControls?: boolean;
+  currentStaffId?: string;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StaffDirectoryFilter>(initialFilter);
+  const [confirmingStaffId, setConfirmingStaffId] = useState<string | null>(null);
   const filtered = useMemo(
     () => filterStaffDirectoryRows(staff, filter, query),
     [filter, query, staff],
@@ -69,7 +79,6 @@ export function ProductionStaffScreen({
     { id: "needs-checks", label: "Needs checks" },
     { id: "inactive", label: "Inactive" },
   ];
-
   return (
     <Panel>
       <div className="grid gap-4 md:grid-cols-[minmax(16rem,1fr)_auto] md:items-end">
@@ -134,7 +143,44 @@ export function ProductionStaffScreen({
                 >
                   Open record
                 </Link>
+                {showStaffLifecycleControls && person.active && person.id !== currentStaffId ? (
+                  <button
+                    className="min-h-11 rounded-lg bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800"
+                    type="button"
+                    onClick={() => setConfirmingStaffId(person.id)}
+                  >
+                    Deactivate staff member
+                  </button>
+                ) : null}
+                {showStaffLifecycleControls && !person.active ? (
+                  <div>
+                    <ProductionActionForm action={reactivateStaffProfileAction} submitLabel="Reactivate staff member">
+                      <input type="hidden" name="staffId" value={person.id} />
+                    </ProductionActionForm>
+                    <p className="mt-2 max-w-48 text-xs text-slate-600">Login and kiosk access will remain disabled.</p>
+                  </div>
+                ) : null}
               </div>
+              {confirmingStaffId === person.id ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 lg:col-span-5" role="alert">
+                  <p className="font-black text-red-950">Confirm deactivation</p>
+                  <p className="mt-2 text-sm text-red-900">
+                    The person will be removed from active staff, rota and kiosk lists. Login and kiosk clocking will be disabled. Attendance, rota, pay, audit and compliance history remains preserved.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <ProductionActionForm action={deactivateStaffProfileAction} submitLabel="Confirm deactivation" submitVariant="danger">
+                      <input type="hidden" name="staffId" value={person.id} />
+                    </ProductionActionForm>
+                    <button
+                      className="min-h-11 rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200"
+                      type="button"
+                      onClick={() => setConfirmingStaffId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}

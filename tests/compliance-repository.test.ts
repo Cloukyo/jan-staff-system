@@ -31,6 +31,7 @@ describe("compliance repository selection", () => {
 
   it("refreshes every staff profile consumer after a successful profile save", () => {
     const actions = readFileSync(resolve("src/lib/compliance/actions.ts"), "utf8");
+    const staffActions = readFileSync(resolve("src/lib/staff/actions.ts"), "utf8");
     const helperStart = actions.indexOf("function revalidateStaffProfileViews");
     const helper = actions.slice(helperStart, actions.indexOf("\n}", helperStart) + 2);
 
@@ -40,15 +41,16 @@ describe("compliance repository selection", () => {
     }
     expect(helper).toContain("revalidatePath(`/compliance/staff/${staffId}`)");
 
-    const createStart = actions.indexOf("export async function createStaffProfileAction");
     const quickUpdateStart = actions.indexOf("export async function quickUpdateStaffProfileAction");
     const updateStart = actions.indexOf("export async function updateStaffProfileAction");
     const updateEnd = actions.indexOf("export async function saveQualificationAction");
-    const createAction = actions.slice(createStart, quickUpdateStart);
+    const createStart = staffActions.indexOf("export async function createStaffProfileAction");
+    const createEnd = staffActions.indexOf("export async function deactivateStaffProfileAction");
+    const createAction = staffActions.slice(createStart, createEnd);
     const quickUpdateAction = actions.slice(quickUpdateStart, updateStart);
     const updateAction = actions.slice(updateStart, updateEnd);
 
-    expect(createAction.indexOf("revalidateStaffProfileViews(id)"))
+    expect(createAction.indexOf("refreshStaffPaths(id)"))
       .toBeGreaterThan(createAction.indexOf('if (error) return fail("Staff profile could not be created.'));
     expect(quickUpdateAction.indexOf("revalidateStaffProfileViews(staffId)"))
       .toBeGreaterThan(quickUpdateAction.indexOf('if (error) return fail("Quick edit could not be saved.");'));

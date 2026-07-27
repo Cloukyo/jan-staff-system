@@ -19,7 +19,7 @@ type StaffPageSearchParams = {
 
 export default async function StaffPage({ searchParams }: { searchParams: Promise<StaffPageSearchParams> }) {
   if (getAppMode() === "demo") return <StaffScreen />;
-  await requireAccount(["manager"]);
+  const manager = await requireAccount(["manager"]);
   const { action, filter } = await searchParams;
   const adding = action === "add";
   const initialFilter = parseStaffDirectoryFilter(filter);
@@ -54,7 +54,14 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
       </div>
       {adding
         ? <AddStaffForm />
-        : <ProductionStaffScreen initialFilter={initialFilter} staff={directoryStaff} />}
+        : (
+          <ProductionStaffScreen
+            currentStaffId={manager.staffId}
+            initialFilter={initialFilter}
+            showStaffLifecycleControls
+            staff={directoryStaff}
+          />
+        )}
     </AppShell>
   );
 }

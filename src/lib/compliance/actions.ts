@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireAccount } from "@/lib/auth/permissions";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
@@ -38,27 +37,6 @@ function revalidateStaffProfileViews(staffId: string): void {
   revalidatePath("/settings/kiosk");
 }
 
-export async function createStaffProfileAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
-  const supabase = await managerSupabase();
-  if (!supabase) return fail("Demo mode is local only. Configure Supabase to save production staff profiles.");
-  const fullName = text(formData, "fullName");
-  const employmentRole = text(formData, "employmentRole");
-  if (!fullName || !employmentRole) return fail("Full name and role are required.");
-  const id = crypto.randomUUID();
-  const { error } = await supabase.from("staff_profiles").insert({
-    id,
-    full_name: fullName,
-    display_name: text(formData, "displayName") ?? fullName.split(" ")[0],
-    employment_role: employmentRole,
-    main_qualification_level: text(formData, "mainQualificationLevel"),
-    appointment_date: text(formData, "appointmentDate"),
-    active: bool(formData, "active"),
-  });
-  if (error) return fail("Staff profile could not be created. Check for a duplicate staff record.");
-  revalidateStaffProfileViews(id);
-  redirect(`/compliance/staff/${id}`);
-}
-
 export async function quickUpdateStaffProfileAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
   const supabase = await managerSupabase();
   if (!supabase) return fail("Production Supabase configuration is required.");
@@ -68,7 +46,6 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
   const { error } = await supabase.from("staff_profiles").update({
     employment_role: employmentRole,
     main_qualification_level: text(formData, "mainQualificationLevel"),
-    active: bool(formData, "active"),
   }).eq("id", staffId);
   if (error) return fail("Quick edit could not be saved.");
   revalidateStaffProfileViews(staffId);
@@ -90,7 +67,6 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
     is_apprentice: bool(formData, "isApprentice"),
     is_cover_staff: bool(formData, "isCoverStaff"),
     appointment_date: text(formData, "appointmentDate"),
-    active: bool(formData, "active"),
     email: text(formData, "email"),
     notes: text(formData, "notes"),
   }).eq("id", staffId);

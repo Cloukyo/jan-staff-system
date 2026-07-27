@@ -238,6 +238,7 @@ function StaffScreen() {
   const [activeFilter, setActiveFilter] = useState("active");
   const [payFilter, setPayFilter] = useState("all");
   const [editing, setEditing] = useState<StaffMember | "new" | null>(null);
+  const [confirmingStaffId, setConfirmingStaffId] = useState<string | null>(null);
   const filtered = repo.state.staff.filter((person) => {
     const matchesQuery = `${person.fullName} ${person.role}`.toLowerCase().includes(query.toLowerCase());
     const matchesActive = activeFilter === "all" || (activeFilter === "active" ? person.active : !person.active);
@@ -278,10 +279,41 @@ function StaffScreen() {
             formatDurationCompact(person.contractedWeeklyMinutes),
             <span key="rate">{person.payType === "hourly" ? `${formatMoney(person.hourlyRatePence)} / hour` : `${formatMoney(person.monthlySalaryPence)} / month`}{(person.payType === "hourly" && !person.hourlyRatePence) || (person.payType === "salaried" && !person.monthlySalaryPence) ? <span className="ml-2 text-xs font-bold text-red-700">Missing active rate</span> : null}</span>,
             <StatusPill key="status" tone={person.active ? "green" : "grey"}>{person.active ? "Active" : "Inactive"}</StatusPill>,
-            <Button key="edit" variant="secondary" onClick={() => setEditing(person)}><Edit3 className="h-4 w-4" /> Edit</Button>,
+            <div key="actions" className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setEditing(person)}><Edit3 className="h-4 w-4" /> Edit</Button>
+              {person.active ? (
+                <Button variant="danger" onClick={() => setConfirmingStaffId(person.id)}>
+                  Deactivate staff member
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => repo.setStaffActive(person.id, true)}>
+                  Reactivate staff member
+                </Button>
+              )}
+            </div>,
           ])}
         />
       </Panel>
+      {confirmingStaffId && (
+        <Panel className="mt-4 border-red-200 bg-red-50">
+          <h2 className="font-black text-red-950">Confirm deactivation</h2>
+          <p className="mt-2 text-sm text-red-900">
+            Login and kiosk access will be disabled. History will be preserved.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              onClick={() => {
+                repo.setStaffActive(confirmingStaffId, false);
+                setConfirmingStaffId(null);
+              }}
+            >
+              Confirm deactivation
+            </Button>
+            <Button variant="secondary" onClick={() => setConfirmingStaffId(null)}>Cancel</Button>
+          </div>
+        </Panel>
+      )}
       {editing && <StaffModal staff={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
     </>
   );
@@ -345,8 +377,8 @@ function StaffModal({ staff, onClose }: { staff: StaffMember | null; onClose: ()
         monthlySalaryPence: form.payType === "salaried" ? Math.round(Number(form.monthlySalary) * 100) : null,
         contractedWeeklyMinutes: Math.round(Number(form.contractedWeeklyHours) * 60),
         defaultBreakMinutes: Number(form.defaultBreakMinutes),
-        active: form.active,
-        employmentStatus: form.active ? "employed" : "former",
+        active: staff.active,
+        employmentStatus: staff.employmentStatus,
         endDate: form.endDate || null,
       };
       repo.updateStaff(next, {
@@ -387,10 +419,12 @@ function StaffModal({ staff, onClose }: { staff: StaffMember | null; onClose: ()
           {staff && <Field label="Rate effective from"><input className={inputClassName()} value={form.effectiveFrom} onChange={(event) => set("effectiveFrom", event.target.value)} type="date" /></Field>}
           {staff && <Field label="End date"><input className={inputClassName()} value={form.endDate} onChange={(event) => set("endDate", event.target.value)} type="date" /></Field>}
         </div>
-        <label className="flex items-center gap-3 text-sm font-semibold text-purple-950">
-          <input checked={form.active} onChange={(event) => set("active", event.target.checked)} type="checkbox" className="h-5 w-5 accent-purple-700" />
-          Active staff member
-        </label>
+        {!staff && (
+          <label className="flex items-center gap-3 text-sm font-semibold text-purple-950">
+            <input checked={form.active} onChange={(event) => set("active", event.target.checked)} type="checkbox" className="h-5 w-5 accent-purple-700" />
+            Active staff member
+          </label>
+        )}
         {error && <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
         <div className="flex justify-end gap-3"><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit"><Save className="h-4 w-4" /> Save</Button></div>
       </form>

@@ -114,7 +114,6 @@ export function ProductionComplianceDetail({
             <div className="mt-4 flex flex-wrap gap-4">
               <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="isApprentice" type="checkbox" defaultChecked={staff.isApprentice} /> Apprentice</label>
               <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="isCoverStaff" type="checkbox" defaultChecked={staff.isCoverStaff} /> Cover staff</label>
-              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="active" type="checkbox" defaultChecked={staff.active} /> Active</label>
             </div>
             <Field label="Notes"><textarea className={inputClassName("mt-3 min-h-24 w-full")} name="notes" defaultValue={staff.notes ?? ""} /></Field>
           </ProductionActionForm>

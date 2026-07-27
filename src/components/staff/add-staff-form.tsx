@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import { Field, Panel, inputClassName } from "@/components/ui/primitives";
-import { createStaffProfileAction } from "@/lib/compliance/actions";
+import { createStaffProfileAction } from "@/lib/staff/actions";
 
 export function AddStaffForm() {
   return (

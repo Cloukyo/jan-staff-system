@@ -193,6 +193,8 @@ export async function reactivateStaffAccountAction(_state: ActionResult, formDat
   const account = await getAccount(accountId);
   if (!account) return { ok: false, message: "Account not found." };
   const supabase = await createSupabaseServerClient();
+  const { data: profile } = await supabase.from("staff_profiles").select("active").eq("id", account.staffId).maybeSingle();
+  if (profile?.active !== true) return { ok: false, message: "Reactivate the staff profile before enabling login." };
   const { error } = await supabase.rpc("set_staff_account_active", { p_account_id: accountId, p_active: true });
   if (error) return { ok: false, message: "Account could not be enabled." };
   refreshAccountPaths(account.staffId);
