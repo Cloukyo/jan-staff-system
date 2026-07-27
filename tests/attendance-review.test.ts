@@ -2,12 +2,27 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildAttendanceReviewRow, mapManagerHoursPreview } from "@/lib/attendance/review-server";
+import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
 }
 
 describe("production attendance review", () => {
+  it("defaults unknown attendance views to needs attention", () => {
+    expect(parseAttendanceManagerView()).toBe("needs-attention");
+    expect(parseAttendanceManagerView("add-event")).toBe("add-event");
+    expect(parseAttendanceManagerView("unknown")).toBe("needs-attention");
+  });
+
+  it("puts the missing clock event command before attendance review", () => {
+    const page = source("src/app/attendance/page.tsx");
+    expect(page).toContain("Add a missing clock-in or clock-out");
+    expect(page.indexOf("Add a missing clock-in or clock-out"))
+      .toBeLessThan(page.indexOf("<AttendanceReview"));
+    expect(page).toContain("<AttendancePageNav");
+  });
+
   it("detects daily attendance exceptions", () => {
     const row = buildAttendanceReviewRow({
       staffId: "staff",
