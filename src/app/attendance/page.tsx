@@ -14,6 +14,7 @@ import { ClockPlus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 import { requireAccount } from "@/lib/auth/permissions";
+import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
 import { loadAttendanceReviewDay, loadManagerHoursPreview } from "@/lib/attendance/review-server";
 
@@ -31,7 +32,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   await requireAccount(["manager"]);
   const { view: viewValue, date, hoursFrom, hoursTo } = await searchParams;
   const view = parseAttendanceManagerView(viewValue);
-  const [dataset, review, hoursPreview] = await Promise.all([loadManagerAttendance(), loadAttendanceReviewDay(date), loadManagerHoursPreview(hoursFrom, hoursTo)]);
+  const reviewDate = view === "today" ? isoDateInLondon() : date;
+  const [dataset, review, hoursPreview] = await Promise.all([loadManagerAttendance(), loadAttendanceReviewDay(reviewDate), loadManagerHoursPreview(hoursFrom, hoursTo)]);
   return (
     <AppShell>
       <div className="mb-5">

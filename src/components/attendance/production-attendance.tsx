@@ -23,7 +23,7 @@ export function buildAttendanceTodayGroups(
       (row) => Boolean(row.scheduledStart) && !row.firstClockIn,
     ),
     missingClockOuts: rows.filter(
-      (row) => Boolean(row.firstClockIn) && !row.finalClockOut,
+      (row) => row.exceptions.includes("Missing clock-out"),
     ),
   };
 }

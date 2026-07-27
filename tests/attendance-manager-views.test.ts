@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as attendanceViews from "@/components/attendance/production-attendance";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
@@ -111,9 +113,23 @@ describe("manager attendance views", () => {
       "staff-2",
     ]);
     expect(groups.missingClockOuts.map((row) => row.staffId)).toEqual([
-      "staff-1",
       "staff-3",
     ]);
+  });
+
+  it("loads Today from the current London review date, not the requested review date", () => {
+    const attendancePage = readFileSync(
+      resolve("src/app/attendance/page.tsx"),
+      "utf8",
+    );
+
+    expect(attendancePage).toContain(
+      'const reviewDate = view === "today" ? isoDateInLondon() : date;',
+    );
+    expect(attendancePage).toContain("loadAttendanceReviewDay(reviewDate)");
+    expect(attendancePage).toContain(
+      '<AttendanceToday staff={dataset.staff} rows={review.rows} />',
+    );
   });
 
   it("searches immutable history by staff, event, source, reason and date", () => {
