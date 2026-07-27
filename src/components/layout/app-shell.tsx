@@ -3,77 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3,
   CalendarDays,
   CalendarPlus,
-  CalendarX2,
   Clock3,
-  ClipboardCheck,
-  ClipboardList,
-  CreditCard,
-  FileSpreadsheet,
-  KeyRound,
-  LayoutTemplate,
   LogOut,
   Menu,
-  Settings,
   UserRound,
-  Users,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { signOutAction } from "@/lib/auth/actions";
+import {
+  itemIsActive,
+  managerNavigation,
+  type NavGroup,
+} from "@/lib/navigation/manager-navigation";
 import type { AppRole } from "@/types";
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: typeof Users;
-  active?: (pathname: string) => boolean;
-};
-
-type NavGroup = {
-  label: string;
-  items: NavItem[];
-};
-
-const managerNavigation: NavGroup[] = [
-  {
-    label: "Daily",
-    items: [
-      { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-      { href: "/rota", label: "Rota", icon: CalendarDays, active: (path) => path === "/rota" || (path.startsWith("/rota/") && !path.startsWith("/rota/templates")) },
-      { href: "/attendance", label: "Attendance", icon: ClipboardCheck },
-      { href: "/leave/requests", label: "Leave", icon: CalendarX2, active: (path) => path.startsWith("/leave") },
-    ],
-  },
-  {
-    label: "People",
-    items: [
-      { href: "/staff", label: "Staff", icon: Users },
-      { href: "/compliance", label: "Compliance", icon: ClipboardList, active: (path) => path.startsWith("/compliance") },
-      { href: "/accounts", label: "Accounts", icon: UserRound },
-    ],
-  },
-  {
-    label: "Pay",
-    items: [
-      { href: "/payroll/arrangements", label: "Pay arrangements", icon: CreditCard },
-      { href: "/payroll/review", label: "Payroll review", icon: FileSpreadsheet },
-      { href: "/payroll", label: "Pay preparation", icon: CreditCard, active: (path) => path === "/payroll" },
-    ],
-  },
-  {
-    label: "Setup",
-    items: [
-      { href: "/rota/templates", label: "Rota templates", icon: LayoutTemplate, active: (path) => path.startsWith("/rota/templates") },
-      { href: "/settings/kiosk", label: "Kiosk setup", icon: KeyRound },
-      { href: "/settings", label: "Settings", icon: Settings, active: (path) => path === "/settings" },
-    ],
-  },
-];
 
 const staffNavigation: NavGroup[] = [
   {
@@ -87,11 +34,6 @@ const staffNavigation: NavGroup[] = [
     ],
   },
 ];
-
-function itemIsActive(item: NavItem, pathname: string): boolean {
-  if (item.active) return item.active(pathname);
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
-}
 
 export function AppShell({ children, role = "manager" }: { children: React.ReactNode; role?: AppRole }) {
   const pathname = usePathname();
