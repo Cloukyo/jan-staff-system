@@ -164,7 +164,7 @@ export function ProductionComplianceDetail({
               ))}
             </nav>
         <Panel>
-          <h2 id="qualifications" className="text-xl font-black text-purple-950">Qualifications</h2>
+          <h2 id="qualifications" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Qualifications</h2>
           <div className="mt-4 grid gap-4">
             {record.qualifications.map((item) => (
               <div key={item.id} className="rounded-xl border border-purple-100 p-4">
@@ -187,7 +187,7 @@ export function ProductionComplianceDetail({
         </Panel>
 
         <Panel>
-          <h2 id="training-certificates" className="text-xl font-black text-purple-950">Training and certificates</h2>
+          <h2 id="training-certificates" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Training and certificates</h2>
           <div className="mt-4 grid gap-4">
             {record.certificates.map((item) => {
               const status = certificateStatus(item);
@@ -214,7 +214,7 @@ export function ProductionComplianceDetail({
         </Panel>
 
         <Panel>
-          <h2 id="dbs-suitability" className="text-xl font-black text-purple-950">DBS and suitability</h2>
+          <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
           <ProductionActionForm action={saveCentralRecordAction}>
             <input type="hidden" name="staffId" value={staff.id} />
@@ -232,7 +232,7 @@ export function ProductionComplianceDetail({
         </Panel>
 
         <Panel>
-          <h2 id="central-record" className="text-xl font-black text-purple-950">Central-record checklist</h2>
+          <h2 id="central-record" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Central-record checklist</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {checklist.map(([key, label]) => {
               const item = record.centralItems.find((entry) => entry.itemKey === key);
@@ -250,7 +250,7 @@ export function ProductionComplianceDetail({
         </Panel>
 
         <Panel>
-          <h2 id="references" className="text-xl font-black text-purple-950">References</h2>
+          <h2 id="references" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">References</h2>
           <div className="mt-4 grid gap-4">
             {record.references.map((item) => <div key={item.id} className="rounded-xl border border-purple-100 p-4"><ProductionActionForm action={saveReferenceAction}><input type="hidden" name="staffId" value={staff.id} /><input type="hidden" name="referenceId" value={item.id} /><ReferenceFields item={item} /></ProductionActionForm><ArchiveForm table="staff_reference_checks" id={item.id} staffId={staff.id} /></div>)}
             <div className="rounded-xl bg-purple-50 p-4"><h3 className="font-black text-purple-950">Add reference</h3><ProductionActionForm action={saveReferenceAction}><input type="hidden" name="staffId" value={staff.id} /><ReferenceFields /></ProductionActionForm></div>
@@ -258,7 +258,7 @@ export function ProductionComplianceDetail({
         </Panel>
 
         <Panel>
-          <h2 id="import-warnings" className="text-xl font-black text-purple-950">Import warnings</h2>
+          <h2 id="import-warnings" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Import warnings</h2>
           {record.importWarnings.length ? record.importWarnings.map((warning) => <div key={warning.id} className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><strong>{warning.status}</strong>{warning.warnings.map((text) => <p key={text}>{text}</p>)}</div>) : <EmptyState title="No import warnings" body="No import-review warnings are linked to this profile." />}
           <p className="mt-4 text-sm text-slate-600">Created {formatDateUk(staff.createdAt)}. Updated {formatDateUk(staff.updatedAt)}.</p>
         </Panel>

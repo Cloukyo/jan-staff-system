@@ -134,15 +134,21 @@ describe("staff record sections", () => {
   it("keeps all six specialist training and check groups behind a local jump list", () => {
     const detail = source("src/components/compliance/production-compliance-detail.tsx");
     expect(detail).toContain('aria-label="Training and checks sections"');
-    for (const heading of [
-      "Qualifications",
-      "Training and certificates",
-      "DBS and suitability",
-      "Central-record checklist",
-      "References",
-      "Import warnings",
-    ]) {
-      expect(detail).toContain(heading);
+    const targets = [
+      ["qualifications", "Qualifications"],
+      ["training-certificates", "Training and certificates"],
+      ["dbs-suitability", "DBS and suitability"],
+      ["central-record", "Central-record checklist"],
+      ["references", "References"],
+      ["import-warnings", "Import warnings"],
+    ];
+    for (const [id, heading] of targets) {
+      expect(detail).toContain(`["${id}", "${heading}"]`);
+      expect(detail).toMatch(
+        new RegExp(
+          `id="${id}" className="[^"]*scroll-mt-44[^"]*md:scroll-mt-36[^"]*lg:scroll-mt-16`,
+        ),
+      );
     }
   });
 });
