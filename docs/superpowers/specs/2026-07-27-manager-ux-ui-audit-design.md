@@ -145,6 +145,30 @@ The following items should no longer be separate primary navigation destinations
 
 Their functions should be reached from the relevant staff record or from a clearly labelled advanced action.
 
+## Page Hierarchy and Submenus
+
+Every manager page should rank controls by importance instead of presenting every feature with equal visual weight.
+
+The standard page hierarchy should be:
+
+1. Page purpose and most important action.
+2. Page submenu for switching between major views.
+3. Current warnings, filters and everyday work.
+4. Secondary tools and exports.
+5. Rare or destructive actions.
+
+The most important action must appear in the first viewport. It must not rely on the manager discovering it by scrolling or opening a More menu.
+
+Pages with more than one major view should have a page-level submenu directly below the heading. On desktop, the submenu should remain visible while the manager scrolls. On mobile, it should become a compact Jump to menu below the page heading.
+
+Submenu items are for destinations or views. Commands such as adding a missed clock event should use a clearly labelled button, not be styled as another tab.
+
+The rule for long pages is:
+
+> If an important destination is below the first screen, it must also be reachable immediately from the page submenu.
+
+This applies to Attendance, employee records, rota tools, pay hours and clocking-in settings.
+
 ## Recommended Wording
 
 | Current wording | Recommended wording | Reason |
@@ -237,12 +261,26 @@ Saving either field should refresh all affected manager pages and the Staff Cloc
 
 ## Clock-ins & Hours Design
 
-The current Attendance page combines too many jobs. It should become a page with task tabs:
+The current Attendance page combines too many jobs.
+
+The first viewport should contain:
+
+- Clock-ins & hours heading
+- Add a missing clock-in or clock-out as the visually dominant primary button
+- unresolved attendance count
+- task submenu
+- selected task content
+
+Add a missing clock-in or clock-out is the most important Attendance command. It should be available before filters, summary cards or employee review entries. On mobile, it should be a full-width button directly below the page introduction.
+
+The task submenu should switch immediately between:
 
 - Needs attention
 - Today
 - Hours summary
 - Clocking history
+
+The desktop submenu should remain visible while scrolling. The mobile Jump to menu should show the selected view and provide all four destinations without requiring page scrolling.
 
 ### Needs attention
 
@@ -262,7 +300,8 @@ Show:
 - who is currently clocked in
 - scheduled staff who have not clocked in
 - missing clock-outs
-- a direct Add missing clock-in or clock-out action
+
+The primary Add a missing clock-in or clock-out action remains available from the page header while viewing Today.
 
 ### Hours summary
 
@@ -378,7 +417,7 @@ Recommended visual changes:
 1. Rename the navigation and remove technical wording.
 2. Consolidate employee management into Staff records.
 3. Put clocking-in access and PINs on the employee record.
-4. Split Attendance into task-based views.
+4. Put Add a missing clock-in or clock-out at the top of Attendance and split the page into submenu views.
 5. Make renamed staff appear consistently on Staff Clock after save.
 6. Add search and Needs setup filtering to long staff lists.
 7. Keep all pay details manager-only.
@@ -405,7 +444,10 @@ The redesign is successful when:
 - the field controlling the Staff Clock name is obvious
 - saving a name refreshes affected screens and the Staff Clock roster
 - any employee can be found by search without scrolling through the whole staff list
-- attendance corrections are reachable without scrolling past all daily review cards
+- Add a missing clock-in or clock-out is the primary Attendance action and is visible in the first viewport
+- every important destination below the first viewport is also available from a page submenu
+- desktop page submenus remain visible while scrolling
+- mobile pages provide a Jump to menu for the same destinations
 - clocking history is searchable or paginated
 - the main navigation contains no Supabase or database terminology
 - each pay-related destination has a clearly different purpose
