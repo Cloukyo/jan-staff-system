@@ -101,5 +101,5 @@ export async function resetPasswordAction(_state: AuthActionState, formData: For
     }
     return { message: "Password reset could not be sent. Please ask a manager to check the account." };
   }
-  return { message: "If the email is linked to an active account, Supabase will send a reset link." };
+  return { message: "If the email is linked to an active account, a password reset link will be sent." };
 }

@@ -12,6 +12,13 @@ export function arrangementAt(arrangements: PayArrangement[], date: string): Pay
     .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] ?? null;
 }
 
+export function isPayDetailsReady(
+  arrangements: PayArrangement[],
+  date: string,
+): boolean {
+  return Boolean(arrangementAt(arrangements, date));
+}
+
 export function calculateClockTotals(events: ProductionClockEvent[], maximumShiftMinutes = 12 * 60) {
   const ordered = [...events].sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
   const warnings: string[] = [];

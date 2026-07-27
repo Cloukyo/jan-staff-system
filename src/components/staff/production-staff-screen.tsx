@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import type { StaffDirectoryRow } from "@/lib/payroll/types";
 import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 
-export type StaffDirectoryFilter = "active" | "needs-setup" | "inactive";
+export type StaffDirectoryFilter = "active" | "needs-setup" | "needs-checks" | "inactive";
 
 export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
   if (!person.active) return "No setup action needed";
@@ -21,6 +21,34 @@ function needsSetup(person: StaffDirectoryRow): boolean {
   return person.active && highestPrioritySetupWarning(person) !== "Setup complete";
 }
 
+export function parseStaffDirectoryFilter(value?: string): StaffDirectoryFilter {
+  if (value === "inactive" || value === "needs-setup" || value === "needs-checks") {
+    return value;
+  }
+  return "active";
+}
+
+export function filterStaffDirectoryRows(
+  staff: StaffDirectoryRow[],
+  filter: StaffDirectoryFilter,
+  query = "",
+): StaffDirectoryRow[] {
+  const normalisedQuery = query.trim().toLowerCase();
+  return staff.filter((person) => {
+    const matchesFilter = filter === "active"
+      ? person.active
+      : filter === "inactive"
+        ? !person.active
+        : filter === "needs-checks"
+          ? person.active && person.hasComplianceIssues
+          : needsSetup(person);
+    return matchesFilter
+      && `${person.fullName} ${person.displayName} ${person.employmentRole}`
+        .toLowerCase()
+        .includes(normalisedQuery);
+  });
+}
+
 export function ProductionStaffScreen({
   staff,
   initialFilter = "active",
@@ -30,14 +58,15 @@ export function ProductionStaffScreen({
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StaffDirectoryFilter>(initialFilter);
-  const filtered = useMemo(() => staff.filter((person) =>
-    (filter === "active" ? person.active : filter === "inactive" ? !person.active : needsSetup(person)) &&
-    `${person.fullName} ${person.displayName} ${person.employmentRole}`.toLowerCase().includes(query.trim().toLowerCase())
-  ), [filter, query, staff]);
+  const filtered = useMemo(
+    () => filterStaffDirectoryRows(staff, filter, query),
+    [filter, query, staff],
+  );
 
   const filters: Array<{ id: StaffDirectoryFilter; label: string }> = [
     { id: "active", label: "Active" },
     { id: "needs-setup", label: "Needs setup" },
+    { id: "needs-checks", label: "Needs checks" },
     { id: "inactive", label: "Inactive" },
   ];
 
@@ -55,7 +84,7 @@ export function ProductionStaffScreen({
         </label>
         <div>
           <p className="mb-1 text-sm font-semibold text-purple-950">Show</p>
-          <div className="inline-flex min-h-11 overflow-hidden rounded-lg border border-purple-200" aria-label="Filter staff records">
+          <div className="inline-flex min-h-11 flex-wrap overflow-hidden rounded-lg border border-purple-200" aria-label="Filter staff records">
             {filters.map((item) => (
               <button
                 key={item.id}

@@ -1,11 +1,13 @@
 import { StaffScreen } from "@/components/staff/staff-screen";
 import { AddStaffForm } from "@/components/staff/add-staff-form";
-import { ProductionStaffScreen } from "@/components/staff/production-staff-screen";
+import { parseStaffDirectoryFilter, ProductionStaffScreen } from "@/components/staff/production-staff-screen";
 import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
 import { requireAccount } from "@/lib/auth/permissions";
+import { staffIdsNeedingComplianceChecks } from "@/lib/calculations/compliance";
+import { loadProductionComplianceDataset } from "@/lib/compliance/repository";
 import { loadProductionStaffRows, toStaffDirectoryRows } from "@/lib/payroll/server";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +22,19 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
   await requireAccount(["manager"]);
   const { action, filter } = await searchParams;
   const adding = action === "add";
-  const initialFilter = filter === "inactive"
-    ? "inactive"
-    : filter === "needs-setup" || filter === "needs-checks"
-      ? "needs-setup"
-      : "active";
+  const initialFilter = parseStaffDirectoryFilter(filter);
   const directoryStaff = adding
     ? []
-    : toStaffDirectoryRows(await loadProductionStaffRows());
+    : await Promise.all([
+      loadProductionStaffRows(),
+      loadProductionComplianceDataset(),
+    ]).then(([staff, compliance]) =>
+      toStaffDirectoryRows(
+        staff,
+        undefined,
+        staffIdsNeedingComplianceChecks(compliance),
+      )
+    );
   return (
     <AppShell>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">

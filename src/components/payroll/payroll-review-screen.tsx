@@ -52,11 +52,11 @@ export function PayrollReviewScreen({
         <div className="flex items-start gap-3">
           <ShieldCheck className="mt-0.5 h-6 w-6 text-purple-700" aria-hidden />
           <div>
-            <h2 className="font-black text-purple-950">Private manager review</h2>
-            <p className="mt-1 text-sm text-slate-600">Workbook values are stored only in manager-protected Supabase tables. Creating or editing a review does not create pay arrangements.</p>
+            <h2 className="font-black text-purple-950">Import review</h2>
+            <p className="mt-1 text-sm text-slate-600">Workbook values stay in this manager-only review. Reviewing them does not change staff pay details.</p>
           </div>
         </div>
-        <PayrollActionForm action={createPayrollReviewBatchAction} submitLabel="Create private review batch" className="mt-5">
+        <PayrollActionForm action={createPayrollReviewBatchAction} submitLabel="Start import review" className="mt-5">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Payroll workbook (.xlsx)"><input className={inputClassName()} name="workbook" type="file" accept=".xlsx" required /></Field>
             <Field label="Proposed effective date"><input className={inputClassName()} name="proposedEffectiveDate" type="date" required /></Field>
@@ -66,7 +66,7 @@ export function PayrollReviewScreen({
 
       {batches.length ? (
         <Panel>
-          <h2 className="font-black text-purple-950">Review batches</h2>
+          <h2 className="font-black text-purple-950">Saved reviews</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {batches.map((item) => (
               <Link key={item.id} href={`/payroll/review?batch=${item.id}`} className={`rounded-lg px-3 py-2 text-sm font-bold ring-1 ${item.id === batch?.id ? "bg-purple-700 text-white ring-purple-700" : "bg-white text-purple-900 ring-purple-200"}`}>
@@ -78,7 +78,7 @@ export function PayrollReviewScreen({
       ) : null}
 
       {!batch || !summary ? (
-        <Panel><p className="font-bold text-purple-950">No payroll review batch has been created.</p></Panel>
+        <Panel><p className="font-bold text-purple-950">No import review has been started.</p></Panel>
       ) : (
         <>
           <Panel>
@@ -125,7 +125,7 @@ export function PayrollReviewScreen({
           {batch.status === "draft" ? (
             <Panel>
               <h2 className="font-black text-purple-950">Approve review</h2>
-              <p className="mt-1 text-sm text-slate-600">Approval locks the batch. It still does not create any pay arrangements.</p>
+              <p className="mt-1 text-sm text-slate-600">Approval locks this review. It still does not change any pay details.</p>
               <PayrollActionForm action={markPayrollBatchReadyAction} submitLabel="Approve and lock review">
                 <input type="hidden" name="batchId" value={batch.id} />
               </PayrollActionForm>
@@ -134,9 +134,9 @@ export function PayrollReviewScreen({
 
           {batch.status === "ready" ? (
             <Panel>
-              <h2 className="font-black text-purple-950">Final production import</h2>
-              <p className="mt-1 text-sm text-slate-600">This creates effective-dated pay arrangements. Existing overlapping arrangements will block the transaction.</p>
-              <PayrollActionForm action={importPayrollBatchAction} submitLabel="Import approved arrangements">
+              <h2 className="font-black text-purple-950">Import approved pay details</h2>
+              <p className="mt-1 text-sm text-slate-600">This saves the approved pay details from their confirmed start dates. Overlapping pay details will stop the import.</p>
+              <PayrollActionForm action={importPayrollBatchAction} submitLabel="Import approved pay details">
                 <input type="hidden" name="batchId" value={batch.id} />
                 <Field label='Type "IMPORT" to confirm'><input className={inputClassName("mt-3")} name="confirmation" autoComplete="off" required /></Field>
               </PayrollActionForm>
@@ -186,7 +186,7 @@ function ReviewRow({ row, batchId, profiles, warnings, editable }: {
                 <option value="excluded">Exclude</option>
               </select>
             </Field>
-            <Field label="Canonical staff profile">
+            <Field label="Staff record">
               <select className={inputClassName()} name="selectedStaffId" defaultValue={row.selectedStaffId ?? ""}>
                 <option value="">Select staff</option>
                 {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.fullName}{profile.active ? "" : " (inactive)"}</option>)}
@@ -214,7 +214,7 @@ function ReviewRow({ row, batchId, profiles, warnings, editable }: {
                 <option value="salaried_untracked">Salaried, hours not tracked</option>
               </select>
             </Field>
-            <Field label="Effective from"><input className={inputClassName()} name="effectiveFrom" type="date" defaultValue={row.effectiveFrom ?? ""} /></Field>
+            <Field label="Starts on"><input className={inputClassName()} name="effectiveFrom" type="date" defaultValue={row.effectiveFrom ?? ""} /></Field>
             <label className="flex min-h-11 items-center gap-2 pt-6 text-sm font-bold text-purple-950">
               <input name="duplicateMappingConfirmed" type="checkbox" defaultChecked={row.duplicateMappingConfirmed} />
               Confirm separate arrangement if duplicated
@@ -227,7 +227,7 @@ function ReviewRow({ row, batchId, profiles, warnings, editable }: {
           <p><strong>Classification:</strong> {row.resolution.replaceAll("_", " ")}</p>
           <p><strong>Pay type:</strong> {row.payType ?? "Not applicable"}</p>
           <p><strong>Hours basis:</strong> {row.hoursBasis.replaceAll("_", " ")}</p>
-          <p><strong>Effective date:</strong> {row.effectiveFrom ? formatDateUk(row.effectiveFrom) : "Not applicable"}</p>
+          <p><strong>Start date:</strong> {row.effectiveFrom ? formatDateUk(row.effectiveFrom) : "Not applicable"}</p>
           <p><strong>Pay basis:</strong> {row.payType === "hourly" ? formatMoney(row.hourlyRate === null ? null : Math.round(row.hourlyRate * 100)) : formatMoney(salaryBasis === null ? null : Math.round(salaryBasis * 100))}</p>
         </div>
       )}

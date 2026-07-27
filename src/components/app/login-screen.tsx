@@ -40,7 +40,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
         </form>
         <form className="mt-5 border-t border-purple-100 pt-5" action={resetFormAction}>
           <p className="text-sm font-bold text-purple-950">Forgotten password</p>
-          <p className="mt-1 text-sm text-slate-600">Request a Supabase reset email for an active staff account.</p>
+          <p className="mt-1 text-sm text-slate-600">Request a password reset email for an active staff account.</p>
           <Field label="Reset email">
             <input className={inputClassName("mt-2 w-full")} name="email" type="email" autoComplete="email" required />
           </Field>

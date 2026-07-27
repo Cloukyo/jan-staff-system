@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { itemIsActive, managerNavigation } from "@/lib/navigation/manager-navigation";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
@@ -34,6 +35,17 @@ describe("role-aware navigation", () => {
     expect(navigation).not.toContain('label: "Payroll review"');
   });
 
+  it("keeps staff and pay context active on their child workflows", () => {
+    const items = managerNavigation.flatMap((group) => group.items);
+    const staff = items.find((item) => item.label === "Staff records");
+    const pay = items.find((item) => item.label === "Export pay hours");
+
+    expect(staff && itemIsActive(staff, "/compliance/staff/staff-1")).toBe(true);
+    expect(pay && itemIsActive(pay, "/payroll")).toBe(true);
+    expect(pay && itemIsActive(pay, "/payroll/review")).toBe(true);
+    expect(pay && itemIsActive(pay, "/payroll/arrangements")).toBe(true);
+  });
+
   it("provides a sticky mobile Jump to control for page sections", () => {
     const pageNav = sourceOrEmpty("src/components/layout/manager-page-nav.tsx");
     expect(pageNav).toContain("Jump to");
@@ -48,7 +60,7 @@ describe("role-aware navigation", () => {
 
     expect(dashboard).toContain(">Home<");
     expect(settings).toContain("Nursery settings");
-    expect(help).toContain('href: "/rota?view=weekly"');
+    expect(help).toContain('href: "/rota"');
     for (const managerFile of [dashboard, rota, settings]) {
       expect(managerFile).not.toMatch(/Production data|Supabase/);
     }
@@ -100,7 +112,7 @@ describe("role-aware navigation", () => {
     expect(staffPage).toContain("Staff records");
     expect(staffPage).toContain("<AddStaffForm");
     expect(staffPage).toContain('action === "add"');
-    expect(staffPage).toContain('filter === "needs-checks"');
+    expect(staffPage).toContain("parseStaffDirectoryFilter(filter)");
     expect(directory).toContain("Needs setup");
     expect(directory).toContain("Open record");
     expect(directory).not.toContain("payArrangements");

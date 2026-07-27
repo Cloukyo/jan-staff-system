@@ -44,7 +44,7 @@ export default async function ClockPage() {
         </main>
       );
     }
-    return <main className="grid min-h-screen place-items-center bg-purple-950 p-6 text-white"><div className="max-w-lg text-center"><h1 className="text-3xl font-black">Staff Clock setup required</h1><p className="mt-4">This browser has not been registered. A manager can sign in once, open Kiosk Setup, and activate this device.</p><Link className="mt-6 inline-flex min-h-11 items-center rounded-lg bg-white px-5 font-bold text-purple-950" href="/login">Set up this device</Link></div></main>;
+    return <main className="grid min-h-screen place-items-center bg-purple-950 p-6 text-white"><div className="max-w-lg text-center"><h1 className="text-3xl font-black">Staff Clock setup required</h1><p className="mt-4">This browser has not been registered. A manager can sign in once, open Clocking-in devices, and activate this device.</p><Link className="mt-6 inline-flex min-h-11 items-center rounded-lg bg-white px-5 font-bold text-purple-950" href="/login">Set up this device</Link></div></main>;
   }
   return <ProductionKiosk initialRoster={roster} />;
 }

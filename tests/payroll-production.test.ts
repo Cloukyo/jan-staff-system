@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { londonDateStartUtc } from "@/lib/dates/format";
+import * as payrollCalculations from "@/lib/payroll/calculations";
 import { arrangementAt, arrangementsForPeriod, calculateClockTotals, createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { payrollRepositorySource } from "@/lib/payroll/server";
 import type { PayArrangement, ProductionStaffRow } from "@/lib/payroll/types";
@@ -70,6 +71,36 @@ describe("effective-dated pay arrangements", () => {
     expect(arrangementAt([older, newer], "2026-05-20")?.id).toBe("old");
     expect(arrangementAt([older, newer], "2026-06-20")?.id).toBe("new");
     expect(arrangementsForPeriod([older, newer], "2026-05-01", "2026-06-30")).toHaveLength(2);
+  });
+
+  it("marks pay details ready only when an active arrangement covers today", () => {
+    const isPayDetailsReady = (
+      payrollCalculations as unknown as {
+        isPayDetailsReady: (
+          arrangements: PayArrangement[],
+          date: string,
+        ) => boolean;
+      }
+    ).isPayDetailsReady;
+    expect(typeof isPayDetailsReady).toBe("function");
+
+    const bounded = {
+      ...hourly,
+      effectiveFrom: "2026-05-01",
+      effectiveTo: "2026-05-31",
+    };
+    expect(isPayDetailsReady([bounded], "2026-05-01")).toBe(true);
+    expect(isPayDetailsReady([bounded], "2026-05-31")).toBe(true);
+    expect(isPayDetailsReady([bounded], "2026-06-01")).toBe(false);
+    expect(
+      isPayDetailsReady(
+        [{ ...hourly, effectiveFrom: "2026-08-01" }],
+        "2026-07-27",
+      ),
+    ).toBe(false);
+    expect(
+      isPayDetailsReady([{ ...hourly, isActive: false }], "2026-05-20"),
+    ).toBe(false);
   });
 
   it("schema rejects overlaps and restricts payroll to managers", () => {

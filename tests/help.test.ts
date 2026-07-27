@@ -3,6 +3,8 @@ import {
   filterManagerHelpTasks,
   managerHelpTasks,
 } from "@/lib/help/manager-help";
+import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
+import { parseStaffDirectoryFilter } from "@/components/staff/production-staff-screen";
 
 describe("manager help", () => {
   it("covers the approved manager tasks", () => {
@@ -30,14 +32,63 @@ describe("manager help", () => {
     }
   });
 
-  it("opens primary tasks in their selected workflows", () => {
+  it("opens every task at its working route contract", () => {
     expect(
-      managerHelpTasks.find((task) => task.id === "add-missing-clock-event")
-        ?.href,
-    ).toBe("/attendance?view=add-event");
+      Object.fromEntries(managerHelpTasks.map((task) => [task.id, task.href])),
+    ).toEqual({
+      "add-missing-clock-event": "/attendance?view=add-event",
+      "review-attendance": "/attendance?view=needs-attention",
+      "edit-rota": "/rota",
+      "add-staff-member": "/staff?action=add",
+      "change-staff-clock-name": "/staff?filter=active",
+      "enable-staff-clock": "/staff?filter=needs-setup",
+      "manage-staff-login": "/staff?filter=active",
+      "review-leave": "/leave/requests",
+      "export-pay-hours": "/payroll",
+      "manage-clocking-device": "/settings/kiosk",
+    });
+  });
+
+  it("matches Help parameters to destination parsers and defaults", () => {
+    const byId = new Map(
+      managerHelpTasks.map((task) => [
+        task.id,
+        new URL(task.href, "https://jan.local"),
+      ]),
+    );
+
     expect(
-      managerHelpTasks.find((task) => task.id === "add-staff-member")?.href,
-    ).toBe("/staff?action=add");
+      parseAttendanceManagerView(
+        byId.get("add-missing-clock-event")?.searchParams.get("view")
+          ?? undefined,
+      ),
+    ).toBe("add-event");
+    expect(
+      parseAttendanceManagerView(
+        byId.get("review-attendance")?.searchParams.get("view") ?? undefined,
+      ),
+    ).toBe("needs-attention");
+    expect(
+      parseStaffDirectoryFilter(
+        byId.get("manage-staff-login")?.searchParams.get("filter")
+          ?? undefined,
+      ),
+    ).toBe("active");
+    expect(
+      parseStaffDirectoryFilter(
+        byId.get("enable-staff-clock")?.searchParams.get("filter")
+          ?? undefined,
+      ),
+    ).toBe("needs-setup");
+    expect(byId.get("add-staff-member")?.searchParams.get("action")).toBe("add");
+    for (const id of [
+      "edit-rota",
+      "review-leave",
+      "export-pay-hours",
+      "manage-clocking-device",
+    ]) {
+      expect(byId.get(id)?.search).toBe("");
+    }
   });
 
   it("searches titles, groups and steps", () => {

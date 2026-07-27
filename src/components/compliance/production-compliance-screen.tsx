@@ -21,9 +21,8 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
   return (
     <AppShell>
       <div className="mb-6">
-        <p className="text-sm font-bold text-green-700">Production data · Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">Staff Compliance</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">All records and summary counts below are loaded from Supabase under the signed-in manager session.</p>
+        <h1 className="text-3xl font-black text-purple-950">Training &amp; checks</h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-600">Review staff training, certificates and central-record checks.</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
@@ -52,7 +51,7 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
                 const nextExpiry = [firstAid?.expiryDate, safeguarding?.expiryDate].filter(Boolean).sort()[0];
                 const overall = overallComplianceIndicator({ firstAidStatus, safeguardingStatus, centralRecordPercent: central.percent });
                 const account = data.accounts.find((item) => item.staffId === person.id);
-                const login = !person.email && !account?.email ? "No login" : !(person.authUserId || account?.authUserId) ? "Email, no Auth link" : account?.active === false ? "Disabled login" : "Active login";
+                const login = !person.email && !account?.email ? "No login" : !(person.authUserId || account?.authUserId) ? "Email, login not linked" : account?.active === false ? "Disabled login" : "Active login";
                 return (
                   <tr key={person.id}>
                     <td className="border-b border-purple-50 px-3 py-3 font-bold text-purple-950">{person.fullName}<p className="text-xs font-normal text-slate-500">{person.mainQualificationLevel ?? "No qualification recorded"}</p></td>

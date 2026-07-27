@@ -52,7 +52,15 @@ export const managerNavigation: NavGroup[] = [
   },
   {
     label: "Staff",
-    items: [{ href: "/staff", label: "Staff records", icon: Users }],
+    items: [{
+      href: "/staff",
+      label: "Staff records",
+      icon: Users,
+      active: (path) =>
+        path === "/staff"
+        || path.startsWith("/staff/")
+        || path.startsWith("/compliance/staff/"),
+    }],
   },
   {
     label: "Pay hours",
@@ -61,7 +69,7 @@ export const managerNavigation: NavGroup[] = [
         href: "/payroll",
         label: "Export pay hours",
         icon: FileSpreadsheet,
-        active: (path) => path === "/payroll",
+        active: (path) => path === "/payroll" || path.startsWith("/payroll/"),
       },
     ],
   },

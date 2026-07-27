@@ -43,6 +43,7 @@ export type StaffDirectoryRow = {
   kioskStatus: string;
   hasQualification: boolean;
   hasCurrentPayArrangement: boolean;
+  hasComplianceIssues: boolean;
 };
 
 export type ProductionClockEvent = {

@@ -37,8 +37,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       <div className="mb-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-            <h1 className="mt-1 text-3xl font-black text-purple-950">Attendance</h1>
+            <h1 className="text-3xl font-black text-purple-950">Clock-ins &amp; hours</h1>
             <p className="mt-2 text-slate-600">Fix missing clock events, review exceptions and check staff hours.</p>
           </div>
           <Link className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/settings/kiosk">
@@ -66,7 +65,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
 
       <div className="mt-5">
         {view === "needs-attention" ? <AttendanceReview data={review} /> : null}
-        {view === "today" ? <AttendanceToday staff={dataset.staff} /> : null}
+        {view === "today" ? <AttendanceToday staff={dataset.staff} rows={review.rows} /> : null}
         {view === "hours" ? <AttendanceHoursSummary hoursPreview={hoursPreview} /> : null}
         {view === "add-event" ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
         {view === "history" ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}

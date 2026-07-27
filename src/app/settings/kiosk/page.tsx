@@ -14,8 +14,7 @@ export default async function KioskSettingsPage() {
     <AppShell>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-          <h1 className="mt-1 text-3xl font-black text-purple-950">Clocking-in devices</h1>
+          <h1 className="text-3xl font-black text-purple-950">Clocking-in devices</h1>
           <p className="mt-2 text-slate-600">Register nursery tablets that staff use to clock in and out.</p>
         </div>
         <Link

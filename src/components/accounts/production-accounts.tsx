@@ -17,22 +17,21 @@ export function ProductionAccountsScreen({ accounts, staff, adminConfigured }: {
   return (
     <div className="grid gap-5">
       <div>
-        <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">Accounts</h1>
-        <p className="mt-2 text-slate-600">Grant login access to an existing canonical staff profile. Staff records are never duplicated here.</p>
+        <h1 className="text-3xl font-black text-purple-950">Staff login access</h1>
+        <p className="mt-2 text-slate-600">Enable or disable app login access for an existing staff record.</p>
       </div>
-      {!adminConfigured && <Panel className="border-amber-200 bg-amber-50"><p className="font-bold text-amber-900">Supabase server administration is not configured. Account records can be prepared, but invitations and Auth linking are unavailable until the server-only key is added to the deployment.</p></Panel>}
+      {!adminConfigured && <Panel className="border-amber-200 bg-amber-50"><p className="font-bold text-amber-900">Login administration is not configured. Login invitations and existing-login linking are unavailable until the server administration key is added to the deployment.</p></Panel>}
       <Panel>
-        <h2 className="text-xl font-black text-purple-950">Prepare account access</h2>
+        <h2 className="text-xl font-black text-purple-950">Prepare login access</h2>
         {available.length ? (
-          <ProductionActionForm action={prepareStaffAccountAction} submitLabel="Prepare account">
+          <ProductionActionForm action={prepareStaffAccountAction} submitLabel="Prepare login">
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <Field label="Staff profile"><select className={inputClassName()} name="staffId" required><option value="">Choose staff</option>{available.map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}</select></Field>
+              <Field label="Staff record"><select className={inputClassName()} name="staffId" required><option value="">Choose staff</option>{available.map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}</select></Field>
               <Field label="Email"><input className={inputClassName()} name="email" type="email" required /></Field>
               <Field label="Role"><select className={inputClassName()} name="role"><option value="staff">Staff</option><option value="manager">Manager</option></select></Field>
             </div>
           </ProductionActionForm>
-        ) : <EmptyState title="Every staff profile has an account record" body="Manage existing access below." />}
+        ) : <EmptyState title="Every staff record has login details" body="Manage existing access below." />}
       </Panel>
       <div className="grid gap-4">
         {accounts.map((account) => <StaffAccountControl key={account.id} account={account} adminConfigured={adminConfigured} />)}
@@ -58,9 +57,9 @@ export function StaffAccountControl({ account, adminConfigured }: { account: Pro
           <Field label="Role"><select className={inputClassName()} name="role" defaultValue={account.role}><option value="staff">Staff</option><option value="manager">Manager</option></select></Field>
         </ProductionActionForm>
         {!account.authUserId && (
-          <ProductionActionForm action={inviteStaffAccountAction} submitLabel="Send Supabase invitation">
+          <ProductionActionForm action={inviteStaffAccountAction} submitLabel="Send login invitation">
             <input type="hidden" name="accountId" value={account.id} />
-            <p className="text-sm text-slate-600">Creates one Auth user for this existing staff profile and emails the configured address.</p>
+            <p className="text-sm text-slate-600">Emails a login invitation to the address saved for this staff record.</p>
             {!adminConfigured && <input type="hidden" name="unavailable" value="1" />}
           </ProductionActionForm>
         )}

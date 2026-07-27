@@ -56,8 +56,7 @@ export function ProductionMyLeave({ requests, role }: { requests: LeaveRequest[]
       <LeaveNavigation role={role} current="mine" />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-          <h1 className="mt-1 text-3xl font-black text-purple-950">My leave</h1>
+          <h1 className="text-3xl font-black text-purple-950">My leave</h1>
           <p className="mt-2 text-slate-600">Your submitted leave requests and manager decisions.</p>
         </div>
         <Link className="inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/leave/request">Request leave</Link>
@@ -87,8 +86,7 @@ export function ProductionLeaveRequest({ account }: { account: StaffAccount }) {
     <div className="grid gap-5">
       <LeaveNavigation role={account.role} current="request" />
       <div>
-        <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">Request leave</h1>
+        <h1 className="text-3xl font-black text-purple-950">Request leave</h1>
         <p className="mt-2 text-slate-600">Submit a request for manager review. It will remain pending until a manager decides it.</p>
       </div>
       <Panel>
@@ -131,9 +129,8 @@ export function ProductionManagerLeave({ requests, accounts }: { requests: Leave
     <div className="grid gap-5">
       <LeaveNavigation role="manager" current="manage" />
       <div>
-        <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">Leave requests</h1>
-        <p className="mt-2 text-slate-600">Review staff requests. Approved leave is used by production rota conflict checks.</p>
+        <h1 className="text-3xl font-black text-purple-950">Leave requests</h1>
+        <p className="mt-2 text-slate-600">Review staff requests. Approved leave appears in rota conflict checks.</p>
       </div>
       <LeaveSummary requests={requests} />
       <Panel>

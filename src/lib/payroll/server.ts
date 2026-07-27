@@ -2,6 +2,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDateInLondon, londonDateStartUtc } from "@/lib/dates/format";
+import { isPayDetailsReady } from "@/lib/payroll/calculations";
 import type {
   PayArrangement,
   PayrollAttendanceReview,
@@ -18,6 +19,7 @@ export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase
 export function toStaffDirectoryRows(
   staff: ProductionStaffRow[],
   today = isoDateInLondon(),
+  complianceIssueStaffIds: ReadonlySet<string> = new Set(),
 ): StaffDirectoryRow[] {
   return staff.map((person) => ({
     id: person.id,
@@ -28,11 +30,8 @@ export function toStaffDirectoryRows(
     loginStatus: person.loginStatus,
     kioskStatus: person.kioskStatus,
     hasQualification: Boolean(person.mainQualificationLevel?.trim()),
-    hasCurrentPayArrangement: person.payArrangements.some((item) =>
-      item.isActive
-      && item.effectiveFrom <= today
-      && (!item.effectiveTo || item.effectiveTo >= today)
-    ),
+    hasCurrentPayArrangement: isPayDetailsReady(person.payArrangements, today),
+    hasComplianceIssues: complianceIssueStaffIds.has(person.id),
   }));
 }
 

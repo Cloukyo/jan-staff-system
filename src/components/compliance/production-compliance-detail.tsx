@@ -18,8 +18,9 @@ import {
 } from "@/lib/compliance/actions";
 import type { StaffComplianceRecord } from "@/lib/compliance/repository";
 import { centralRecordCompletion, certificateStatus, certificateStatusLabel, certificateStatusTone, maskDbsNumber } from "@/lib/calculations/compliance";
-import { formatDateUk } from "@/lib/dates/format";
+import { formatDateUk, isoDateInLondon } from "@/lib/dates/format";
 import type { ManagerKioskRow } from "@/lib/kiosk/server";
+import { isPayDetailsReady } from "@/lib/payroll/calculations";
 import type { ProductionStaffRow } from "@/lib/payroll/types";
 import type { StaffRecordSection } from "@/lib/staff/record-sections";
 
@@ -69,13 +70,15 @@ export function ProductionComplianceDetail({
     && record.references.length
     && central.completed === central.total,
   );
-  const payReady = Boolean(payPerson?.payArrangements.length);
+  const payReady = isPayDetailsReady(
+    payPerson?.payArrangements ?? [],
+    isoDateInLondon(),
+  );
   return (
     <AppShell>
       <div className="mb-6">
         <Link className="text-sm font-bold text-purple-700" href="/staff">Back to staff records</Link>
-        <p className="mt-3 text-sm font-bold text-green-700">Production data · Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">{staff.fullName}</h1>
+        <h1 className="mt-3 text-3xl font-black text-purple-950">{staff.fullName}</h1>
         <p className="mt-2 text-sm text-slate-600">{staff.employmentRole}</p>
       </div>
 
