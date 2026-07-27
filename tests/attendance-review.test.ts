@@ -23,6 +23,13 @@ describe("production attendance review", () => {
     expect(page).toContain("<AttendancePageNav");
   });
 
+  it("leaves the mobile attendance submenu unset for the add-event workflow", () => {
+    const attendanceNav = source("src/components/attendance/attendance-page-nav.tsx");
+    const pageNav = source("src/components/layout/manager-page-nav.tsx");
+    expect(attendanceNav).toContain('activeView === "add-event" ? "" : activeView');
+    expect(pageNav).toContain('{!activeItem ? <option value="">Choose a section</option> : null}');
+  });
+
   it("detects daily attendance exceptions", () => {
     const row = buildAttendanceReviewRow({
       staffId: "staff",

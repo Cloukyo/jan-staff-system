@@ -34,6 +34,7 @@ export function ManagerPageNav({
           value={activeItem?.href ?? ""}
           onChange={(event) => router.push(event.target.value)}
         >
+          {!activeItem ? <option value="">Choose a section</option> : null}
           {items.map((item) => (
             <option key={item.id} value={item.href}>
               {item.label}
