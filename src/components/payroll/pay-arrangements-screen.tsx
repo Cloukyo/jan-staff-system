@@ -28,8 +28,16 @@ export function PayArrangementsScreen({ staff }: { staff: ProductionStaffRow[] }
   );
 }
 
-function StaffPayCard({ person }: { person: ProductionStaffRow }) {
-  const [showEditor, setShowEditor] = useState(false);
+export function StaffPayCard({
+  person,
+  initiallyOpen = false,
+  showStaffRecordLink = true,
+}: {
+  person: ProductionStaffRow;
+  initiallyOpen?: boolean;
+  showStaffRecordLink?: boolean;
+}) {
+  const [showEditor, setShowEditor] = useState(initiallyOpen);
   const today = isoDateInLondon();
   const current = person.payArrangements.find((item) => item.isActive && item.effectiveFrom <= today && (!item.effectiveTo || item.effectiveTo >= today));
   return (
@@ -47,7 +55,7 @@ function StaffPayCard({ person }: { person: ProductionStaffRow }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href={`/compliance/staff/${person.id}`}>Staff record</Link>
+          {showStaffRecordLink && <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href={`/compliance/staff/${person.id}`}>Staff record</Link>}
           <button className="min-h-11 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" onClick={() => setShowEditor((value) => !value)}>{showEditor ? "Close pay editor" : "Manage pay"}</button>
         </div>
       </div>

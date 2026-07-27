@@ -211,6 +211,33 @@ describe("kiosk PIN safety", () => {
     expect(clock).toContain("Staff Clock setup required");
     expect(kiosk).toContain(">Staff Clock<");
   });
+
+  it("reuses one-person clocking controls without exposing pay data", () => {
+    const clocking = readFileSync(resolve("src/components/staff/staff-record-clocking.tsx"), "utf8");
+    const manager = readFileSync(resolve("src/components/kiosk/staff-kiosk-management.tsx"), "utf8");
+    expect(clocking).toContain("Refresh Staff Clock");
+    expect(clocking).toContain("<StaffKioskControl");
+    expect(clocking).not.toMatch(/hourlyRate|annualSalary|monthlySalary/);
+    expect(manager).toContain("export function StaffKioskControl");
+    expect(manager).toContain("Every temporary PIN must be replaced");
+    const route = readFileSync(resolve("src/app/compliance/staff/[staffId]/page.tsx"), "utf8");
+    const refresh = route.slice(
+      route.indexOf("async function refreshStaffClock"),
+      route.indexOf("return ("),
+    );
+    expect(refresh).toContain('revalidatePath("/clock")');
+    expect(refresh).not.toMatch(/insert|update|delete|clock_events|staff_pay_arrangements/i);
+  });
+
+  it("keeps account identifiers under advanced details while retaining audited actions", () => {
+    const login = readFileSync(resolve("src/components/staff/staff-record-login.tsx"), "utf8");
+    const accounts = readFileSync(resolve("src/components/accounts/production-accounts.tsx"), "utf8");
+    expect(login).toContain("<StaffAccountControl");
+    expect(accounts).toContain("export function StaffAccountControl");
+    expect(accounts).toContain(">Advanced details</summary>");
+    expect(accounts).toContain("Recent access audit");
+    expect(accounts).not.toContain("Existing Auth user UUID");
+  });
 });
 
 describe("kiosk weekly hours", () => {

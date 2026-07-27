@@ -35,13 +35,13 @@ export function ProductionAccountsScreen({ accounts, staff, adminConfigured }: {
         ) : <EmptyState title="Every staff profile has an account record" body="Manage existing access below." />}
       </Panel>
       <div className="grid gap-4">
-        {accounts.map((account) => <AccountCard key={account.id} account={account} adminConfigured={adminConfigured} />)}
+        {accounts.map((account) => <StaffAccountControl key={account.id} account={account} adminConfigured={adminConfigured} />)}
       </div>
     </div>
   );
 }
 
-function AccountCard({ account, adminConfigured }: { account: ProductionAccountRow; adminConfigured: boolean }) {
+export function StaffAccountControl({ account, adminConfigured }: { account: ProductionAccountRow; adminConfigured: boolean }) {
   const state = !account.active ? "Disabled login" : account.authUserId ? `Active ${account.role} login` : "Invitation prepared";
   return (
     <Panel>
@@ -64,12 +64,19 @@ function AccountCard({ account, adminConfigured }: { account: ProductionAccountR
             {!adminConfigured && <input type="hidden" name="unavailable" value="1" />}
           </ProductionActionForm>
         )}
-        {!account.authUserId && (
-          <ProductionActionForm action={linkExistingAuthUserAction} submitLabel="Link existing Auth user">
-            <input type="hidden" name="accountId" value={account.id} />
-            <Field label="Existing Auth user UUID"><input className={inputClassName()} name="authUserId" required /></Field>
-          </ProductionActionForm>
-        )}
+        <details className="rounded-lg border border-purple-100 px-4">
+          <summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-950">Advanced details</summary>
+          {account.authUserId ? (
+            <p className="pb-4 text-sm text-slate-600">
+              Login system reference: <code>{account.authUserId}</code>
+            </p>
+          ) : (
+            <ProductionActionForm action={linkExistingAuthUserAction} submitLabel="Link existing login">
+              <input type="hidden" name="accountId" value={account.id} />
+              <Field label="Login system reference"><input className={inputClassName()} name="authUserId" required /></Field>
+            </ProductionActionForm>
+          )}
+        </details>
         {account.active ? (
           <ProductionActionForm action={deactivateStaffAccountAction} submitLabel="Disable login" submitVariant="danger">
             <input type="hidden" name="accountId" value={account.id} />

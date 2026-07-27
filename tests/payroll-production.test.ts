@@ -58,6 +58,16 @@ describe("effective-dated pay arrangements", () => {
     expect(migration).toContain("current_staff_role() = 'manager'");
     expect(migration).toContain("revoke all on public.staff_pay_arrangements from anon");
   });
+
+  it("reuses the complete one-person pay history and editor in staff records", () => {
+    const recordPay = readFileSync(resolve("src/components/staff/staff-record-pay.tsx"), "utf8");
+    const arrangements = readFileSync(resolve("src/components/payroll/pay-arrangements-screen.tsx"), "utf8");
+    expect(recordPay).toContain("<StaffPayCard");
+    expect(arrangements).toContain("export function StaffPayCard");
+    expect(arrangements).toContain("Pay history");
+    expect(arrangements).toContain("End arrangement");
+    expect(arrangements).toContain("Add pay arrangement");
+  });
 });
 
 describe("production payroll preparation", () => {
