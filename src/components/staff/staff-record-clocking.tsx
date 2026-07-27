@@ -1,15 +1,14 @@
 "use client";
 
 import { StaffKioskControl } from "@/components/kiosk/staff-kiosk-management";
+import { RefreshStaffClockControl } from "@/components/kiosk/device-management";
 import { EmptyState, Panel } from "@/components/ui/primitives";
 import type { ManagerKioskRow } from "@/lib/kiosk/server";
 
 export function StaffRecordClocking({
   person,
-  refreshAction,
 }: {
   person: ManagerKioskRow | null;
-  refreshAction: () => Promise<void>;
 }) {
   return (
     <div className="grid gap-4">
@@ -21,14 +20,7 @@ export function StaffRecordClocking({
               Choose whether this employee can use Staff Clock and set a temporary PIN when needed.
             </p>
           </div>
-          <form action={refreshAction}>
-            <button
-              className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700"
-              type="submit"
-            >
-              Refresh Staff Clock
-            </button>
-          </form>
+          <RefreshStaffClockControl />
         </div>
       </Panel>
       {person ? (

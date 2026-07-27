@@ -36,6 +36,19 @@ function rpcResult(row: RpcResult | undefined): KioskActionResult {
   };
 }
 
+export async function refreshStaffClockAction(): Promise<KioskActionResult> {
+  await requireAccount(["manager"]);
+  revalidatePath("/clock");
+  revalidatePath("/settings/kiosk");
+  revalidatePath("/attendance");
+  revalidatePath("/staff");
+  return {
+    ok: true,
+    code: "refreshed",
+    message: "Staff Clock information refreshed.",
+  };
+}
+
 export async function verifyKioskPinAction(staffId: string, pin: string): Promise<KioskActionResult> {
   if (!staffId || !/^\d{4,6}$/.test(pin)) return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
   const deviceToken = await getKioskDeviceToken();

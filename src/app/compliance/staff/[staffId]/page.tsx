@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { StaffComplianceDetail } from "@/components/compliance/staff-compliance-detail";
 import { ProductionComplianceDetail } from "@/components/compliance/production-compliance-detail";
 import { Panel } from "@/components/ui/primitives";
@@ -39,13 +38,6 @@ export default async function StaffComplianceDetailPage({
   const account = accountData.accounts.find((item) => item.staffId === staffId) ?? null;
   const payPerson = staffRows.find((person) => person.id === staffId) ?? null;
 
-  async function refreshStaffClock() {
-    "use server";
-    await requireAccount(["manager"]);
-    revalidatePath("/clock");
-    revalidatePath(`/compliance/staff/${staffId}`);
-  }
-
   return (
     <ProductionComplianceDetail
       record={record}
@@ -54,7 +46,6 @@ export default async function StaffComplianceDetailPage({
       account={account}
       adminConfigured={accountData.adminConfigured}
       payPerson={payPerson}
-      refreshStaffClockAction={refreshStaffClock}
     />
   );
 }

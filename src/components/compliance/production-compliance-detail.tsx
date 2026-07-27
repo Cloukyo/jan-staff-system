@@ -45,7 +45,6 @@ export function ProductionComplianceDetail({
   account,
   adminConfigured,
   payPerson,
-  refreshStaffClockAction,
 }: {
   record: StaffComplianceRecord;
   section: StaffRecordSection;
@@ -53,7 +52,6 @@ export function ProductionComplianceDetail({
   account: ProductionAccountRow | null;
   adminConfigured: boolean;
   payPerson: ProductionStaffRow | null;
-  refreshStaffClockAction: () => Promise<void>;
 }) {
   const { staff, centralRecord } = record;
   const central = centralRecordCompletion(centralRecord, record.centralItems);
@@ -123,7 +121,6 @@ export function ProductionComplianceDetail({
         {section === "clocking-in" && (
           <StaffRecordClocking
             person={kioskPerson}
-            refreshAction={refreshStaffClockAction}
           />
         )}
 

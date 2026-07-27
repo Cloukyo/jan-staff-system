@@ -196,12 +196,33 @@ describe("kiosk PIN safety", () => {
   it("keeps setup controls out of attendance", () => {
     const attendance = readFileSync(resolve("src/components/attendance/production-attendance.tsx"), "utf8");
     const setup = readFileSync(resolve("src/app/settings/kiosk/page.tsx"), "utf8");
+    const devices = readFileSync(resolve("src/components/kiosk/device-management.tsx"), "utf8");
     expect(attendance).not.toContain("setKioskPinAction");
     expect(attendance).not.toContain("saveKioskSettingsAction");
-    expect(setup).toContain("StaffKioskManagement");
-    expect(setup).toContain("Kiosk Setup");
+    expect(setup).not.toContain("StaffKioskManagement");
+    expect(setup).not.toContain("loadManagerAttendance");
+    expect(setup).toContain("Clocking-in devices");
     expect(setup).toContain('href="/clock"');
     expect(setup).toContain("Open Staff Clock");
+    expect(devices).toContain("Register this browser");
+    expect(devices).toContain("Registered devices");
+    expect(devices).toContain("Revoke device");
+    expect(devices).toContain("Refresh Staff Clock");
+  });
+
+  it("refreshes Staff Clock consumers without changing database records", () => {
+    const actions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+    const start = actions.indexOf("export async function refreshStaffClockAction");
+    const refresh = actions.slice(start, actions.indexOf("\n}", start) + 2);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(refresh).toContain('requireAccount(["manager"])');
+    for (const path of ["/clock", "/settings/kiosk", "/attendance", "/staff"]) {
+      expect(refresh).toContain(`revalidatePath("${path}")`);
+    }
+    expect(refresh).toContain('code: "refreshed"');
+    expect(refresh).toContain('message: "Staff Clock information refreshed."');
+    expect(refresh).not.toMatch(/supabase|insert|update|delete|upsert|rpc|clock_events/i);
   });
 
   it("uses clear Staff Clock terminology", () => {
@@ -214,19 +235,18 @@ describe("kiosk PIN safety", () => {
 
   it("reuses one-person clocking controls without exposing pay data", () => {
     const clocking = readFileSync(resolve("src/components/staff/staff-record-clocking.tsx"), "utf8");
+    const devices = readFileSync(resolve("src/components/kiosk/device-management.tsx"), "utf8");
     const manager = readFileSync(resolve("src/components/kiosk/staff-kiosk-management.tsx"), "utf8");
-    expect(clocking).toContain("Refresh Staff Clock");
+    expect(devices).toContain("Refresh Staff Clock");
     expect(clocking).toContain("<StaffKioskControl");
     expect(clocking).not.toMatch(/hourlyRate|annualSalary|monthlySalary/);
     expect(manager).toContain("export function StaffKioskControl");
     expect(manager).toContain("Every temporary PIN must be replaced");
     const route = readFileSync(resolve("src/app/compliance/staff/[staffId]/page.tsx"), "utf8");
-    const refresh = route.slice(
-      route.indexOf("async function refreshStaffClock"),
-      route.indexOf("return ("),
-    );
-    expect(refresh).toContain('revalidatePath("/clock")');
-    expect(refresh).not.toMatch(/insert|update|delete|clock_events|staff_pay_arrangements/i);
+    expect(clocking).toContain("<RefreshStaffClockControl");
+    expect(devices).toContain("refreshStaffClockAction");
+    expect(route).not.toContain("async function refreshStaffClock");
+    expect(route).not.toContain('from "next/cache"');
   });
 
   it("keeps account identifiers under advanced details while retaining audited actions", () => {

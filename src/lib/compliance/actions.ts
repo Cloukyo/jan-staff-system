@@ -29,6 +29,15 @@ async function managerSupabase() {
   return createSupabaseServerClient();
 }
 
+function revalidateStaffProfileViews(staffId: string): void {
+  revalidatePath("/staff");
+  revalidatePath("/compliance");
+  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidatePath("/clock");
+  revalidatePath("/attendance");
+  revalidatePath("/settings/kiosk");
+}
+
 export async function createStaffProfileAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
   const supabase = await managerSupabase();
   if (!supabase) return fail("Demo mode is local only. Configure Supabase to save production staff profiles.");
@@ -46,7 +55,7 @@ export async function createStaffProfileAction(_state: ComplianceActionState, fo
     active: bool(formData, "active"),
   });
   if (error) return fail("Staff profile could not be created. Check for a duplicate staff record.");
-  revalidatePath("/compliance");
+  revalidateStaffProfileViews(id);
   redirect(`/compliance/staff/${id}`);
 }
 
@@ -62,8 +71,7 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
     active: bool(formData, "active"),
   }).eq("id", staffId);
   if (error) return fail("Quick edit could not be saved.");
-  revalidatePath("/compliance");
-  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidateStaffProfileViews(staffId);
   return ok("Quick edit saved.");
 }
 
@@ -87,8 +95,7 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
     notes: text(formData, "notes"),
   }).eq("id", staffId);
   if (error) return fail("Staff profile could not be saved.");
-  revalidatePath("/compliance");
-  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidateStaffProfileViews(staffId);
   return ok("Staff details saved.");
 }
 

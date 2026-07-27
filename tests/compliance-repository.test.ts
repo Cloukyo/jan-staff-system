@@ -28,4 +28,21 @@ describe("compliance repository selection", () => {
     expect(complianceScreen).not.toContain("Add staff member");
     expect(complianceScreen).not.toContain("createStaffProfileAction");
   });
+
+  it("refreshes every staff profile consumer after a successful profile save", () => {
+    const actions = readFileSync(resolve("src/lib/compliance/actions.ts"), "utf8");
+    const helperStart = actions.indexOf("function revalidateStaffProfileViews");
+    const helper = actions.slice(helperStart, actions.indexOf("\n}", helperStart) + 2);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    for (const path of ["/staff", "/compliance", "/clock", "/attendance", "/settings/kiosk"]) {
+      expect(helper).toContain(`revalidatePath("${path}")`);
+    }
+    expect(helper).toContain("revalidatePath(`/compliance/staff/${staffId}`)");
+
+    const updateStart = actions.indexOf("export async function updateStaffProfileAction");
+    const updateEnd = actions.indexOf("export async function saveQualificationAction");
+    const updateAction = actions.slice(updateStart, updateEnd);
+    expect(updateAction).toContain("revalidateStaffProfileViews(staffId)");
+  });
 });
