@@ -40,9 +40,19 @@ describe("compliance repository selection", () => {
     }
     expect(helper).toContain("revalidatePath(`/compliance/staff/${staffId}`)");
 
+    const createStart = actions.indexOf("export async function createStaffProfileAction");
+    const quickUpdateStart = actions.indexOf("export async function quickUpdateStaffProfileAction");
     const updateStart = actions.indexOf("export async function updateStaffProfileAction");
     const updateEnd = actions.indexOf("export async function saveQualificationAction");
+    const createAction = actions.slice(createStart, quickUpdateStart);
+    const quickUpdateAction = actions.slice(quickUpdateStart, updateStart);
     const updateAction = actions.slice(updateStart, updateEnd);
-    expect(updateAction).toContain("revalidateStaffProfileViews(staffId)");
+
+    expect(createAction.indexOf("revalidateStaffProfileViews(id)"))
+      .toBeGreaterThan(createAction.indexOf('if (error) return fail("Staff profile could not be created.'));
+    expect(quickUpdateAction.indexOf("revalidateStaffProfileViews(staffId)"))
+      .toBeGreaterThan(quickUpdateAction.indexOf('if (error) return fail("Quick edit could not be saved.");'));
+    expect(updateAction.indexOf("revalidateStaffProfileViews(staffId)"))
+      .toBeGreaterThan(updateAction.indexOf('if (error) return fail("Staff profile could not be saved.");'));
   });
 });

@@ -217,9 +217,16 @@ describe("kiosk PIN safety", () => {
 
     expect(start).toBeGreaterThan(-1);
     expect(refresh).toContain('requireAccount(["manager"])');
-    for (const path of ["/clock", "/settings/kiosk", "/attendance", "/staff"]) {
-      expect(refresh).toContain(`revalidatePath("${path}")`);
-    }
+    const revalidatedPaths = Array.from(
+      refresh.matchAll(/revalidatePath\("([^"]+)"\)/g),
+      ([, path]) => path,
+    );
+    expect(revalidatedPaths).toEqual([
+      "/clock",
+      "/settings/kiosk",
+      "/attendance",
+      "/staff",
+    ]);
     expect(refresh).toContain('code: "refreshed"');
     expect(refresh).toContain('message: "Staff Clock information refreshed."');
     expect(refresh).not.toMatch(/supabase|insert|update|delete|upsert|rpc|clock_events/i);
