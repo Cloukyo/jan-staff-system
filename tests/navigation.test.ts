@@ -74,4 +74,27 @@ describe("role-aware navigation", () => {
     expect(dashboard).toContain('staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/settings/kiosk"');
     expect(dashboard).toContain('staffMissingPayArrangement", label: "Missing active pay arrangement", href: "/payroll/arrangements"');
   });
+
+  it("uses Staff records as the operational staff directory", () => {
+    const staffPage = source("src/app/staff/page.tsx");
+    const directory = source("src/components/staff/production-staff-screen.tsx");
+    const addForm = sourceOrEmpty("src/components/staff/add-staff-form.tsx");
+    const payPage = source("src/app/payroll/arrangements/page.tsx");
+    const payScreen = sourceOrEmpty("src/components/payroll/pay-arrangements-screen.tsx");
+
+    expect(staffPage).toContain("Staff records");
+    expect(staffPage).toContain("<AddStaffForm");
+    expect(staffPage).toContain('action === "add"');
+    expect(staffPage).toContain('filter === "needs-checks"');
+    expect(directory).toContain("Needs setup");
+    expect(directory).toContain("Open record");
+    expect(directory).not.toContain("hourlyRate");
+    expect(directory).not.toContain("annualSalary");
+    expect(addForm).toContain("Full legal name");
+    expect(addForm).toContain("Name shown on Staff Clock");
+    expect(addForm).toContain("createStaffProfileAction");
+    expect(payPage).toContain("<PayArrangementsScreen");
+    expect(payScreen).toContain("savePayArrangementAction");
+    expect(payScreen).toContain("closePayArrangementAction");
+  });
 });

@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { ProductionStaffScreen } from "@/components/staff/production-staff-screen";
+import { PayArrangementsScreen } from "@/components/payroll/pay-arrangements-screen";
 import { requireAccount } from "@/lib/auth/permissions";
 import { loadProductionStaffRows } from "@/lib/payroll/server";
 
@@ -15,7 +15,7 @@ export default async function PayArrangementsPage() {
         <h1 className="mt-1 text-3xl font-black text-purple-950">Pay arrangements</h1>
         <p className="mt-2 text-slate-600">Manage effective-dated hourly and salaried arrangements for canonical staff profiles.</p>
       </div>
-      <ProductionStaffScreen staff={staff} />
+      <PayArrangementsScreen staff={staff} />
     </AppShell>
   );
 }
