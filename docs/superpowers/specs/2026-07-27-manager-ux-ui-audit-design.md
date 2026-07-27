@@ -136,6 +136,10 @@ The main menu should describe manager tasks, not database areas.
 - Clocking-in devices
 - Nursery settings
 
+### Support
+
+- Help
+
 The following items should no longer be separate primary navigation destinations:
 
 - Compliance
@@ -393,6 +397,60 @@ The Home page should prioritise:
 
 Cards with a zero value should be visually quieter. Items requiring action should include a direct verb, such as Review 3 missing clock-outs, instead of only displaying a number and Live badge.
 
+## Help Design
+
+Help should be a manager-only destination in the main navigation. Its page title should be How to, while the shorter Help label remains in the menu.
+
+The page should provide practical instructions for completing manager tasks, not technical documentation about the application.
+
+The first viewport should contain:
+
+- How to heading
+- Search help input
+- Common tasks list
+
+Help content should be grouped into:
+
+- Daily work
+- Staff records
+- Clocking in
+- Leave
+- Pay hours
+- Settings
+
+The first version should explain:
+
+1. Add a missing clock-in or clock-out.
+2. Add a staff member.
+3. Change the name shown on Staff Clock.
+4. Enable Staff Clock and set a temporary PIN.
+5. Enable or disable a staff login.
+6. Create or change the rota.
+7. Approve or reject a leave request.
+8. Review attendance problems.
+9. Check and export pay hours.
+10. Register or refresh a clocking-in device.
+
+Each task should contain:
+
+- a short task title phrased as a manager goal
+- no more than four numbered steps
+- one clear Open shortcut to the relevant page or action
+
+Shortcuts should use normal internal links and approved page query parameters. For example, Add a missing clock-in or clock-out should open Attendance with the add-event form ready, rather than only opening the top of Attendance.
+
+The Help content should be stored as a small typed list in the application so search, grouping and shortcuts are consistent. It does not need a database, content management system or editable production setting.
+
+Complex pages should include a small Help link that opens the relevant How to task. These links are secondary support actions and must not compete with the page's primary command.
+
+The Help page must:
+
+- work on desktop and mobile
+- use plain nursery-manager language
+- avoid Supabase and database terminology
+- expose no private staff, attendance or pay data
+- remain available even when no operational records exist
+
 ## Visual UI Findings
 
 The current typography, contrast and touch-target sizes are generally suitable. The main visual problems come from density and repetition.
@@ -421,6 +479,7 @@ Recommended visual changes:
 5. Make renamed staff appear consistently on Staff Clock after save.
 6. Add search and Needs setup filtering to long staff lists.
 7. Keep all pay details manager-only.
+8. Add the manager Help page with shortcuts to the main tasks.
 
 ### High-value polish
 
@@ -452,6 +511,9 @@ The redesign is successful when:
 - the main navigation contains no Supabase or database terminology
 - each pay-related destination has a clearly different purpose
 - the first mobile viewport shows the page purpose and primary action
+- Help can be searched by manager task and every task has a working shortcut
+- Help instructions contain no more than four steps per task
+- complex manager pages link directly to their relevant Help task
 - public Staff Clock screens expose no pay or private manager information
 - original clock events remain immutable and manager corrections remain separate
 
@@ -463,6 +525,7 @@ The redesign is successful when:
 4. Attendance tabs and paginated clocking history.
 5. Pay menu consolidation.
 6. Home and rota action hierarchy.
-7. Full desktop and mobile workflow verification.
+7. Manager Help page and contextual Help links.
+8. Full desktop and mobile workflow verification.
 
 This order delivers immediate clarity first, then removes the structural causes of the scrolling problem without replacing working business logic.
