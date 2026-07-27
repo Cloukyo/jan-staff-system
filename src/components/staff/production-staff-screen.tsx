@@ -2,22 +2,22 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { ProductionStaffRow } from "@/lib/payroll/types";
+import type { StaffDirectoryRow } from "@/lib/payroll/types";
 import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 
 export type StaffDirectoryFilter = "active" | "needs-setup" | "inactive";
 
-function highestPrioritySetupWarning(person: ProductionStaffRow): string {
+export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
   if (!person.active) return "No setup action needed";
   if (person.kioskStatus === "PIN setup needed") return "Set a Staff Clock PIN";
   if (person.kioskStatus === "Disabled") return "Enable Staff Clock";
   if (person.loginStatus === "Login not linked") return "Finish staff login setup";
-  if (!person.mainQualificationLevel) return "Add qualification";
-  if (!person.payArrangements.some((item) => item.isActive)) return "Add pay details";
+  if (!person.hasQualification) return "Add qualification";
+  if (!person.hasCurrentPayArrangement) return "Add pay details";
   return "Setup complete";
 }
 
-function needsSetup(person: ProductionStaffRow): boolean {
+function needsSetup(person: StaffDirectoryRow): boolean {
   return person.active && highestPrioritySetupWarning(person) !== "Setup complete";
 }
 
@@ -25,7 +25,7 @@ export function ProductionStaffScreen({
   staff,
   initialFilter = "active",
 }: {
-  staff: ProductionStaffRow[];
+  staff: StaffDirectoryRow[];
   initialFilter?: StaffDirectoryFilter;
 }) {
   const [query, setQuery] = useState("");

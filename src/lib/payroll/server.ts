@@ -1,17 +1,39 @@
 import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
-import { londonDateStartUtc } from "@/lib/dates/format";
+import { isoDateInLondon, londonDateStartUtc } from "@/lib/dates/format";
 import type {
   PayArrangement,
   PayrollAttendanceReview,
   PayrollRotaShift,
   ProductionClockEvent,
   ProductionStaffRow,
+  StaffDirectoryRow,
 } from "@/lib/payroll/types";
 
 export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
+}
+
+export function toStaffDirectoryRows(
+  staff: ProductionStaffRow[],
+  today = isoDateInLondon(),
+): StaffDirectoryRow[] {
+  return staff.map((person) => ({
+    id: person.id,
+    fullName: person.fullName,
+    displayName: person.displayName,
+    employmentRole: person.employmentRole,
+    active: person.active,
+    loginStatus: person.loginStatus,
+    kioskStatus: person.kioskStatus,
+    hasQualification: Boolean(person.mainQualificationLevel?.trim()),
+    hasCurrentPayArrangement: person.payArrangements.some((item) =>
+      item.isActive
+      && item.effectiveFrom <= today
+      && (!item.effectiveTo || item.effectiveTo >= today)
+    ),
+  }));
 }
 
 function arrangement(row: Record<string, unknown>, accountNames: Map<string, string>): PayArrangement {

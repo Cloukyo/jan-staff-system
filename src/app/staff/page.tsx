@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
 import { requireAccount } from "@/lib/auth/permissions";
-import { loadProductionStaffRows } from "@/lib/payroll/server";
+import { loadProductionStaffRows, toStaffDirectoryRows } from "@/lib/payroll/server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,9 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
     : filter === "needs-setup" || filter === "needs-checks"
       ? "needs-setup"
       : "active";
-  const staff = await loadProductionStaffRows();
+  const directoryStaff = adding
+    ? []
+    : toStaffDirectoryRows(await loadProductionStaffRows());
   return (
     <AppShell>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -45,7 +47,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
       </div>
       {adding
         ? <AddStaffForm />
-        : <ProductionStaffScreen initialFilter={initialFilter} staff={staff} />}
+        : <ProductionStaffScreen initialFilter={initialFilter} staff={directoryStaff} />}
     </AppShell>
   );
 }

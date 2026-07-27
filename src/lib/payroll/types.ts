@@ -33,6 +33,18 @@ export type ProductionStaffRow = {
   payArrangements: PayArrangement[];
 };
 
+export type StaffDirectoryRow = {
+  id: string;
+  fullName: string;
+  displayName: string;
+  employmentRole: string;
+  active: boolean;
+  loginStatus: string;
+  kioskStatus: string;
+  hasQualification: boolean;
+  hasCurrentPayArrangement: boolean;
+};
+
 export type ProductionClockEvent = {
   id: string;
   staffId: string;

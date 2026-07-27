@@ -88,6 +88,7 @@ describe("role-aware navigation", () => {
     expect(staffPage).toContain('filter === "needs-checks"');
     expect(directory).toContain("Needs setup");
     expect(directory).toContain("Open record");
+    expect(directory).not.toContain("payArrangements");
     expect(directory).not.toContain("hourlyRate");
     expect(directory).not.toContain("annualSalary");
     expect(addForm).toContain("Full legal name");
