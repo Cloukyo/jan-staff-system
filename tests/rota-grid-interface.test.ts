@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import * as productionRotaModule from "@/components/rota/production-rota";
 import { dayCoverage, groupTemplatePreview, laterWeekDates, previousDayShifts, scheduledMinutes, templateConfirmationLabel } from "@/lib/rota/grid";
 import type { ProductionRotaDataset, ProductionRotaShift } from "@/lib/rota/types";
 import type { RotaTemplate, TemplateApplicationPreview } from "@/lib/rota/template-types";
@@ -60,12 +61,26 @@ function preview(overrides: Partial<TemplateApplicationPreview> = {}): TemplateA
 }
 
 describe("weekly rota grid interface", () => {
+  it("offers only navigation destinations rendered by the selected week branch", () => {
+    const rotaPageNavItems = (
+      productionRotaModule as typeof productionRotaModule & {
+        rotaPageNavItems?: (hasWeek: boolean) => Array<{ id: string }>;
+      }
+    ).rotaPageNavItems;
+
+    expect(rotaPageNavItems).toBeTypeOf("function");
+    if (!rotaPageNavItems) return;
+    expect(rotaPageNavItems(false).map((item) => item.id)).toEqual(["weekly"]);
+    expect(rotaPageNavItems(true).map((item) => item.id)).toEqual([
+      "weekly",
+      "copy",
+      "templates",
+      "download",
+    ]);
+  });
+
   it("provides direct local navigation and keeps publishing prominent", () => {
     expect(productionRota).toContain("<ManagerPageNav");
-    expect(productionRota).toContain('label: "Weekly rota"');
-    expect(productionRota).toContain('label: "Copy tools"');
-    expect(productionRota).toContain('label: "Templates"');
-    expect(productionRota).toContain('label: "Download"');
     expect(productionRota).toContain('id="weekly-rota"');
     expect(productionRota).toContain('id="copy-tools"');
     expect(productionRota).toContain('id="apply-template"');

@@ -10,7 +10,7 @@ import {
   Send,
 } from "lucide-react";
 import { ManagerHelpLink } from "@/components/help/manager-help-link";
-import { ManagerPageNav } from "@/components/layout/manager-page-nav";
+import { ManagerPageNav, type ManagerPageNavItem } from "@/components/layout/manager-page-nav";
 import { ProductionRotaGrid } from "@/components/rota/production-rota-grid";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
 import { RotaExportControls } from "@/components/rota/rota-export-controls";
@@ -29,6 +29,17 @@ import type { ProductionRotaDataset } from "@/lib/rota/types";
 
 function hidden(name: string, value: string) {
   return <input type="hidden" name={name} value={value} />;
+}
+
+export function rotaPageNavItems(hasWeek: boolean): ManagerPageNavItem[] {
+  const weeklyRota = { id: "weekly", label: "Weekly rota", href: "#weekly-rota" };
+  if (!hasWeek) return [weeklyRota];
+  return [
+    weeklyRota,
+    { id: "copy", label: "Copy tools", href: "#copy-tools" },
+    { id: "templates", label: "Templates", href: "#apply-template" },
+    { id: "download", label: "Download", href: "#download" },
+  ];
 }
 
 export function ProductionRota({
@@ -51,12 +62,7 @@ export function ProductionRota({
   const previousWeek = isoDate(addWeeks(start, -1));
   const nextWeek = isoDate(addWeeks(start, 1));
   const activeStaffCount = data.staff.filter((person) => person.active).length;
-  const rotaPageNav = [
-    { id: "weekly", label: "Weekly rota", href: "#weekly-rota" },
-    { id: "copy", label: "Copy tools", href: "#copy-tools" },
-    { id: "templates", label: "Templates", href: "#apply-template" },
-    { id: "download", label: "Download", href: "#download" },
-  ];
+  const rotaPageNav = rotaPageNavItems(Boolean(data.week));
 
   return (
     <>
