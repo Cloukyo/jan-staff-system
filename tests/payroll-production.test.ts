@@ -33,6 +33,27 @@ describe("production payroll repository separation", () => {
     expect(staffPage).toContain('getAppMode() === "demo"');
     expect(payrollPage).toContain('getAppMode() === "demo"');
   });
+
+  it("uses distinct manager language and a shared pay submenu", () => {
+    const exportPage = readFileSync(resolve("src/app/payroll/page.tsx"), "utf8");
+    const importPage = readFileSync(resolve("src/app/payroll/review/page.tsx"), "utf8");
+    const detailsPage = readFileSync(resolve("src/app/payroll/arrangements/page.tsx"), "utf8");
+
+    expect(exportPage).toContain("Export pay hours");
+    expect(importPage).toContain("Import pay details");
+    expect(detailsPage).toContain("Pay details");
+    for (const page of [exportPage, importPage, detailsPage]) {
+      expect(page).toContain("<ManagerPageNav");
+      expect(page).toContain('label: "Export pay hours"');
+      expect(page).toContain('label: "Import pay details"');
+      expect(page).toContain('label: "Pay details"');
+      expect(page).not.toMatch(/Production data|Supabase|canonical|Auth|UUID/);
+    }
+    expect(exportPage).toContain('activeId="export"');
+    expect(importPage).toContain('activeId="import"');
+    expect(detailsPage).toContain('activeId="details"');
+    expect(exportPage).toContain("This is not completed payroll.");
+  });
 });
 
 describe("London pay-period boundaries", () => {

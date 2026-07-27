@@ -6,6 +6,7 @@ import type { ProductionRotaDataset, ProductionRotaShift } from "@/lib/rota/type
 import type { RotaTemplate, TemplateApplicationPreview } from "@/lib/rota/template-types";
 
 const rotaGrid = readFileSync(resolve("src/components/rota/production-rota-grid.tsx"), "utf8");
+const productionRota = readFileSync(resolve("src/components/rota/production-rota.tsx"), "utf8");
 const rotaActions = readFileSync(resolve("src/lib/rota/actions.ts"), "utf8");
 const templateGrid = readFileSync(resolve("src/components/rota/template-week-grid.tsx"), "utf8");
 const templatePreview = readFileSync(resolve("src/components/rota/template-rota-controls.tsx"), "utf8");
@@ -59,6 +60,29 @@ function preview(overrides: Partial<TemplateApplicationPreview> = {}): TemplateA
 }
 
 describe("weekly rota grid interface", () => {
+  it("provides direct local navigation and keeps publishing prominent", () => {
+    expect(productionRota).toContain("<ManagerPageNav");
+    expect(productionRota).toContain('label: "Weekly rota"');
+    expect(productionRota).toContain('label: "Copy tools"');
+    expect(productionRota).toContain('label: "Templates"');
+    expect(productionRota).toContain('label: "Download"');
+    expect(productionRota).toContain('id="weekly-rota"');
+    expect(productionRota).toContain('id="copy-tools"');
+    expect(productionRota).toContain('id="apply-template"');
+    expect(productionRota).toContain('id="download"');
+    expect(productionRota.indexOf("Publish rota")).toBeLessThan(
+      productionRota.indexOf("More actions"),
+    );
+  });
+
+  it("keeps secondary and destructive week actions under More actions", () => {
+    const moreActions = productionRota.indexOf("More actions");
+    expect(productionRota.indexOf("Return to draft")).toBeGreaterThan(moreActions);
+    expect(productionRota.indexOf("Clear day")).toBeGreaterThan(moreActions);
+    expect(productionRota.indexOf("Archive week")).toBeGreaterThan(moreActions);
+    expect(productionRota).not.toMatch(/Production data|Supabase/);
+  });
+
   it("provides manager actions for previous-day and multi-day hour copying", () => {
     expect(rotaActions).toContain("export async function copyPreviousDayPatternAction");
     expect(rotaActions).toContain('.rpc("copy_staff_previous_day_pattern"');

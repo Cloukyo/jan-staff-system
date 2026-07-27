@@ -7,9 +7,10 @@ import {
   ChevronRight,
   Copy,
   Ellipsis,
-  LayoutTemplate,
   Send,
 } from "lucide-react";
+import { ManagerHelpLink } from "@/components/help/manager-help-link";
+import { ManagerPageNav } from "@/components/layout/manager-page-nav";
 import { ProductionRotaGrid } from "@/components/rota/production-rota-grid";
 import { RotaActionForm } from "@/components/rota/rota-action-form";
 import { RotaExportControls } from "@/components/rota/rota-export-controls";
@@ -50,18 +51,27 @@ export function ProductionRota({
   const previousWeek = isoDate(addWeeks(start, -1));
   const nextWeek = isoDate(addWeeks(start, 1));
   const activeStaffCount = data.staff.filter((person) => person.active).length;
+  const rotaPageNav = [
+    { id: "weekly", label: "Weekly rota", href: "#weekly-rota" },
+    { id: "copy", label: "Copy tools", href: "#copy-tools" },
+    { id: "templates", label: "Templates", href: "#apply-template" },
+    { id: "download", label: "Download", href: "#download" },
+  ];
 
   return (
     <>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-          <h1 className="mt-1 text-3xl font-black text-purple-950">Weekly rota</h1>
+          <h1 className="text-3xl font-black text-purple-950">Weekly rota</h1>
           <p className="mt-2 text-slate-600">Compare each employee&apos;s week and daily nursery coverage in one schedule.</p>
+          <ManagerHelpLink taskId="edit-rota" />
         </div>
         {data.week ? <StatusPill tone={data.week.status === "published" ? "green" : "amber"}>{data.week.status}</StatusPill> : null}
       </div>
 
+      <ManagerPageNav items={rotaPageNav} activeId="weekly" label="Rota sections" />
+
+      <div id="weekly-rota" className="scroll-mt-32 pt-5">
       <Panel className="mb-5 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <Link className="inline-flex min-h-11 items-center justify-center rounded-xl border border-purple-200 bg-white px-3 text-purple-900 hover:bg-purple-50" href={`/rota?week=${previousWeek}`} aria-label="Previous week">
@@ -81,36 +91,25 @@ export function ProductionRota({
 
           {data.week ? (
             <>
-              <a href="#apply-template" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900 hover:bg-purple-50">
-                <LayoutTemplate className="h-4 w-4" /> Apply template
-              </a>
-              <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="inline-flex">
-                {hidden("weekStart", data.weekStart)}
-              </RotaActionForm>
-              <RotaExportControls weekStart={data.weekStart} />
               {data.week.status === "draft" ? (
                 <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Publish rota" className="inline-flex" confirmMessage="Publish this rota for staff viewing?">
                   {hidden("weekId", data.week.id)}{hidden("status", "published")}
                 </RotaActionForm>
-              ) : (
-                <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Return to draft" variant="secondary" className="inline-flex" confirmMessage="Return this published rota to draft?">
-                  {hidden("weekId", data.week.id)}{hidden("status", "draft")}
-                </RotaActionForm>
-              )}
+              ) : null}
               <details className="relative">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900 hover:bg-purple-50">
                   <Ellipsis className="h-4 w-4" /> More actions
                 </summary>
                 <div className="absolute right-0 z-40 mt-2 w-80 rounded-2xl border border-purple-100 bg-white p-4 shadow-xl">
-                  <RotaActionForm action={copyRotaDayAction} submitLabel="Copy day" variant="secondary" className="grid gap-3">
-                    {hidden("weekId", data.week.id)}
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Source"><select className={inputClassName()} name="sourceDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>
-                      <Field label="Target"><select className={inputClassName()} name="targetDate" defaultValue={dates[1]}>{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>
-                    </div>
-                  </RotaActionForm>
-                  <div className="my-4 border-t border-purple-100" />
-                  <RotaActionForm action={clearRotaDayAction} submitLabel="Clear selected day" variant="danger" className="grid gap-3" confirmMessage="Archive every draft shift on this day?">
+                  {data.week.status === "published" ? (
+                    <>
+                      <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Return to draft" variant="secondary" className="grid" confirmMessage="Return this published rota to draft?">
+                        {hidden("weekId", data.week.id)}{hidden("status", "draft")}
+                      </RotaActionForm>
+                      <div className="my-4 border-t border-purple-100" />
+                    </>
+                  ) : null}
+                  <RotaActionForm action={clearRotaDayAction} submitLabel="Clear day" variant="danger" className="grid gap-3" confirmMessage="Archive every draft shift on this day?">
                     {hidden("weekId", data.week.id)}
                     <Field label="Day to clear"><select className={inputClassName()} name="shiftDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEEE d MMMM")}</option>)}</select></Field>
                   </RotaActionForm>
@@ -124,6 +123,7 @@ export function ProductionRota({
           ) : null}
         </div>
       </Panel>
+      </div>
 
       {!data.week ? (
         <Panel>
@@ -142,7 +142,30 @@ export function ProductionRota({
       ) : (
         <>
           <ProductionRotaGrid data={data} />
-          <div id="apply-template">
+          <div id="copy-tools" className="scroll-mt-32 pt-5">
+            <Panel>
+              <div className="flex items-start gap-3">
+                <Copy className="mt-0.5 h-5 w-5 text-purple-700" aria-hidden />
+                <div>
+                  <h2 className="text-lg font-black text-purple-950">Copy tools</h2>
+                  <p className="mt-1 text-sm text-slate-600">Reuse a previous week or copy one day within this week.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-5 lg:grid-cols-2">
+                <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="grid content-start">
+                  {hidden("weekStart", data.weekStart)}
+                </RotaActionForm>
+                <RotaActionForm action={copyRotaDayAction} submitLabel="Copy day" variant="secondary" className="grid gap-3">
+                  {hidden("weekId", data.week.id)}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Source"><select className={inputClassName()} name="sourceDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>
+                    <Field label="Target"><select className={inputClassName()} name="targetDate" defaultValue={dates[1]}>{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>
+                  </div>
+                </RotaActionForm>
+              </div>
+            </Panel>
+          </div>
+          <div id="apply-template" className="scroll-mt-32 pt-5">
             <TemplateRotaControls
               data={data}
               templates={templates}
@@ -151,6 +174,15 @@ export function ProductionRota({
               selectedMode={selectedTemplateMode}
               requestKey={templateRequestKey}
             />
+          </div>
+          <div id="download" className="scroll-mt-32 pt-5">
+            <Panel>
+              <h2 className="text-lg font-black text-purple-950">Download</h2>
+              <p className="mt-1 text-sm text-slate-600">Download this rota as an Excel workbook.</p>
+              <div className="mt-4">
+                <RotaExportControls weekStart={data.weekStart} />
+              </div>
+            </Panel>
           </div>
         </>
       )}

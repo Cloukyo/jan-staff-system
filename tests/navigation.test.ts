@@ -40,6 +40,21 @@ describe("role-aware navigation", () => {
     expect(pageNav).toContain("sticky");
   });
 
+  it("uses familiar names across remaining manager pages", () => {
+    const dashboard = source("src/components/dashboard/production-dashboard.tsx");
+    const rota = source("src/components/rota/production-rota.tsx");
+    const settings = source("src/components/settings/production-settings.tsx");
+    const help = source("src/lib/help/manager-help.ts");
+
+    expect(dashboard).toContain(">Home<");
+    expect(settings).toContain("Nursery settings");
+    expect(help).toContain('href: "/rota?view=weekly"');
+    for (const managerFile of [dashboard, rota, settings]) {
+      expect(managerFile).not.toMatch(/Production data|Supabase/);
+    }
+    expect(settings).not.toMatch(/canonical|Auth|UUID/);
+  });
+
   it("keeps manager-only links out of the staff navigation definition", () => {
     const staffSection = shell.slice(
       shell.indexOf("const staffNavigation"),
@@ -71,8 +86,8 @@ describe("role-aware navigation", () => {
 
   it("points dashboard setup warnings to the current editing workflows", () => {
     const dashboard = source("src/components/dashboard/production-dashboard.tsx");
-    expect(dashboard).toContain('staffMissingKioskPin", label: "Staff missing a kiosk PIN", href: "/settings/kiosk"');
-    expect(dashboard).toContain('staffMissingPayArrangement", label: "Missing active pay arrangement", href: "/payroll/arrangements"');
+    expect(dashboard).toContain('staffMissingKioskPin", label: "Staff without a clocking-in PIN", href: "/staff?filter=needs-setup"');
+    expect(dashboard).toContain('staffMissingPayArrangement", label: "Staff without current pay details", href: "/staff?filter=needs-setup"');
   });
 
   it("uses Staff records as the operational staff directory", () => {

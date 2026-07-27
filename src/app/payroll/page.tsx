@@ -1,6 +1,8 @@
 import { PayrollScreen } from "@/components/payroll/payroll-screen";
 import { ProductionPayrollScreen } from "@/components/payroll/production-payroll-screen";
 import { AppShell } from "@/components/layout/app-shell";
+import { ManagerHelpLink } from "@/components/help/manager-help-link";
+import { ManagerPageNav } from "@/components/layout/manager-page-nav";
 import { getAppMode } from "@/lib/app-mode";
 import { requireAccount } from "@/lib/auth/permissions";
 import { isoDateInLondon } from "@/lib/dates/format";
@@ -9,6 +11,12 @@ import { loadPayrollAttendanceReviews, loadProductionClockEvents, loadProduction
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 
 export const dynamic = "force-dynamic";
+
+const payPageNav = [
+  { id: "export", label: "Export pay hours", href: "/payroll" },
+  { id: "import", label: "Import pay details", href: "/payroll/review" },
+  { id: "details", label: "Pay details", href: "/payroll/arrangements" },
+];
 
 export default async function PayrollPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   if (getAppMode() === "demo") return <PayrollScreen />;
@@ -33,5 +41,27 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
     .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews))
     .filter((row) => includeZero || row.recordedMinutes > 0);
-  return <AppShell><div className="mb-6"><p className="text-sm font-bold text-green-700">Production data | Supabase</p><h1 className="mt-1 text-3xl font-black text-purple-950">Pay preparation</h1><p className="mt-2 text-slate-600">Attendance and effective pay arrangements for manager review. This is not completed payroll.</p></div><ProductionPayrollScreen rows={rows} periodStart={periodStart} periodEnd={periodEnd} includeInactive={includeInactive} includeManagers={includeManagers} includeZero={includeZero} reviewReadiness={reviewReadiness} /></AppShell>;
+  return (
+    <AppShell>
+      <div className="mb-5">
+        <h1 className="text-3xl font-black text-purple-950">Export pay hours</h1>
+        <p className="mt-2 text-slate-600">
+          Check planned and recorded hours, then download a workbook. This is not completed payroll.
+        </p>
+        <ManagerHelpLink taskId="export-pay-hours" />
+      </div>
+      <ManagerPageNav items={payPageNav} activeId="export" label="Pay hours sections" />
+      <div className="pt-5">
+        <ProductionPayrollScreen
+          rows={rows}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          includeInactive={includeInactive}
+          includeManagers={includeManagers}
+          includeZero={includeZero}
+          reviewReadiness={reviewReadiness}
+        />
+      </div>
+    </AppShell>
+  );
 }
