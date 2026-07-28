@@ -52,6 +52,17 @@ describe("role-aware navigation", () => {
     expect(pageNav).toContain("sticky");
   });
 
+  it("places Yesterday after Today and links staff rows to their weekly hours", () => {
+    const attendanceNav = sourceOrEmpty("src/components/attendance/attendance-page-nav.tsx");
+    const staffHoursList = sourceOrEmpty("src/components/attendance/staff-hours-list.tsx");
+
+    expect(attendanceNav.indexOf('label: "Today"'))
+      .toBeLessThan(attendanceNav.indexOf('label: "Yesterday"'));
+    expect(attendanceNav).toContain('label: "Staff hours"');
+    expect(staffHoursList).toContain("staffId");
+    expect(staffHoursList).toContain("Open hours");
+  });
+
   it("uses familiar names across remaining manager pages", () => {
     const dashboard = source("src/components/dashboard/production-dashboard.tsx");
     const rota = source("src/components/rota/production-rota.tsx");

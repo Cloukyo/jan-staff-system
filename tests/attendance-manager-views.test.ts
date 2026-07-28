@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as attendanceViews from "@/components/attendance/production-attendance";
+import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
 
@@ -123,13 +124,26 @@ describe("manager attendance views", () => {
       "utf8",
     );
 
-    expect(attendancePage).toContain(
-      'const reviewDate = view === "today" ? isoDateInLondon() : date;',
-    );
-    expect(attendancePage).toContain("loadAttendanceReviewDay(reviewDate)");
+    expect(attendancePage).toContain('view === "today"');
+    expect(attendancePage).toContain("loadAttendanceReviewDay(isoDateInLondon())");
     expect(attendancePage).toContain(
       '<AttendanceToday staff={dataset.staff} rows={review.rows} />',
     );
+  });
+
+  it("supports the Yesterday and Staff hours attendance views", () => {
+    const attendancePage = readFileSync(
+      resolve("src/app/attendance/page.tsx"),
+      "utf8",
+    );
+
+    expect(parseAttendanceManagerView("yesterday")).toBe("yesterday");
+    expect(parseAttendanceManagerView("hours")).toBe("hours");
+    expect(attendancePage).toContain("loadAttendanceDay(yesterdayDate)");
+    expect(attendancePage).toContain("loadStaffHoursList(hoursFrom, hoursTo)");
+    expect(attendancePage).toContain("loadStaffHoursWeek(staffId, hoursFrom, hoursTo)");
+    expect(attendancePage).toContain('<StaffHoursList data={staffHoursList} />');
+    expect(attendancePage).toContain('<StaffHoursTimeline data={staffHoursWeek}');
   });
 
   it("searches immutable history by staff, event, source, reason and date", () => {

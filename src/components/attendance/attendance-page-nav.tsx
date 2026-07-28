@@ -4,6 +4,8 @@ import type { AttendanceManagerView } from "@/lib/attendance/manager-view";
 type AttendancePageNavProps = {
   activeView: AttendanceManagerView;
   date?: string;
+  day?: string;
+  staffId?: string;
   hoursFrom?: string;
   hoursTo?: string;
 };
@@ -11,7 +13,8 @@ type AttendancePageNavProps = {
 const views = [
   { id: "needs-attention", label: "Needs attention" },
   { id: "today", label: "Today" },
-  { id: "hours", label: "Hours summary" },
+  { id: "yesterday", label: "Yesterday" },
+  { id: "hours", label: "Staff hours" },
   { id: "history", label: "Clocking history" },
 ] as const;
 
@@ -21,6 +24,8 @@ function attendanceViewHref(
 ) {
   const search = new URLSearchParams({ view });
   if (parameters.date) search.set("date", parameters.date);
+  if (parameters.day) search.set("day", parameters.day);
+  if (parameters.staffId) search.set("staffId", parameters.staffId);
   if (parameters.hoursFrom) search.set("hoursFrom", parameters.hoursFrom);
   if (parameters.hoursTo) search.set("hoursTo", parameters.hoursTo);
   return `/attendance?${search.toString()}`;
@@ -29,10 +34,12 @@ function attendanceViewHref(
 export function AttendancePageNav({
   activeView,
   date,
+  day,
+  staffId,
   hoursFrom,
   hoursTo,
 }: AttendancePageNavProps) {
-  const parameters = { date, hoursFrom, hoursTo };
+  const parameters = { date, day, staffId, hoursFrom, hoursTo };
   return (
     <ManagerPageNav
       label="Attendance sections"

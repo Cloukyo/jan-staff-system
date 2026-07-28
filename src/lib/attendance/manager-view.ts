@@ -1,6 +1,7 @@
 export type AttendanceManagerView =
   | "needs-attention"
   | "today"
+  | "yesterday"
   | "hours"
   | "add-event"
   | "history";
@@ -8,6 +9,7 @@ export type AttendanceManagerView =
 const attendanceViews = new Set<AttendanceManagerView>([
   "needs-attention",
   "today",
+  "yesterday",
   "hours",
   "add-event",
   "history",

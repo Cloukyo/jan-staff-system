@@ -297,10 +297,10 @@ describe("production attendance review", () => {
     expect(migration).not.toMatch(/grant execute on function public\.get_manager_hours_preview\(date, date\) to anon/i);
   });
 
-  it("renders a manager date range control for hours preview", () => {
+  it("renders manager date controls for Staff hours", () => {
     const attendancePage = source("src/app/attendance/page.tsx");
-    const attendance = source("src/components/attendance/production-attendance.tsx");
-    expect(attendancePage).toContain("loadManagerHoursPreview");
+    const attendance = source("src/components/attendance/staff-hours-list.tsx");
+    expect(attendancePage).toContain("loadStaffHoursList");
     expect(attendance).toContain('name="hoursFrom"');
     expect(attendance).toContain('name="hoursTo"');
     expect(attendance).toContain("Current work week");

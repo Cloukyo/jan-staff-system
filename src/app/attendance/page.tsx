@@ -4,9 +4,10 @@ import { AttendancePageNav } from "@/components/attendance/attendance-page-nav";
 import {
   AttendanceCorrectionForm,
   AttendanceHistory,
-  AttendanceHoursSummary,
   AttendanceToday,
 } from "@/components/attendance/production-attendance";
+import { StaffHoursList } from "@/components/attendance/staff-hours-list";
+import { StaffHoursTimeline, YesterdayAttendance } from "@/components/attendance/staff-hours-timeline";
 import { ManagerHelpLink } from "@/components/help/manager-help-link";
 import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
@@ -16,13 +17,16 @@ import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 import { requireAccount } from "@/lib/auth/permissions";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
-import { loadAttendanceReviewDay, loadManagerHoursPreview } from "@/lib/attendance/review-server";
+import { loadAttendanceReviewDay } from "@/lib/attendance/review-server";
+import { loadAttendanceDay, loadStaffHoursList, loadStaffHoursWeek, previousLondonDate } from "@/lib/attendance/staff-hours";
 
 export const dynamic = "force-dynamic";
 
 type AttendanceSearchParams = {
   view?: string;
   date?: string;
+  day?: string;
+  staffId?: string;
   hoursFrom?: string;
   hoursTo?: string;
 };
@@ -30,10 +34,20 @@ type AttendanceSearchParams = {
 export default async function AttendancePage({ searchParams }: { searchParams: Promise<AttendanceSearchParams> }) {
   if (getAppMode() === "demo") return <AttendanceScreen />;
   await requireAccount(["manager"]);
-  const { view: viewValue, date, hoursFrom, hoursTo } = await searchParams;
+  const { view: viewValue, date, day, staffId, hoursFrom, hoursTo } = await searchParams;
   const view = parseAttendanceManagerView(viewValue);
-  const reviewDate = view === "today" ? isoDateInLondon() : date;
-  const [dataset, review, hoursPreview] = await Promise.all([loadManagerAttendance(), loadAttendanceReviewDay(reviewDate), loadManagerHoursPreview(hoursFrom, hoursTo)]);
+  const yesterdayDate = day ?? previousLondonDate();
+  const dataset = view === "today" || view === "add-event" || view === "history"
+    ? await loadManagerAttendance()
+    : null;
+  const review = view === "needs-attention"
+    ? await loadAttendanceReviewDay(date)
+    : view === "today"
+      ? await loadAttendanceReviewDay(isoDateInLondon())
+      : null;
+  const yesterday = view === "yesterday" ? await loadAttendanceDay(yesterdayDate) : null;
+  const staffHoursList = view === "hours" && !staffId ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
+  const staffHoursWeek = view === "hours" && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
   return (
     <AppShell>
       <div className="mb-5">
@@ -61,16 +75,20 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       <AttendancePageNav
         activeView={view}
         date={date}
+        day={day}
+        staffId={staffId}
         hoursFrom={hoursFrom}
         hoursTo={hoursTo}
       />
 
       <div className="mt-5">
-        {view === "needs-attention" ? <AttendanceReview data={review} /> : null}
-        {view === "today" ? <AttendanceToday staff={dataset.staff} rows={review.rows} /> : null}
-        {view === "hours" ? <AttendanceHoursSummary hoursPreview={hoursPreview} /> : null}
-        {view === "add-event" ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
-        {view === "history" ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
+        {view === "needs-attention" && review ? <AttendanceReview data={review} /> : null}
+        {view === "today" && dataset && review ? <AttendanceToday staff={dataset.staff} rows={review.rows} /> : null}
+        {view === "yesterday" && yesterday ? <YesterdayAttendance data={yesterday} /> : null}
+        {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
+        {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
+        {view === "add-event" && dataset ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
+        {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
       </div>
     </AppShell>
   );

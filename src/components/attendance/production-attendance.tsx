@@ -5,11 +5,8 @@ import { addClockCorrectionAction } from "@/lib/kiosk/actions";
 import type { KioskActionResult } from "@/lib/kiosk/types";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
 import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
-import type {
-  AttendanceReviewRow,
-  ManagerHoursPreview,
-} from "@/lib/attendance/review-server";
+import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
+import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
 
 const initial: KioskActionResult = { ok: false, code: "idle", message: "" };
 
@@ -168,44 +165,6 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
           <button className="min-h-11 rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 disabled:opacity-50" type="button" disabled={result.page === 1} onClick={() => setPage(result.page - 1)}>Previous</button>
           <button className="min-h-11 rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 disabled:opacity-50" type="button" disabled={result.page === result.totalPages} onClick={() => setPage(result.page + 1)}>Next</button>
         </div>
-      </div>
-    </Panel>
-  );
-}
-
-export function AttendanceHoursSummary({ hoursPreview }: { hoursPreview: ManagerHoursPreview }) {
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-purple-950">Staff hours summary</h2>
-          <p className="mt-2 text-sm text-slate-600">Completed clock-in to clock-out time for each staff member in the selected range.</p>
-        </div>
-        <a
-          className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200"
-          href={`/attendance?view=hours&hoursFrom=${hoursPreview.currentWeekStart}&hoursTo=${hoursPreview.currentWeekEnd}`}
-        >
-          Current work week
-        </a>
-      </div>
-      <form className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]" method="get">
-        <input type="hidden" name="view" value="hours" />
-        <Field label="Start date"><input className={inputClassName()} name="hoursFrom" type="date" defaultValue={hoursPreview.rangeStart} required /></Field>
-        <Field label="End date"><input className={inputClassName()} name="hoursTo" type="date" defaultValue={hoursPreview.rangeEnd} required /></Field>
-        <button className="min-h-11 self-end rounded-lg bg-purple-700 px-5 font-bold text-white" type="submit">Update summary</button>
-      </form>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Completed hours</th><th className="p-2">Current shift</th></tr></thead>
-          <tbody>{hoursPreview.rows.map((row) => (
-            <tr key={row.staffId} className="border-b border-purple-50">
-              <td className="p-2 font-bold">{row.fullName}</td>
-              <td className="p-2">{formatHours(row.completedMinutes)}</td>
-              <td className="p-2">{row.openShiftCount > 0 ? "In progress, not included" : "None"}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-        {!hoursPreview.rows.length ? <p className="mt-3 text-sm text-slate-600">No active staff found. The selected range has 0 logged hours.</p> : null}
       </div>
     </Panel>
   );
