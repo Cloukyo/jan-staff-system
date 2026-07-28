@@ -113,6 +113,12 @@ describe("role-aware navigation", () => {
     expect(staffPage).toContain("<AddStaffForm");
     expect(staffPage).toContain('action === "add"');
     expect(staffPage).toContain("parseStaffDirectoryFilter(filter)");
+    expect(staffPage).toContain(
+      'import { parseStaffDirectoryFilter } from "@/lib/staff/directory";',
+    );
+    expect(staffPage).toContain(
+      'import { ProductionStaffScreen } from "@/components/staff/production-staff-screen";',
+    );
     expect(directory).toContain("Needs setup");
     expect(directory).toContain("Open record");
     expect(directory).not.toContain("payArrangements");

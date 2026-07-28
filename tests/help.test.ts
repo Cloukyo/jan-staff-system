@@ -4,7 +4,7 @@ import {
   managerHelpTasks,
 } from "@/lib/help/manager-help";
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
-import { parseStaffDirectoryFilter } from "@/components/staff/production-staff-screen";
+import { parseStaffDirectoryFilter } from "@/lib/staff/directory";
 
 describe("manager help", () => {
   it("covers the approved manager tasks", () => {
