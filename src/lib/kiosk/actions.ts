@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  saveClockEventCorrectionAction,
+  type CorrectionActionInput,
+} from "@/lib/attendance/correction-actions";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
-import { londonLocalDateTimeToUtc } from "@/lib/dates/format";
 import { createPublicKioskClient } from "@/lib/kiosk/server";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
@@ -150,33 +153,15 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
 }
 
 export async function addClockCorrectionAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {
-  await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");
   const eventType = String(formData.get("eventType") ?? "");
   const eventTimestamp = String(formData.get("eventTimestamp") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!staffId || !["clock_in", "clock_out"].includes(eventType) || !eventTimestamp || reason.length < 5) {
-    return { ok: false, code: "invalid_correction", message: "Choose an event, time and a clear correction reason." };
-  }
-  const londonDateTime = londonLocalDateTimeToUtc(eventTimestamp);
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("save_clock_event_correction_chain", {
-    plan: {
-      reason,
-      primary: {
-        staff_id: staffId,
-        recorded_date: londonDateTime.recordedDate,
-        correction_kind: "add",
-        original_event_id: null,
-        supersedes_correction_id: null,
-        event_type: eventType,
-        event_timestamp: londonDateTime.timestamp.toISOString(),
-      },
-      consequential: [],
-    },
+  return saveClockEventCorrectionAction({
+    staffId,
+    eventType: eventType as CorrectionActionInput["eventType"],
+    localDateTime: eventTimestamp,
+    reason,
+    returnTo: "/attendance",
   });
-  if (error) return { ok: false, code: "save_failed", message: "The correction could not be recorded." };
-  revalidatePath("/attendance");
-  revalidatePath("/clock");
-  return { ok: true, code: "saved", message: "The correction was added without changing the original clock events." };
 }

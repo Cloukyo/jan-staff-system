@@ -425,6 +425,20 @@ describe("append-only attendance correction migration", () => {
     expect(saveChain).toContain("perform public.lock_attendance_staff_writes");
   });
 
+  it("keeps original clock events immutable for manager correction actions", () => {
+    const actions = readFileSync(
+      resolve("src/lib/attendance/correction-actions.ts"),
+      "utf8",
+    );
+
+    expect(actions).toContain("save_clock_event_correction_chain");
+    expect(actions).toContain("use_planned_hours");
+    expect(actions).not.toMatch(/clock_events[\s\S]{0,120}\.(update|delete)\b/i);
+    expect(actions).toContain('revalidatePath("/attendance")');
+    expect(actions).toContain('revalidatePath("/clock")');
+    expect(actions).toContain('revalidatePath("/payroll")');
+  });
+
   it("calculates staff and manager hours from effective events", () => {
     const sql = migrationSql();
     const staffHours = sqlFunction(sql, "get_staff_weekly_hours");
