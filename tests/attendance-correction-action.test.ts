@@ -54,7 +54,11 @@ describe("addClockCorrectionAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAccount.mockResolvedValue({ id: "manager-1", role: "manager" });
-    mocks.rpc.mockResolvedValue({ data: "batch-1", error: null });
+    mocks.rpc.mockImplementation((name: string) => Promise.resolve(
+      name === "get_effective_clock_events"
+        ? { data: [], error: null }
+        : { data: "batch-1", error: null },
+    ));
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     mocks.eq.mockReturnValue({ maybeSingle: mocks.maybeSingle });
     mocks.select.mockReturnValue({ eq: mocks.eq });
@@ -118,6 +122,53 @@ describe("addClockCorrectionAction", () => {
     });
   });
 
+  it("saves same-day consequential type changes for an added event without moving their timestamps", async () => {
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_effective_clock_events") {
+        return Promise.resolve({
+          data: [
+            {
+              event_id: "event-2",
+              original_event_id: null,
+              correction_id: null,
+              staff_id: "staff-1",
+              event_type: "clock_in",
+              event_timestamp: "2026-07-28T11:00:00.000Z",
+              recorded_date: "2026-07-28",
+              source: "kiosk",
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: "batch-1", error: null });
+    });
+
+    await addClockCorrectionAction(
+      { ok: false, code: "", message: "" },
+      correctionForm({ eventType: "clock_in", eventTimestamp: "2026-07-28T08:00" }),
+    );
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, "get_effective_clock_events", {
+      range_start: "2026-07-28",
+      range_end: "2026-07-28",
+      target_staff_id: "staff-1",
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, "save_clock_event_correction_chain", {
+      plan: expect.objectContaining({
+        consequential: [{
+          staff_id: "staff-1",
+          recorded_date: "2026-07-28",
+          correction_kind: "replace",
+          original_event_id: "event-2",
+          supersedes_correction_id: null,
+          event_type: "clock_out",
+          event_timestamp: "2026-07-28T11:00:00.000Z",
+        }],
+      }),
+    });
+  });
+
   it("retains validation and the existing failure message", async () => {
     const invalid = await addClockCorrectionAction(
       { ok: false, code: "", message: "" },
@@ -131,7 +182,11 @@ describe("addClockCorrectionAction", () => {
     });
     expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
 
-    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "failed" } });
+    mocks.rpc.mockImplementation((name: string) => Promise.resolve(
+      name === "get_effective_clock_events"
+        ? { data: [], error: null }
+        : { data: null, error: { message: "failed" } },
+    ));
     const failed = await addClockCorrectionAction(
       { ok: false, code: "", message: "" },
       correctionForm(),

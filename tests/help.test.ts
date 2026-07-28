@@ -11,6 +11,9 @@ describe("manager help", () => {
     expect(managerHelpTasks.map((task) => task.id)).toEqual(
       expect.arrayContaining([
         "add-missing-clock-event",
+        "fix-one-clock-event",
+        "use-planned-hours",
+        "review-staff-week",
         "add-staff-member",
         "change-staff-clock-name",
         "enable-staff-clock",
@@ -36,7 +39,10 @@ describe("manager help", () => {
     expect(
       Object.fromEntries(managerHelpTasks.map((task) => [task.id, task.href])),
     ).toEqual({
-      "add-missing-clock-event": "/attendance?view=add-event",
+      "add-missing-clock-event": "/attendance?view=hours",
+      "fix-one-clock-event": "/attendance?view=hours",
+      "use-planned-hours": "/attendance?view=hours",
+      "review-staff-week": "/attendance?view=hours",
       "review-attendance": "/attendance?view=needs-attention",
       "edit-rota": "/rota",
       "add-staff-member": "/staff?action=add",
@@ -62,7 +68,7 @@ describe("manager help", () => {
         byId.get("add-missing-clock-event")?.searchParams.get("view")
           ?? undefined,
       ),
-    ).toBe("add-event");
+    ).toBe("hours");
     expect(
       parseAttendanceManagerView(
         byId.get("review-attendance")?.searchParams.get("view") ?? undefined,

@@ -7,6 +7,11 @@ import {
   type OriginalClockEvent,
 } from "@/lib/attendance/effective-events";
 import { analyseAttendanceDay, planAlternatingEventTypes } from "@/lib/attendance/sequence";
+import {
+  buildAttendanceDayReturnTo,
+  previewManualCorrectionChanges,
+  previewPlannedHoursChanges,
+} from "@/components/attendance/attendance-correction-controls";
 
 const date = "2026-07-28";
 const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
@@ -351,6 +356,131 @@ describe("planAlternatingEventTypes", () => {
         recordedDate: date,
       },
     ]);
+  });
+});
+
+describe("attendance correction control contracts", () => {
+  const effectiveEvents = [
+    {
+      id: "event-1",
+      staffId: "staff-1",
+      eventType: "clock_in" as const,
+      eventTimestamp: "2026-07-28T07:00:00.000Z",
+      recordedDate: date,
+      source: "kiosk" as const,
+      originalEventId: null,
+      correctionId: null,
+    },
+    {
+      id: "event-2",
+      staffId: "staff-1",
+      eventType: "clock_in" as const,
+      eventTimestamp: "2026-07-28T11:00:00.000Z",
+      recordedDate: date,
+      source: "kiosk" as const,
+      originalEventId: null,
+      correctionId: null,
+    },
+  ];
+
+  it("builds a return URL that keeps the staff week and open day", () => {
+    expect(buildAttendanceDayReturnTo({
+      staffId: "staff-1",
+      from: "2026-07-27",
+      to: "2026-08-02",
+      day: date,
+    })).toBe("/attendance?view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1&day=2026-07-28");
+  });
+
+  it("keeps the inline form payloads limited to correction values and required context", () => {
+    const controls = readFileSync(
+      resolve("src/components/attendance/attendance-correction-controls.tsx"),
+      "utf8",
+    );
+
+    expect(controls).toContain('name="staffId"');
+    expect(controls).toContain('name="originalEventId"');
+    expect(controls).toContain('name="eventType"');
+    expect(controls).toContain('type="datetime-local"');
+    expect(controls).toContain('name="reason" minLength={5} required');
+    expect(controls).toContain('name="attendanceDate"');
+    expect(controls).toContain('name="returnTo"');
+    expect(controls).not.toContain('name="plannedStart"');
+    expect(controls).not.toContain('name="plannedFinish"');
+    expect(controls).toContain('min-h-11');
+  });
+
+  it("previews the same-day event type changes for a fix without moving their timestamps", () => {
+    expect(previewManualCorrectionChanges({
+      events: effectiveEvents,
+      selectedEventId: "event-1",
+      selectedEventType: "clock_in",
+    })).toEqual([
+      {
+        targetEventId: "event-2",
+        eventType: "clock_out",
+        eventTimestamp: "2026-07-28T11:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("previews later same-day changes for an added event without moving timestamps", () => {
+    expect(previewManualCorrectionChanges({
+      events: effectiveEvents,
+      selectedEventId: null,
+      selectedEventType: "clock_in",
+      localDateTime: "2026-07-28T08:00",
+      staffId: "staff-1",
+    })).toEqual([
+      {
+        targetEventId: "event-2",
+        eventType: "clock_out",
+        eventTimestamp: "2026-07-28T11:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("leaves the added-event preview empty while its date and time are incomplete", () => {
+    expect(previewManualCorrectionChanges({
+      events: effectiveEvents,
+      selectedEventId: null,
+      selectedEventType: "clock_in",
+      localDateTime: "",
+      staffId: "staff-1",
+    })).toEqual([]);
+  });
+
+  it("previews planned start and finish changes while leaving lunchtime timestamps unchanged", () => {
+    expect(previewPlannedHoursChanges({
+      date,
+      plannedPeriods: [
+        { id: "morning", startTime: "08:00", endTime: "12:00", breakMinutes: 0 },
+        { id: "afternoon", startTime: "13:00", endTime: "17:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [
+        {
+          id: "start", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-07-28T06:45:00.000Z", recordedDate: date, source: "kiosk", originalEventId: null, correctionId: null,
+        },
+        {
+          id: "lunch-out", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-07-28T11:30:00.000Z", recordedDate: date, source: "kiosk", originalEventId: null, correctionId: null,
+        },
+        {
+          id: "lunch-in", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-07-28T12:30:00.000Z", recordedDate: date, source: "kiosk", originalEventId: null, correctionId: null,
+        },
+        {
+          id: "finish", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-07-28T17:15:00.000Z", recordedDate: date, source: "kiosk", originalEventId: null, correctionId: null,
+        },
+      ],
+    })).toEqual({
+      plannedStart: "08:00",
+      plannedFinish: "17:00",
+      changes: [
+        { targetEventId: "start", eventType: "clock_in", eventTimestamp: "2026-07-28T06:45:00.000Z" },
+        { targetEventId: "finish", eventType: "clock_out", eventTimestamp: "2026-07-28T17:15:00.000Z" },
+      ],
+      additions: [],
+      canApply: true,
+    });
   });
 });
 

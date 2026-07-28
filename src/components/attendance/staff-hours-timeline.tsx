@@ -1,5 +1,6 @@
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import Link from "next/link";
+import { AttendanceCorrectionControls } from "@/components/attendance/attendance-correction-controls";
 import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
 import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceWarning } from "@/lib/attendance/sequence";
@@ -47,7 +48,7 @@ function EventLane({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-export function StaffHoursDayDetail({ day }: { day: StaffHoursDay }) {
+export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; from: string; to: string }) {
   const correctionCount = day.audit.corrections.length;
   return (
     <div className="border-t-4 border-amber-500 bg-amber-50/40 px-4 py-4">
@@ -71,7 +72,8 @@ export function StaffHoursDayDetail({ day }: { day: StaffHoursDay }) {
         </EventLane>
       </div>
 
-      <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately. ` : ""}Use the missing clock event workflow to add a separate correction.</p>
+      <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately.` : ""}</p>
+      <AttendanceCorrectionControls day={day} from={from} to={to} />
 
       <div className="mt-4 overflow-x-auto md:hidden">
         <table className="w-full min-w-[34rem] text-left text-sm">
@@ -88,7 +90,7 @@ export function StaffHoursDayDetail({ day }: { day: StaffHoursDay }) {
   );
 }
 
-function DayRow({ day, open }: { day: StaffHoursDay; open?: boolean }) {
+function DayRow({ day, from, to, open }: { day: StaffHoursDay; from: string; to: string; open?: boolean }) {
   const issues = day.warnings.map(warningLabel);
   return (
     <details className="border-b border-purple-100" open={open}>
@@ -98,7 +100,7 @@ function DayRow({ day, open }: { day: StaffHoursDay; open?: boolean }) {
         <p className="flex items-center gap-2 text-sm font-bold text-purple-950"><Clock3 className="h-4 w-4" aria-hidden />{formatHours(day.completedMinutes)}</p>
         <span className="inline-flex min-h-11 items-center justify-end text-sm font-bold text-purple-800">Open</span>
       </summary>
-      <StaffHoursDayDetail day={day} />
+      <StaffHoursDayDetail day={day} from={from} to={to} />
     </details>
   );
 }
@@ -119,7 +121,7 @@ export function StaffHoursTimeline({ data, selectedDay }: { data: StaffHoursWeek
         <p className="text-center text-sm font-bold text-purple-950"><CalendarDays className="mr-1 inline h-4 w-4" aria-hidden />{formatDateUk(data.from)} to {formatDateUk(data.to)}</p>
         <Link href={hoursHref(nextFrom, nextTo, data.staffId)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-white text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50" aria-label="Next week"><ChevronRight className="h-5 w-5" aria-hidden /></Link>
       </div>
-      {data.days.length ? <div className="mt-2">{data.days.map((day) => <DayRow key={day.date} day={day} open={day.date === selectedDay} />)}</div> : <div className="mt-5"><EmptyState title="No attendance activity" body="There are no shifts, original clock events or corrections for this staff member in this range." /></div>}
+      {data.days.length ? <div className="mt-2">{data.days.map((day) => <DayRow key={day.date} day={day} from={data.from} to={data.to} open={day.date === selectedDay} />)}</div> : <div className="mt-5"><EmptyState title="No attendance activity" body="There are no shifts, original clock events or corrections for this staff member in this range." /></div>}
     </Panel>
   );
 }
@@ -142,7 +144,7 @@ export function YesterdayAttendance({ data }: { data: AttendanceDay }) {
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black text-purple-950">Yesterday</h2><p className="mt-1 text-sm text-slate-600">{formatDateUk(data.date)}. Days needing attention are shown first.</p></div><StatusPill tone="grey">{data.rows.length} staff</StatusPill></div>
-      {data.rows.length ? <div className="mt-4 border-t border-purple-100">{data.rows.map((day) => <details key={day.staffId} className="border-b border-purple-100"><summary className="grid min-h-16 cursor-pointer list-none gap-3 py-3 pr-1 marker:hidden sm:grid-cols-[minmax(0,1fr)_minmax(12rem,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"><div><p className="font-bold text-purple-950">{day.fullName}</p><p className="text-sm text-slate-600">{plannedPeriodsText(day)}</p></div><p className="text-sm font-bold text-red-700">{day.warnings.length ? day.warnings.map(warningLabel).join("; ") : "No attendance warnings"}</p><span className="inline-flex min-h-11 items-center justify-end text-sm font-bold text-purple-800">Open</span></summary><StaffHoursDayDetail day={day} /></details>)}</div> : <div className="mt-5"><EmptyState title="No attendance activity" body="There are no shifts, original clock events or corrections for yesterday." /></div>}
+      {data.rows.length ? <div className="mt-4 border-t border-purple-100">{data.rows.map((day) => <details key={day.staffId} className="border-b border-purple-100"><summary className="grid min-h-16 cursor-pointer list-none gap-3 py-3 pr-1 marker:hidden sm:grid-cols-[minmax(0,1fr)_minmax(12rem,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"><div><p className="font-bold text-purple-950">{day.fullName}</p><p className="text-sm text-slate-600">{plannedPeriodsText(day)}</p></div><p className="text-sm font-bold text-red-700">{day.warnings.length ? day.warnings.map(warningLabel).join("; ") : "No attendance warnings"}</p><span className="inline-flex min-h-11 items-center justify-end text-sm font-bold text-purple-800">Open</span></summary><StaffHoursDayDetail day={day} from={data.date} to={data.date} /></details>)}</div> : <div className="mt-5"><EmptyState title="No attendance activity" body="There are no shifts, original clock events or corrections for yesterday." /></div>}
     </Panel>
   );
 }

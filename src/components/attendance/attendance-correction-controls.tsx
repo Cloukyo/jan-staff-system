@@ -1,0 +1,311 @@
+"use client";
+
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button, Field, inputClassName } from "@/components/ui/primitives";
+import {
+  saveClockEventCorrectionAction,
+  usePlannedHoursAction as applyPlannedHoursAction,
+  type CorrectionActionResult,
+} from "@/lib/attendance/correction-actions";
+import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
+import { planAlternatingEventTypes } from "@/lib/attendance/sequence";
+import { formatTimeUk, londonLocalDateTimeToUtc } from "@/lib/dates/format";
+import type { StaffHoursDay } from "@/lib/attendance/staff-hours";
+
+const initialState: CorrectionActionResult = { ok: false, code: "idle", message: "" };
+const eventTypes: AttendanceEventType[] = ["clock_in", "clock_out"];
+
+type AttendanceDayRoute = {
+  staffId: string;
+  from: string;
+  to: string;
+  day: string;
+};
+
+type TypeChangePreview = {
+  targetEventId: string;
+  eventType: AttendanceEventType;
+  eventTimestamp: string;
+};
+
+type PlannedHoursPreview = {
+  plannedStart: string;
+  plannedFinish: string;
+  changes: TypeChangePreview[];
+  additions: Array<{ eventType: AttendanceEventType; eventTimestamp: string }>;
+  canApply: boolean;
+};
+
+function eventLabel(eventType: AttendanceEventType): string {
+  return eventType === "clock_in" ? "Clock in" : "Clock out";
+}
+
+function localDateTimeValue(timestamp: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Europe/London",
+  }).formatToParts(new Date(timestamp)).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function plannedTimestamp(date: string, time: string): string {
+  return londonLocalDateTimeToUtc(`${date}T${time}`).timestamp.toISOString();
+}
+
+function orderedEvents(events: EffectiveClockEvent[]): EffectiveClockEvent[] {
+  return [...events].sort((left, right) => (
+    Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp)
+    || left.id.localeCompare(right.id)
+  ));
+}
+
+export function buildAttendanceDayReturnTo({ staffId, from, to, day }: AttendanceDayRoute): string {
+  return `/attendance?${new URLSearchParams({
+    view: "hours",
+    hoursFrom: from,
+    hoursTo: to,
+    staffId,
+    day,
+  }).toString()}`;
+}
+
+export function previewManualCorrectionChanges({
+  events,
+  selectedEventId,
+  selectedEventType,
+  localDateTime,
+  staffId,
+}: {
+  events: EffectiveClockEvent[];
+  selectedEventId: string | null;
+  selectedEventType: AttendanceEventType;
+  localDateTime?: string;
+  staffId?: string;
+}): TypeChangePreview[] {
+  const selected = selectedEventId
+    ? events.find((event) => event.id === selectedEventId || event.originalEventId === selectedEventId)
+    : localDateTime && staffId
+      ? {
+          id: "new-event-preview",
+          staffId,
+          eventType: selectedEventType,
+          eventTimestamp: londonLocalDateTimeToUtc(localDateTime).timestamp.toISOString(),
+          recordedDate: localDateTime.slice(0, 10),
+          source: "manager_correction" as const,
+          originalEventId: null,
+          correctionId: null,
+        }
+      : null;
+  if (!selected) return [];
+
+  const plannedEvents = selectedEventId ? events : [...events, selected];
+  return planAlternatingEventTypes({
+    events: plannedEvents,
+    selectedEventId: selected.id,
+    selectedEventType,
+  }).map((change) => ({
+    targetEventId: change.targetEventId,
+    eventType: change.eventType,
+    eventTimestamp: change.eventTimestamp,
+  }));
+}
+
+export function previewPlannedHoursChanges({
+  date,
+  plannedPeriods,
+  effectiveEvents: events,
+}: Pick<StaffHoursDay, "date" | "plannedPeriods" | "effectiveEvents">): PlannedHoursPreview | null {
+  if (!plannedPeriods.length) return null;
+  const plannedStart = plannedPeriods[0].startTime;
+  const plannedFinish = plannedPeriods.at(-1)!.endTime;
+  const startAt = plannedTimestamp(date, plannedStart);
+  const finishAt = plannedTimestamp(date, plannedFinish);
+  const ordered = orderedEvents(events);
+  const left = ordered.filter((event) => event.eventTimestamp <= startAt);
+  const intermediate = ordered.filter((event) => event.eventTimestamp > startAt && event.eventTimestamp < finishAt);
+  const right = ordered.filter((event) => event.eventTimestamp >= finishAt);
+  const canApply = left.length <= 1 && right.length <= 1 && intermediate.length % 2 === 0;
+  const changes: TypeChangePreview[] = [];
+  const additions: PlannedHoursPreview["additions"] = [];
+
+  if (!canApply) return { plannedStart, plannedFinish, changes, additions, canApply };
+  if (!left.length) additions.push({ eventType: "clock_in", eventTimestamp: startAt });
+  else if (left[0].eventType !== "clock_in" || left[0].eventTimestamp !== startAt) {
+    changes.push({ targetEventId: left[0].id, eventType: "clock_in", eventTimestamp: left[0].eventTimestamp });
+  }
+
+  intermediate.forEach((event, index) => {
+    const eventType: AttendanceEventType = index % 2 === 0 ? "clock_out" : "clock_in";
+    if (event.eventType !== eventType) changes.push({ targetEventId: event.id, eventType, eventTimestamp: event.eventTimestamp });
+  });
+
+  if (!right.length) additions.push({ eventType: "clock_out", eventTimestamp: finishAt });
+  else if (right[0].eventType !== "clock_out" || right[0].eventTimestamp !== finishAt) {
+    changes.push({ targetEventId: right[0].id, eventType: "clock_out", eventTimestamp: right[0].eventTimestamp });
+  }
+
+  return { plannedStart, plannedFinish, changes, additions, canApply };
+}
+
+async function submitManualCorrection(_state: CorrectionActionResult, formData: FormData) {
+  return saveClockEventCorrectionAction({
+    staffId: String(formData.get("staffId") ?? ""),
+    originalEventId: String(formData.get("originalEventId") ?? "") || undefined,
+    eventType: String(formData.get("eventType") ?? "") as AttendanceEventType,
+    localDateTime: String(formData.get("localDateTime") ?? ""),
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: String(formData.get("returnTo") ?? ""),
+  });
+}
+
+async function submitPlannedHours(_state: CorrectionActionResult, formData: FormData) {
+  return applyPlannedHoursAction({
+    staffId: String(formData.get("staffId") ?? ""),
+    attendanceDate: String(formData.get("attendanceDate") ?? ""),
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: String(formData.get("returnTo") ?? ""),
+  });
+}
+
+function ActionFeedback({ state }: { state: CorrectionActionResult }) {
+  if (!state.message) return null;
+  return <p className={`mt-3 text-sm font-bold ${state.ok ? "text-green-800" : "text-red-800"}`} role="status">{state.message}</p>;
+}
+
+function CorrectionTypeSelect({ value, onChange }: { value: AttendanceEventType; onChange: (value: AttendanceEventType) => void }) {
+  return (
+    <Field label="Clock event">
+      <select className={inputClassName()} name="eventType" value={value} onChange={(event) => onChange(event.target.value as AttendanceEventType)}>
+        {eventTypes.map((eventType) => <option key={eventType} value={eventType}>{eventLabel(eventType)}</option>)}
+      </select>
+    </Field>
+  );
+}
+
+function ConsequentialPreview({ changes }: { changes: TypeChangePreview[] }) {
+  if (!changes.length) return <p className="mt-3 text-sm text-slate-700">No other same-day event types need to change.</p>;
+  return (
+    <div className="mt-3 border-l-2 border-amber-400 pl-3 text-sm text-slate-800">
+      <p className="font-bold text-purple-950">Also changes these same-day event types</p>
+      <ul className="mt-1 grid gap-1">
+        {changes.map((change) => <li key={change.targetEventId}>{formatTimeUk(change.eventTimestamp)} becomes {eventLabel(change.eventType)}. The recorded time stays the same.</li>)}
+      </ul>
+    </div>
+  );
+}
+
+function FixEventForm({ day, originalEventId, eventType: originalEventType, eventTimestamp, returnTo }: {
+  day: StaffHoursDay;
+  originalEventId: string;
+  eventType: AttendanceEventType;
+  eventTimestamp: string;
+  returnTo: string;
+}) {
+  const router = useRouter();
+  const [eventType, setEventType] = useState(originalEventType);
+  const [localDateTime, setLocalDateTime] = useState(() => localDateTimeValue(eventTimestamp));
+  const [state, formAction, pending] = useActionState(submitManualCorrection, initialState);
+  const changes = useMemo(() => previewManualCorrectionChanges({
+    events: day.effectiveEvents,
+    selectedEventId: originalEventId,
+    selectedEventType: eventType,
+  }), [day.effectiveEvents, eventType, originalEventId]);
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+
+  return (
+    <form action={formAction} className="mt-3 border-l-2 border-purple-200 pl-3">
+      <input name="staffId" type="hidden" value={day.staffId} />
+      <input name="originalEventId" type="hidden" value={originalEventId} />
+      <input name="returnTo" type="hidden" value={returnTo} />
+      <p className="text-sm text-slate-700">Original: <strong>{formatTimeUk(eventTimestamp)} {eventLabel(originalEventType)}</strong></p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <CorrectionTypeSelect value={eventType} onChange={setEventType} />
+        <Field label="Corrected date and time"><input className={inputClassName()} name="localDateTime" type="datetime-local" value={localDateTime} onChange={(event) => setLocalDateTime(event.target.value)} required /></Field>
+        <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
+      </div>
+      <ConsequentialPreview changes={changes} />
+      <Button className="mt-3" type="submit" disabled={pending}>{pending ? "Saving..." : "Save event fix"}</Button>
+      <ActionFeedback state={state} />
+    </form>
+  );
+}
+
+function AddMissingEventForm({ day, returnTo }: { day: StaffHoursDay; returnTo: string }) {
+  const router = useRouter();
+  const [eventType, setEventType] = useState(day.suggestedMissingType);
+  const [localDateTime, setLocalDateTime] = useState(`${day.date}T${day.plannedPeriods[0]?.startTime ?? "09:00"}`);
+  const [state, formAction, pending] = useActionState(submitManualCorrection, initialState);
+  const changes = useMemo(() => previewManualCorrectionChanges({
+    events: day.effectiveEvents,
+    selectedEventId: null,
+    selectedEventType: eventType,
+    localDateTime,
+    staffId: day.staffId,
+  }), [day.effectiveEvents, day.staffId, eventType, localDateTime]);
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+
+  return (
+    <form action={formAction} className="mt-3 border-l-2 border-purple-200 pl-3">
+      <input name="staffId" type="hidden" value={day.staffId} />
+      <input name="returnTo" type="hidden" value={returnTo} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <CorrectionTypeSelect value={eventType} onChange={setEventType} />
+        <Field label="Date and time"><input className={inputClassName()} name="localDateTime" type="datetime-local" value={localDateTime} onChange={(event) => setLocalDateTime(event.target.value)} required /></Field>
+        <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
+      </div>
+      <ConsequentialPreview changes={changes} />
+      <Button className="mt-3" type="submit" disabled={pending}>{pending ? "Saving..." : "Add missing event"}</Button>
+      <ActionFeedback state={state} />
+    </form>
+  );
+}
+
+function PlannedHoursForm({ day, preview, returnTo }: { day: StaffHoursDay; preview: PlannedHoursPreview; returnTo: string }) {
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState(submitPlannedHours, initialState);
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+
+  return (
+    <form action={formAction} className="mt-3 border-l-2 border-purple-200 pl-3">
+      <input name="staffId" type="hidden" value={day.staffId} />
+      <input name="attendanceDate" type="hidden" value={day.date} />
+      <input name="returnTo" type="hidden" value={returnTo} />
+      <p className="text-sm text-slate-700">Published planned hours: <strong>{preview.plannedStart} to {preview.plannedFinish}</strong>. Lunchtime timestamps remain unchanged.</p>
+      {preview.canApply ? <>
+        {preview.additions.length ? <ul className="mt-3 grid gap-1 text-sm text-slate-800">{preview.additions.map((addition) => <li key={addition.eventTimestamp}>Add {eventLabel(addition.eventType)} at {formatTimeUk(addition.eventTimestamp)}.</li>)}</ul> : null}
+        <ConsequentialPreview changes={preview.changes} />
+      </> : <p className="mt-3 text-sm font-bold text-amber-900">Make manual corrections first because more than one boundary event or an odd number of lunchtime events needs attention.</p>}
+      <Field label="Reason for correction"><input className={`mt-3 ${inputClassName()}`} name="reason" minLength={5} required /></Field>
+      <Button className="mt-3" type="submit" disabled={pending || !preview.canApply}>{pending ? "Saving..." : "Use planned hours"}</Button>
+      <ActionFeedback state={state} />
+    </form>
+  );
+}
+
+export function AttendanceCorrectionControls({ day, from, to }: { day: StaffHoursDay; from: string; to: string }) {
+  const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
+  const plannedPreview = previewPlannedHoursChanges(day);
+  return (
+    <section className="mt-4 border-t border-purple-200 pt-4" aria-label="Attendance corrections">
+      <h4 className="text-sm font-black text-purple-950">Correct this day</h4>
+      <p className="mt-1 text-sm text-slate-700">Original clock events stay unchanged. Corrections are saved separately.</p>
+      <div className="mt-3 grid gap-2">
+        {day.audit.originals.map((event) => <details key={event.id} className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Fix {formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}</summary><FixEventForm day={day} originalEventId={event.id} eventType={event.eventType} eventTimestamp={event.eventTimestamp} returnTo={returnTo} /></details>)}
+        <details className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Add missing event</summary><AddMissingEventForm day={day} returnTo={returnTo} /></details>
+        {plannedPreview ? <details className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Use planned hours</summary><PlannedHoursForm day={day} preview={plannedPreview} returnTo={returnTo} /></details> : null}
+      </div>
+    </section>
+  );
+}

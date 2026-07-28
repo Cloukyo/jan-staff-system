@@ -27,7 +27,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   await requireAccount(["manager"]);
   const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(await searchParams);
   const yesterdayDate = previousLondonDate();
-  const dataset = view === "today" || view === "add-event" || view === "history"
+  const dataset = view === "today" || view === "history"
     ? await loadManagerAttendance()
     : null;
   const review = view === "needs-attention"
@@ -78,7 +78,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
         {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
         {view === "hours" && staffIdProvided && !staffHoursWeek ? <StaffHoursNotFound /> : null}
-        {view === "add-event" && dataset ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
+        {view === "add-event" ? <AttendanceCorrectionForm /> : null}
         {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
       </div>
     </AppShell>

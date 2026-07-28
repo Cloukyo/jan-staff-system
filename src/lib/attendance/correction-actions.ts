@@ -20,6 +20,7 @@ export type PlannedHoursActionInput = {
   staffId: string;
   attendanceDate: string;
   reason: string;
+  returnTo?: string;
 };
 
 export type CorrectionActionResult = {
@@ -75,7 +76,8 @@ function isPlannedHoursActionInput(value: unknown): value is PlannedHoursActionI
   return isRecord(value)
     && typeof value.staffId === "string"
     && typeof value.attendanceDate === "string"
-    && typeof value.reason === "string";
+    && typeof value.reason === "string"
+    && (value.returnTo === undefined || typeof value.returnTo === "string");
 }
 
 function revalidateAttendancePaths(returnTo?: string) {
@@ -132,33 +134,50 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
     }
   }
 
-  let consequential: Array<Record<string, string | null>> = [];
-  if (originalEvent) {
-    const { data, error } = await supabase.rpc("get_effective_clock_events", {
-      range_start: originalEvent.recorded_date,
-      range_end: originalEvent.recorded_date,
-      target_staff_id: input.staffId,
-    });
-    if (error) return { ok: false, code: "load_failed", message: "The attendance events could not be loaded." };
+  const attendanceDate = originalEvent?.recorded_date ?? localDateTime.recordedDate;
+  const { data, error: effectiveEventsError } = await supabase.rpc("get_effective_clock_events", {
+    range_start: attendanceDate,
+    range_end: attendanceDate,
+    target_staff_id: input.staffId,
+  });
+  if (effectiveEventsError) return { ok: false, code: "load_failed", message: "The attendance events could not be loaded." };
 
-    const effectiveEvents = ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent);
+  const effectiveEvents = ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent);
+  let selectedEventId: string;
+  let eventsForPlan: EffectiveClockEvent[];
+  if (originalEvent) {
     const selectedEvent = effectiveEvents.find(
       (event) => event.id === originalEvent.id || event.originalEventId === originalEvent.id,
     );
-    consequential = planAlternatingEventTypes({
-      events: effectiveEvents,
-      selectedEventId: selectedEvent?.id ?? originalEvent.id,
-      selectedEventType: input.eventType,
-    }).map((planned) => ({
-      staff_id: input.staffId,
-      recorded_date: originalEvent.recorded_date,
-      correction_kind: "replace",
-      original_event_id: planned.originalEventId,
-      supersedes_correction_id: planned.supersedesCorrectionId,
-      event_type: planned.eventType,
-      event_timestamp: planned.eventTimestamp,
-    }));
+    selectedEventId = selectedEvent?.id ?? originalEvent.id;
+    eventsForPlan = effectiveEvents;
+  } else {
+    const addedEvent: EffectiveClockEvent = {
+        id: "new-event-preview",
+        staffId: input.staffId,
+        eventType: input.eventType,
+        eventTimestamp: localDateTime.timestamp.toISOString(),
+        recordedDate: attendanceDate,
+        source: "manager_correction" as const,
+        originalEventId: null,
+        correctionId: null,
+      };
+    selectedEventId = addedEvent.id;
+    eventsForPlan = [...effectiveEvents, addedEvent];
   }
+  const consequential = planAlternatingEventTypes({
+    events: eventsForPlan,
+    selectedEventId,
+    selectedEventType: input.eventType,
+  }).map((planned) => ({
+    staff_id: input.staffId,
+    recorded_date: attendanceDate,
+    correction_kind: "replace",
+    original_event_id: planned.originalEventId,
+    supersedes_correction_id: planned.supersedesCorrectionId,
+    event_type: planned.eventType,
+    event_timestamp: planned.eventTimestamp,
+  }));
 
   const { error } = await supabase.rpc("save_clock_event_correction_chain", {
     plan: {
@@ -202,6 +221,6 @@ export async function usePlannedHoursAction(input: PlannedHoursActionInput): Pro
   if (error) return { ok: false, code: "save_failed", message: "Planned hours could not be applied." };
   if (!data) return { ok: true, code: "no_changes", message: "Attendance already matches the published planned hours." };
 
-  revalidateAttendancePaths();
+  revalidateAttendancePaths(input.returnTo);
   return { ok: true, code: "saved", message: "Published planned hours were applied as manager corrections." };
 }

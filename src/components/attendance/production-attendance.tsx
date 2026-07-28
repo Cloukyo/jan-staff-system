@@ -1,14 +1,11 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
-import { addClockCorrectionAction } from "@/lib/kiosk/actions";
-import type { KioskActionResult } from "@/lib/kiosk/types";
+import { useMemo, useState } from "react";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
-import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import Link from "next/link";
+import { Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
-
-const initial: KioskActionResult = { ok: false, code: "idle", message: "" };
 
 export function buildAttendanceTodayGroups(
   staff: ManagerKioskRow[],
@@ -170,30 +167,12 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
   );
 }
 
-export function AttendanceCorrectionForm({ staff }: { staff: ManagerKioskRow[] }) {
+export function AttendanceCorrectionForm() {
   return (
     <Panel>
       <h2 className="text-xl font-black text-purple-950">Add a missing clock-in or clock-out</h2>
-      <p className="mt-2 text-sm text-slate-600">This adds a separate manager correction. Original kiosk records are never overwritten.</p>
-      <CorrectionForm>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Field label="Staff member"><select className={inputClassName()} name="staffId" required>{staff.map((person) => <option key={person.staffId} value={person.staffId}>{person.fullName}</option>)}</select></Field>
-          <Field label="Clock event"><select className={inputClassName()} name="eventType"><option value="clock_in">Clock in</option><option value="clock_out">Clock out</option></select></Field>
-          <Field label="Date and time"><input className={inputClassName()} name="eventTimestamp" type="datetime-local" required /></Field>
-          <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
-        </div>
-      </CorrectionForm>
+      <p className="mt-2 text-sm text-slate-600">Choose a staff member in Staff hours to add an event with a same-day preview. Original kiosk records remain unchanged.</p>
+      <Link href="/attendance?view=hours" className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-purple-700 px-4 text-sm font-bold text-white hover:bg-purple-800">Open Staff hours</Link>
     </Panel>
-  );
-}
-
-function CorrectionForm({ children }: { children: React.ReactNode }) {
-  const [state, action, pending] = useActionState(addClockCorrectionAction, initial);
-  return (
-    <form action={action}>
-      {children}
-      <button className="mt-4 min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white disabled:opacity-60" disabled={pending} type="submit">{pending ? "Saving" : "Add correction"}</button>
-      {state.message && <p className={`mt-3 text-sm font-bold ${state.ok ? "text-green-700" : "text-red-700"}`}>{state.message}</p>}
-    </form>
   );
 }
