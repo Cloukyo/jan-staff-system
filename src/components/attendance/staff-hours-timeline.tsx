@@ -11,9 +11,10 @@ import {
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
 import {
   buildAttendanceTimelineWindow,
+  layoutAttendanceTimelineEvents,
   timelinePositionPercent,
-  timestampToLondonMinutes,
   type AttendanceTimelineWindow,
+  type AttendanceTimelineEventPlacement,
 } from "@/lib/attendance/timeline-layout";
 import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceWarning } from "@/lib/attendance/sequence";
@@ -68,11 +69,11 @@ function TimelineGrid({ window }: { window: AttendanceTimelineWindow }) {
   ));
 }
 
-function TimelineLane({ label, children }: { label: string; children: React.ReactNode }) {
+function TimelineLane({ label, children, height = 72 }: { label: string; children: React.ReactNode; height?: number }) {
   return (
     <div className="grid grid-cols-[9.5rem_minmax(0,1fr)] items-center gap-4">
       <p className="text-sm font-bold text-slate-800">{label}</p>
-      <div className="relative h-[4.5rem] min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="relative min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ height }}>
         {children}
       </div>
     </div>
@@ -84,15 +85,15 @@ function TimelineEventMarker({
   eventTimestamp,
   detail,
   tone,
-  window,
+  placement,
 }: {
   eventType: "clock_in" | "clock_out";
   eventTimestamp: string;
   detail: string;
   tone: "original" | "effective" | "replaced";
-  window: AttendanceTimelineWindow;
+  placement: AttendanceTimelineEventPlacement;
 }) {
-  const position = timelinePositionPercent(timestampToLondonMinutes(eventTimestamp), window);
+  const position = placement.positionPercent;
   const edgeClass = position < 8
     ? "translate-x-0 text-left"
     : position > 92
@@ -107,7 +108,7 @@ function TimelineEventMarker({
   return (
     <div className="absolute inset-y-0" style={{ left: `${position}%` }}>
       <span aria-hidden className={`absolute inset-y-0 border-l-2 ${tone === "effective" ? "border-green-500" : tone === "replaced" ? "border-red-400 border-dashed" : "border-amber-400"}`} />
-      <span className={`absolute top-2 z-10 w-max max-w-36 rounded border px-2 py-1 text-xs leading-tight ${edgeClass} ${markerClass}`}>
+      <span className={`absolute z-10 w-max max-w-36 rounded border px-2 py-1 text-xs leading-tight ${edgeClass} ${markerClass}`} style={{ top: 8 + (placement.row * 46) }}>
         <strong>{formatTimeUk(eventTimestamp)} {eventType === "clock_in" ? "In" : "Out"}</strong>
         <span className="block font-medium">{detail}</span>
       </span>
@@ -123,6 +124,17 @@ function AttendanceTimeline({ day }: { day: StaffHoursDay }) {
       ...day.effectiveEvents.map((event) => event.eventTimestamp),
     ],
   });
+  const originalPlacements = layoutAttendanceTimelineEvents(
+    day.audit.originals.map((event) => event.eventTimestamp),
+    window,
+  );
+  const effectivePlacements = layoutAttendanceTimelineEvents(
+    day.effectiveEvents.map((event) => event.eventTimestamp),
+    window,
+  );
+  const markerLaneHeight = (placements: AttendanceTimelineEventPlacement[]) => (
+    Math.max(72, ((Math.max(-1, ...placements.map((placement) => placement.row)) + 1) * 46) + 16)
+  );
 
   return (
     <section className="mt-5 hidden md:block" aria-label="Attendance timeline">
@@ -154,29 +166,29 @@ function AttendanceTimeline({ day }: { day: StaffHoursDay }) {
             );
           }) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No published rota shift</span>}
         </TimelineLane>
-        <TimelineLane label="Original kiosk events">
+        <TimelineLane label="Original kiosk events" height={markerLaneHeight(originalPlacements)}>
           <TimelineGrid window={window} />
-          {day.audit.originals.length ? day.audit.originals.map((event) => (
+          {day.audit.originals.length ? day.audit.originals.map((event, index) => (
             <TimelineEventMarker
               detail={event.status === "active" ? event.sourceLabel : `Original, ${event.status}`}
               eventTimestamp={event.eventTimestamp}
               eventType={event.eventType}
               key={event.id}
+              placement={originalPlacements[index]}
               tone={event.status === "active" ? "original" : "replaced"}
-              window={window}
             />
           )) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No original clock events</span>}
         </TimelineLane>
-        <TimelineLane label="Hours after corrections">
+        <TimelineLane label="Hours after corrections" height={markerLaneHeight(effectivePlacements)}>
           <TimelineGrid window={window} />
-          {day.effectiveEvents.length ? day.effectiveEvents.map((event) => (
+          {day.effectiveEvents.length ? day.effectiveEvents.map((event, index) => (
             <TimelineEventMarker
               detail={event.source === "kiosk" ? "Kiosk" : "Manager correction"}
               eventTimestamp={event.eventTimestamp}
               eventType={event.eventType}
               key={event.id}
+              placement={effectivePlacements[index]}
               tone="effective"
-              window={window}
             />
           )) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No events used for hours</span>}
         </TimelineLane>

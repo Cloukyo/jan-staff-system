@@ -5,6 +5,7 @@ import * as attendanceViews from "@/components/attendance/production-attendance"
 import { attendanceViewHref } from "@/components/attendance/attendance-page-nav";
 import {
   buildAttendanceTimelineWindow,
+  layoutAttendanceTimelineEvents,
   timelinePositionPercent,
 } from "@/lib/attendance/timeline-layout";
 import { parseAttendanceManagerView, parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
@@ -103,6 +104,23 @@ describe("manager attendance views", () => {
     expect(timelinePositionPercent(1140, window)).toBe(100);
   });
 
+  it("keeps close events readable and chronological across the autumn clock change", () => {
+    const window = {
+      startMinutes: 0,
+      endMinutes: 240,
+      ticks: [0, 120, 240],
+    };
+    const placements = layoutAttendanceTimelineEvents([
+      "2026-10-25T00:55:00.000Z",
+      "2026-10-25T01:05:00.000Z",
+      "2026-10-25T01:06:00.000Z",
+    ], window);
+
+    expect(placements[0].positionPercent).toBeLessThan(placements[1].positionPercent);
+    expect(placements[1].positionPercent).toBeLessThan(placements[2].positionPercent);
+    expect(new Set(placements.map((placement) => placement.row)).size).toBe(3);
+  });
+
   it("keeps the expanded attendance view faithful to the approved responsive timeline", () => {
     const timeline = readFileSync(
       resolve("src/components/attendance/staff-hours-timeline.tsx"),
@@ -116,15 +134,30 @@ describe("manager attendance views", () => {
     expect(timeline).toContain("md:hidden");
     expect(timeline).not.toContain('min-w-[34rem]');
     expect(timeline).not.toContain("overflow-x-auto md:hidden");
+
+    const controls = readFileSync(
+      resolve("src/components/attendance/attendance-correction-controls.tsx"),
+      "utf8",
+    );
+    expect(controls.indexOf(">Add missing event<"))
+      .toBeLessThan(controls.indexOf(">Use planned hours<"));
+    expect(controls.indexOf(">Add missing event<"))
+      .toBeLessThan(controls.indexOf("day.effectiveEvents.map"));
   });
 
   it("gives the manager shell an explicit vertical scroll owner", () => {
     const globalStyles = readFileSync(resolve("src/app/globals.css"), "utf8");
+    const appShell = readFileSync(
+      resolve("src/components/layout/app-shell.tsx"),
+      "utf8",
+    );
 
     expect(globalStyles).toMatch(
       /\.app-shell\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow-y:\s*auto;/,
     );
     expect(globalStyles).toContain("overscroll-behavior-y: contain");
+    expect(appShell).toContain('window.addEventListener("keydown", handlePageScroll)');
+    expect(appShell).toContain("shell.scrollBy");
   });
 
   it("adds and removes the expanded day without losing the staff-week route", () => {

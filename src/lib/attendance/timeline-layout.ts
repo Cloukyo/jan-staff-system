@@ -4,6 +4,11 @@ export type AttendanceTimelineWindow = {
   ticks: number[];
 };
 
+export type AttendanceTimelineEventPlacement = {
+  positionPercent: number;
+  row: number;
+};
+
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
   return (hours * 60) + minutes;
@@ -61,3 +66,38 @@ export function timelinePositionPercent(
   return ((clamped - window.startMinutes) / (window.endMinutes - window.startMinutes)) * 100;
 }
 
+export function layoutAttendanceTimelineEvents(
+  timestamps: string[],
+  window: AttendanceTimelineWindow,
+  minimumGapPercent = 16,
+): AttendanceTimelineEventPlacement[] {
+  const ordered = timestamps
+    .map((timestamp, index) => ({
+      index,
+      timestamp,
+      instant: Date.parse(timestamp),
+      localMinutes: timestampToLondonMinutes(timestamp),
+    }))
+    .sort((left, right) => left.instant - right.instant || left.index - right.index);
+  const placements: AttendanceTimelineEventPlacement[] = Array.from(
+    { length: timestamps.length },
+  );
+  const finalPositionByRow: number[] = [];
+  let previousVisualMinutes = Number.NEGATIVE_INFINITY;
+
+  for (const event of ordered) {
+    const visualMinutes = event.localMinutes <= previousVisualMinutes
+      ? previousVisualMinutes + 1
+      : event.localMinutes;
+    previousVisualMinutes = visualMinutes;
+    const positionPercent = timelinePositionPercent(visualMinutes, window);
+    let row = finalPositionByRow.findIndex(
+      (lastPosition) => positionPercent - lastPosition >= minimumGapPercent,
+    );
+    if (row === -1) row = finalPositionByRow.length;
+    finalPositionByRow[row] = positionPercent;
+    placements[event.index] = { positionPercent, row };
+  }
+
+  return placements;
+}

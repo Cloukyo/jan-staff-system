@@ -38,9 +38,40 @@ const staffNavigation: NavGroup[] = [
 export function AppShell({ children, role = "manager" }: { children: React.ReactNode; role?: AppRole }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const navigation = role === "staff" ? staffNavigation : managerNavigation;
+
+  useEffect(() => {
+    function handlePageScroll(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && target.matches("input, textarea, select, [contenteditable='true']")
+      ) return;
+      const shell = shellRef.current;
+      if (!shell) return;
+
+      if (event.key === "Home") {
+        event.preventDefault();
+        shell.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (event.key === "End") {
+        event.preventDefault();
+        shell.scrollTo({ top: shell.scrollHeight, behavior: "smooth" });
+      } else if (event.key === "PageDown" || event.key === "PageUp") {
+        event.preventDefault();
+        shell.scrollBy({
+          top: shell.clientHeight * (event.key === "PageDown" ? 0.85 : -0.85),
+          behavior: "smooth",
+        });
+      }
+    }
+
+    window.addEventListener("keydown", handlePageScroll);
+    return () => window.removeEventListener("keydown", handlePageScroll);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -118,7 +149,7 @@ export function AppShell({ children, role = "manager" }: { children: React.React
   );
 
   return (
-    <div className="app-shell min-h-screen bg-lavender">
+    <div ref={shellRef} className="app-shell min-h-screen bg-lavender">
       <aside className="app-shell__sidebar fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-purple-100 bg-white/95 lg:flex">
         <div className="app-shell__sidebar-brand border-b border-purple-100 p-5"><BrandMark /></div>
         <div className="app-shell__sidebar-menu min-h-0 flex-1 overflow-y-auto px-5 py-6">{menu}</div>
