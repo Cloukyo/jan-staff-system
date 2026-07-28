@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as attendanceViews from "@/components/attendance/production-attendance";
 import { attendanceViewHref } from "@/components/attendance/attendance-page-nav";
 import { parseAttendanceManagerView, parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
+import { attendanceDayHref } from "@/lib/attendance/day-route";
 import { parseStaffHoursWeekId, toStaffHoursWeek, type StaffHoursRange } from "@/lib/attendance/staff-hours";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
@@ -69,6 +70,20 @@ function clockEvent(
 }
 
 describe("manager attendance views", () => {
+  it("adds and removes the expanded day without losing the staff-week route", () => {
+    const route = "view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1";
+
+    expect(attendanceDayHref(route, "2026-07-28", true)).toBe(
+      "/attendance?view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1&day=2026-07-28",
+    );
+    expect(attendanceDayHref(`${route}&day=2026-07-28`, "2026-07-28", false)).toBe(
+      "/attendance?view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1",
+    );
+    expect(attendanceDayHref(`${route}&day=2026-07-29`, "2026-07-28", false)).toBe(
+      "/attendance?view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1&day=2026-07-29",
+    );
+  });
+
   it("groups current staff, scheduled no-shows and missing clock-outs", () => {
     const buildAttendanceTodayGroups = (
       attendanceViews as unknown as {

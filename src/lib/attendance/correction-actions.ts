@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { planAlternatingEventTypes } from "@/lib/attendance/sequence";
 import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
+import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { londonLocalDateTimeToUtc } from "@/lib/dates/format";
@@ -14,6 +14,7 @@ export type CorrectionActionInput = {
   localDateTime: string;
   reason: string;
   returnTo: string;
+  expectedAttendanceDate?: string;
 };
 
 export type PlannedHoursActionInput = {
@@ -27,6 +28,12 @@ export type CorrectionActionResult = {
   ok: boolean;
   code: string;
   message: string;
+};
+
+export type BoundAttendanceCorrectionContext = {
+  staffId: string;
+  attendanceDate: string;
+  returnTo: string;
 };
 
 type OriginalEventRow = {
@@ -69,6 +76,7 @@ function isCorrectionActionInput(value: unknown): value is CorrectionActionInput
     && typeof value.localDateTime === "string"
     && typeof value.reason === "string"
     && typeof value.returnTo === "string"
+    && (value.expectedAttendanceDate === undefined || typeof value.expectedAttendanceDate === "string")
     && (value.originalEventId === undefined || typeof value.originalEventId === "string");
 }
 
@@ -116,6 +124,9 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
   } catch {
     return invalidCorrection;
   }
+  if (input.expectedAttendanceDate && localDateTime.recordedDate !== input.expectedAttendanceDate) {
+    return invalidCorrection;
+  }
 
   const supabase = await createSupabaseServerClient();
   let originalEvent: OriginalEventRow | null = null;
@@ -143,32 +154,13 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
   if (effectiveEventsError) return { ok: false, code: "load_failed", message: "The attendance events could not be loaded." };
 
   const effectiveEvents = ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent);
-  let selectedEventId: string;
-  let eventsForPlan: EffectiveClockEvent[];
-  if (originalEvent) {
-    const selectedEvent = effectiveEvents.find(
-      (event) => event.id === originalEvent.id || event.originalEventId === originalEvent.id,
-    );
-    selectedEventId = selectedEvent?.id ?? originalEvent.id;
-    eventsForPlan = effectiveEvents;
-  } else {
-    const addedEvent: EffectiveClockEvent = {
-        id: "new-event-preview",
-        staffId: input.staffId,
-        eventType: input.eventType,
-        eventTimestamp: localDateTime.timestamp.toISOString(),
-        recordedDate: attendanceDate,
-        source: "manager_correction" as const,
-        originalEventId: null,
-        correctionId: null,
-      };
-    selectedEventId = addedEvent.id;
-    eventsForPlan = [...effectiveEvents, addedEvent];
-  }
-  const consequential = planAlternatingEventTypes({
-    events: eventsForPlan,
-    selectedEventId,
-    selectedEventType: input.eventType,
+  const consequential = planManualCorrectionConsequences({
+    events: effectiveEvents,
+    selectedEventId: originalEvent?.id ?? null,
+    staffId: input.staffId,
+    recordedDate: attendanceDate,
+    eventType: input.eventType,
+    eventTimestamp: localDateTime.timestamp.toISOString(),
   }).map((planned) => ({
     staff_id: input.staffId,
     recorded_date: attendanceDate,
@@ -206,6 +198,22 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
   };
 }
 
+export async function saveBoundClockEventCorrectionAction(
+  context: BoundAttendanceCorrectionContext,
+  _state: CorrectionActionResult,
+  formData: FormData,
+): Promise<CorrectionActionResult> {
+  return saveClockEventCorrectionAction({
+    staffId: context.staffId,
+    originalEventId: String(formData.get("originalEventId") ?? "") || undefined,
+    eventType: String(formData.get("eventType") ?? "") as AttendanceEventType,
+    localDateTime: String(formData.get("localDateTime") ?? ""),
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: context.returnTo,
+    expectedAttendanceDate: context.attendanceDate,
+  });
+}
+
 export async function usePlannedHoursAction(input: PlannedHoursActionInput): Promise<CorrectionActionResult> {
   await requireAccount(["manager"]);
   if (!isPlannedHoursActionInput(input)) return invalidCorrection;
@@ -223,4 +231,19 @@ export async function usePlannedHoursAction(input: PlannedHoursActionInput): Pro
 
   revalidateAttendancePaths(input.returnTo);
   return { ok: true, code: "saved", message: "Published planned hours were applied as manager corrections." };
+}
+
+const applyPublishedPlannedHoursAction = usePlannedHoursAction;
+
+export async function useBoundPlannedHoursAction(
+  context: BoundAttendanceCorrectionContext,
+  _state: CorrectionActionResult,
+  formData: FormData,
+): Promise<CorrectionActionResult> {
+  return applyPublishedPlannedHoursAction({
+    staffId: context.staffId,
+    attendanceDate: context.attendanceDate,
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: context.returnTo,
+  });
 }

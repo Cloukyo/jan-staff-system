@@ -1,7 +1,13 @@
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import Link from "next/link";
 import { AttendanceCorrectionControls } from "@/components/attendance/attendance-correction-controls";
+import { AttendanceDayDisclosure } from "@/components/attendance/attendance-day-disclosure";
 import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
+import {
+  saveBoundClockEventCorrectionAction,
+  useBoundPlannedHoursAction,
+} from "@/lib/attendance/correction-actions";
+import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
 import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceWarning } from "@/lib/attendance/sequence";
 import type { AttendanceDay, StaffHoursDay, StaffHoursWeek } from "@/lib/attendance/staff-hours";
@@ -50,6 +56,10 @@ function EventLane({ label, children }: { label: string; children: React.ReactNo
 
 export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; from: string; to: string }) {
   const correctionCount = day.audit.corrections.length;
+  const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
+  const context = { staffId: day.staffId, attendanceDate: day.date, returnTo };
+  const manualAction = saveBoundClockEventCorrectionAction.bind(null, context);
+  const plannedHoursAction = useBoundPlannedHoursAction.bind(null, context);
   return (
     <div className="border-t-4 border-amber-500 bg-amber-50/40 px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -73,7 +83,7 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
       </div>
 
       <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately.` : ""}</p>
-      <AttendanceCorrectionControls day={day} from={from} to={to} />
+      <AttendanceCorrectionControls day={day} returnTo={returnTo} manualAction={manualAction} plannedHoursAction={plannedHoursAction} />
 
       <div className="mt-4 overflow-x-auto md:hidden">
         <table className="w-full min-w-[34rem] text-left text-sm">
@@ -93,15 +103,18 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
 function DayRow({ day, from, to, open }: { day: StaffHoursDay; from: string; to: string; open?: boolean }) {
   const issues = day.warnings.map(warningLabel);
   return (
-    <details className="border-b border-purple-100" open={open}>
-      <summary className="grid min-h-16 cursor-pointer list-none gap-3 py-3 pr-1 marker:hidden sm:grid-cols-[8rem_minmax(10rem,1fr)_10rem_auto] sm:items-center [&::-webkit-details-marker]:hidden">
+    <AttendanceDayDisclosure
+      day={day.date}
+      open={open}
+      summary={<summary className="grid min-h-16 cursor-pointer list-none gap-3 py-3 pr-1 marker:hidden sm:grid-cols-[8rem_minmax(10rem,1fr)_10rem_auto] sm:items-center [&::-webkit-details-marker]:hidden">
         <div><p className="font-bold text-purple-950">{new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Europe/London" }).format(new Date(`${day.date}T12:00:00Z`))}</p><p className="text-xs text-slate-600">{formatDateUk(day.date)}</p></div>
         <p className="text-sm text-slate-700">{issues.length ? <span className="font-bold text-red-700">{issues.join("; ")}</span> : plannedPeriodsText(day)}</p>
         <p className="flex items-center gap-2 text-sm font-bold text-purple-950"><Clock3 className="h-4 w-4" aria-hidden />{formatHours(day.completedMinutes)}</p>
         <span className="inline-flex min-h-11 items-center justify-end text-sm font-bold text-purple-800">Open</span>
-      </summary>
+      </summary>}
+    >
       <StaffHoursDayDetail day={day} from={from} to={to} />
-    </details>
+    </AttendanceDayDisclosure>
   );
 }
 

@@ -12,6 +12,7 @@ import {
   previewManualCorrectionChanges,
   previewPlannedHoursChanges,
 } from "@/components/attendance/attendance-correction-controls";
+import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 
 const date = "2026-07-28";
 const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
@@ -392,24 +393,6 @@ describe("attendance correction control contracts", () => {
     })).toBe("/attendance?view=hours&hoursFrom=2026-07-27&hoursTo=2026-08-02&staffId=staff-1&day=2026-07-28");
   });
 
-  it("keeps the inline form payloads limited to correction values and required context", () => {
-    const controls = readFileSync(
-      resolve("src/components/attendance/attendance-correction-controls.tsx"),
-      "utf8",
-    );
-
-    expect(controls).toContain('name="staffId"');
-    expect(controls).toContain('name="originalEventId"');
-    expect(controls).toContain('name="eventType"');
-    expect(controls).toContain('type="datetime-local"');
-    expect(controls).toContain('name="reason" minLength={5} required');
-    expect(controls).toContain('name="attendanceDate"');
-    expect(controls).toContain('name="returnTo"');
-    expect(controls).not.toContain('name="plannedStart"');
-    expect(controls).not.toContain('name="plannedFinish"');
-    expect(controls).toContain('min-h-11');
-  });
-
   it("previews the same-day event type changes for a fix without moving their timestamps", () => {
     expect(previewManualCorrectionChanges({
       events: effectiveEvents,
@@ -450,6 +433,43 @@ describe("attendance correction control contracts", () => {
     })).toEqual([]);
   });
 
+  it("shares a projected, re-sorted crossing-event plan with the manual preview", () => {
+    const crossingEvents = [
+      { id: "selected", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-07-28T07:00:00.000Z", recordedDate: date, source: "kiosk" as const, originalEventId: null, correctionId: null },
+      { id: "out-09", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-07-28T08:00:00.000Z", recordedDate: date, source: "kiosk" as const, originalEventId: null, correctionId: null },
+      { id: "in-10", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-07-28T09:00:00.000Z", recordedDate: date, source: "kiosk" as const, originalEventId: null, correctionId: null },
+      { id: "out-12", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-07-28T11:00:00.000Z", recordedDate: date, source: "kiosk" as const, originalEventId: null, correctionId: null },
+    ];
+    const input = {
+      events: crossingEvents,
+      selectedEventId: "selected",
+      staffId: "staff-1",
+      recordedDate: date,
+      eventType: "clock_out" as const,
+      eventTimestamp: "2026-07-28T10:30:00.000Z",
+    };
+
+    expect(planManualCorrectionConsequences(input)).toEqual([
+      {
+        targetEventId: "out-12",
+        originalEventId: "out-12",
+        supersedesCorrectionId: null,
+        eventType: "clock_in",
+        eventTimestamp: "2026-07-28T11:00:00.000Z",
+        recordedDate: date,
+      },
+    ]);
+    expect(previewManualCorrectionChanges({
+      events: crossingEvents,
+      selectedEventId: "selected",
+      selectedEventType: "clock_out",
+      localDateTime: "2026-07-28T11:30",
+      staffId: "staff-1",
+    })).toEqual([
+      { targetEventId: "out-12", eventType: "clock_in", eventTimestamp: "2026-07-28T11:00:00.000Z" },
+    ]);
+  });
+
   it("previews planned start and finish changes while leaving lunchtime timestamps unchanged", () => {
     expect(previewPlannedHoursChanges({
       date,
@@ -475,10 +495,31 @@ describe("attendance correction control contracts", () => {
       plannedStart: "08:00",
       plannedFinish: "17:00",
       changes: [
-        { targetEventId: "start", eventType: "clock_in", eventTimestamp: "2026-07-28T06:45:00.000Z" },
-        { targetEventId: "finish", eventType: "clock_out", eventTimestamp: "2026-07-28T17:15:00.000Z" },
+        { targetEventId: "start", originalEventType: "clock_out", eventType: "clock_in", originalEventTimestamp: "2026-07-28T06:45:00.000Z", eventTimestamp: "2026-07-28T07:00:00.000Z" },
+        { targetEventId: "finish", originalEventType: "clock_in", eventType: "clock_out", originalEventTimestamp: "2026-07-28T17:15:00.000Z", eventTimestamp: "2026-07-28T16:00:00.000Z" },
       ],
       additions: [],
+      canApply: true,
+    });
+  });
+
+  it("uses the earliest start and independent latest finish for overlapping planned periods", () => {
+    expect(previewPlannedHoursChanges({
+      date,
+      plannedPeriods: [
+        { id: "late", startTime: "10:00", endTime: "16:00", breakMinutes: 0 },
+        { id: "early", startTime: "08:00", endTime: "15:00", breakMinutes: 0 },
+        { id: "long", startTime: "09:00", endTime: "17:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "08:00",
+      plannedFinish: "17:00",
+      changes: [],
+      additions: [
+        { eventType: "clock_in", eventTimestamp: "2026-07-28T07:00:00.000Z" },
+        { eventType: "clock_out", eventTimestamp: "2026-07-28T16:00:00.000Z" },
+      ],
       canApply: true,
     });
   });

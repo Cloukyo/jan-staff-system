@@ -33,6 +33,7 @@ vi.mock("@/lib/kiosk/device-session", () => ({
 
 import { addClockCorrectionAction } from "@/lib/kiosk/actions";
 import {
+  saveBoundClockEventCorrectionAction,
   saveClockEventCorrectionAction,
   usePlannedHoursAction,
 } from "@/lib/attendance/correction-actions";
@@ -338,6 +339,71 @@ describe("manager attendance correction actions", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/clock");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/payroll");
     expect(result.ok).toBe(true);
+  });
+
+  it("plans after the primary correction's new position when it crosses later events", async () => {
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_effective_clock_events") {
+        return Promise.resolve({
+          data: [
+            { event_id: "event-1", original_event_id: null, correction_id: null, staff_id: "staff-1", event_type: "clock_in", event_timestamp: "2026-07-28T07:00:00.000Z", recorded_date: "2026-07-28", source: "kiosk" },
+            { event_id: "out-09", original_event_id: null, correction_id: null, staff_id: "staff-1", event_type: "clock_out", event_timestamp: "2026-07-28T08:00:00.000Z", recorded_date: "2026-07-28", source: "kiosk" },
+            { event_id: "in-10", original_event_id: null, correction_id: null, staff_id: "staff-1", event_type: "clock_in", event_timestamp: "2026-07-28T09:00:00.000Z", recorded_date: "2026-07-28", source: "kiosk" },
+            { event_id: "out-12", original_event_id: null, correction_id: null, staff_id: "staff-1", event_type: "clock_out", event_timestamp: "2026-07-28T11:00:00.000Z", recorded_date: "2026-07-28", source: "kiosk" },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: "batch-1", error: null });
+    });
+
+    await saveClockEventCorrectionAction({
+      staffId: "staff-1",
+      originalEventId: "event-1",
+      eventType: "clock_out",
+      localDateTime: "2026-07-28T11:30",
+      reason: "Correcting the later clock time",
+      returnTo: "/attendance",
+    });
+
+    expect(mocks.rpc).toHaveBeenLastCalledWith("save_clock_event_correction_chain", expect.objectContaining({
+      plan: expect.objectContaining({
+        consequential: [{
+          staff_id: "staff-1",
+          recorded_date: "2026-07-28",
+          correction_kind: "replace",
+          original_event_id: "out-12",
+          supersedes_correction_id: null,
+          event_type: "clock_in",
+          event_timestamp: "2026-07-28T11:00:00.000Z",
+        }],
+      }),
+    }));
+  });
+
+  it("uses bound staff and date context for added events and rejects a different local date", async () => {
+    const context = { staffId: "staff-1", attendanceDate: "2026-07-28", returnTo: "/attendance?view=hours" };
+    const form = new FormData();
+    form.set("staffId", "staff-2");
+    form.set("eventType", "clock_in");
+    form.set("localDateTime", "2026-07-28T09:15");
+    form.set("reason", "Forgot to clock in");
+
+    await saveBoundClockEventCorrectionAction(context, { ok: false, code: "idle", message: "" }, form);
+
+    expect(mocks.rpc).toHaveBeenCalledWith("get_effective_clock_events", {
+      range_start: "2026-07-28",
+      range_end: "2026-07-28",
+      target_staff_id: "staff-1",
+    });
+
+    vi.clearAllMocks();
+    mocks.requireAccount.mockResolvedValue({ id: "manager-1", role: "manager" });
+    form.set("localDateTime", "2026-07-29T09:15");
+    const result = await saveBoundClockEventCorrectionAction(context, { ok: false, code: "idle", message: "" }, form);
+
+    expect(result.code).toBe("invalid_correction");
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
   });
 
   it("plans consequential replacements when the selected original already has an active replacement", async () => {
