@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as attendanceViews from "@/components/attendance/production-attendance";
 import { attendanceViewHref } from "@/components/attendance/attendance-page-nav";
-import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
+import { parseAttendanceManagerView, parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
 import { parseStaffHoursWeekId, toStaffHoursWeek, type StaffHoursRange } from "@/lib/attendance/staff-hours";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
@@ -189,6 +189,44 @@ describe("manager attendance views", () => {
     expect(attendancePage).toContain("!staffHoursWeek");
     expect(readFileSync(resolve("src/components/attendance/staff-hours-timeline.tsx"), "utf8"))
       .toContain("Back to Staff hours");
+  });
+
+  it("parses Staff hours query values without confusing a missing staff ID with malformed input", () => {
+    const attendancePage = readFileSync(resolve("src/app/attendance/page.tsx"), "utf8");
+
+    expect(parseAttendancePageSearchParams({ view: "hours" })).toMatchObject({
+      view: "hours",
+      staffId: undefined,
+      staffIdProvided: false,
+    });
+    expect(parseAttendancePageSearchParams({ view: "hours", staffId: "" })).toMatchObject({
+      staffId: "",
+      staffIdProvided: true,
+    });
+    expect(parseAttendancePageSearchParams({ view: "hours", staffId: "stf-001" })).toMatchObject({
+      staffId: "stf-001",
+      staffIdProvided: true,
+    });
+    expect(parseAttendancePageSearchParams({
+      view: "hours",
+      staffId: ["stf-001", "stf-002"],
+      day: ["2026-07-20", "2026-07-21"],
+      hoursFrom: ["2026-07-20"],
+      hoursTo: ["2026-07-26"],
+    })).toMatchObject({
+      staffId: undefined,
+      staffIdProvided: true,
+      day: undefined,
+      hoursFrom: undefined,
+      hoursTo: undefined,
+    });
+
+    const malformed = parseAttendancePageSearchParams({ view: "hours", staffId: "bad/staff id" });
+    const overlong = parseAttendancePageSearchParams({ view: "hours", staffId: "s".repeat(129) });
+    expect(parseStaffHoursWeekId(malformed.staffId)).toBeNull();
+    expect(parseStaffHoursWeekId(overlong.staffId)).toBeNull();
+    expect(attendancePage).toContain("!staffIdProvided");
+    expect(attendancePage).toContain("staffIdProvided && !staffHoursWeek");
   });
 
   it("searches immutable history by staff, event, source, reason and date", () => {

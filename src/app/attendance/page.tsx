@@ -13,7 +13,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
 import { ClockPlus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
-import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
+import { parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
 import { requireAccount } from "@/lib/auth/permissions";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
@@ -22,20 +22,10 @@ import { loadAttendanceDay, loadStaffHoursList, loadStaffHoursWeek, previousLond
 
 export const dynamic = "force-dynamic";
 
-type AttendanceSearchParams = {
-  view?: string;
-  date?: string;
-  day?: string;
-  staffId?: string;
-  hoursFrom?: string;
-  hoursTo?: string;
-};
-
-export default async function AttendancePage({ searchParams }: { searchParams: Promise<AttendanceSearchParams> }) {
+export default async function AttendancePage({ searchParams }: { searchParams: Promise<Record<string, unknown>> }) {
   if (getAppMode() === "demo") return <AttendanceScreen />;
   await requireAccount(["manager"]);
-  const { view: viewValue, date, day, staffId, hoursFrom, hoursTo } = await searchParams;
-  const view = parseAttendanceManagerView(viewValue);
+  const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(await searchParams);
   const yesterdayDate = previousLondonDate();
   const dataset = view === "today" || view === "add-event" || view === "history"
     ? await loadManagerAttendance()
@@ -46,8 +36,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       ? await loadAttendanceReviewDay(isoDateInLondon())
       : null;
   const yesterday = view === "yesterday" ? await loadAttendanceDay(yesterdayDate) : null;
-  const staffHoursList = view === "hours" && !staffId ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
-  const staffHoursWeek = view === "hours" && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
+  const staffHoursList = view === "hours" && !staffIdProvided ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
+  const staffHoursWeek = view === "hours" && staffIdProvided && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
   return (
     <AppShell>
       <div className="mb-5">
@@ -87,7 +77,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {view === "yesterday" && yesterday ? <YesterdayAttendance data={yesterday} /> : null}
         {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
         {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
-        {view === "hours" && staffId && !staffHoursWeek ? <StaffHoursNotFound /> : null}
+        {view === "hours" && staffIdProvided && !staffHoursWeek ? <StaffHoursNotFound /> : null}
         {view === "add-event" && dataset ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
         {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
       </div>
