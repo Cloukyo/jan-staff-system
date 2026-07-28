@@ -9,6 +9,13 @@ import {
   useBoundPlannedHoursAction,
 } from "@/lib/attendance/correction-actions";
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
+import {
+  buildAttendanceTimelineWindow,
+  layoutAttendanceTimelineEvents,
+  timelinePositionPercent,
+  type AttendanceTimelineWindow,
+  type AttendanceTimelineEventPlacement,
+} from "@/lib/attendance/timeline-layout";
 import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceWarning } from "@/lib/attendance/sequence";
 import type { AttendanceDay, StaffHoursDay, StaffHoursWeek } from "@/lib/attendance/staff-hours";
@@ -46,11 +53,186 @@ function plannedPeriodsText(day: StaffHoursDay): string {
     : "No published rota shift";
 }
 
-function EventLane({ label, children }: { label: string; children: React.ReactNode }) {
+function formatTimelineMinute(minutes: number): string {
+  if (minutes === 24 * 60) return "24:00";
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function TimelineGrid({ window }: { window: AttendanceTimelineWindow }) {
+  return window.ticks.map((tick) => (
+    <span
+      aria-hidden
+      className="absolute inset-y-0 border-l border-slate-200"
+      key={tick}
+      style={{ left: `${timelinePositionPercent(tick, window)}%` }}
+    />
+  ));
+}
+
+function TimelineLane({ label, children, height = 72 }: { label: string; children: React.ReactNode; height?: number }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start">
-      <p className="text-sm font-bold text-purple-950">{label}</p>
-      <div className="min-w-0">{children}</div>
+    <div className="grid grid-cols-[9.5rem_minmax(0,1fr)] items-center gap-4">
+      <p className="text-sm font-bold text-slate-800">{label}</p>
+      <div className="relative min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ height }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TimelineEventMarker({
+  eventType,
+  eventTimestamp,
+  detail,
+  tone,
+  placement,
+}: {
+  eventType: "clock_in" | "clock_out";
+  eventTimestamp: string;
+  detail: string;
+  tone: "original" | "effective" | "replaced";
+  placement: AttendanceTimelineEventPlacement;
+}) {
+  const position = placement.positionPercent;
+  const edgeClass = position < 8
+    ? "translate-x-0 text-left"
+    : position > 92
+      ? "-translate-x-full text-right"
+      : "-translate-x-1/2 text-center";
+  const markerClass = tone === "replaced"
+    ? "border-red-500 bg-red-50 text-red-800"
+    : tone === "effective"
+      ? "border-green-600 bg-green-50 text-green-900"
+      : "border-amber-500 bg-amber-50 text-amber-950";
+
+  return (
+    <div className="absolute inset-y-0" style={{ left: `${position}%` }}>
+      <span aria-hidden className={`absolute inset-y-0 border-l-2 ${tone === "effective" ? "border-green-500" : tone === "replaced" ? "border-red-400 border-dashed" : "border-amber-400"}`} />
+      <span className={`absolute z-10 w-max max-w-36 rounded border px-2 py-1 text-xs leading-tight ${edgeClass} ${markerClass}`} style={{ top: 8 + (placement.row * 46) }}>
+        <strong>{formatTimeUk(eventTimestamp)} {eventType === "clock_in" ? "In" : "Out"}</strong>
+        <span className="block font-medium">{detail}</span>
+      </span>
+    </div>
+  );
+}
+
+function AttendanceTimeline({ day }: { day: StaffHoursDay }) {
+  const window = buildAttendanceTimelineWindow({
+    plannedPeriods: day.plannedPeriods,
+    eventTimestamps: [
+      ...day.audit.originals.map((event) => event.eventTimestamp),
+      ...day.effectiveEvents.map((event) => event.eventTimestamp),
+    ],
+  });
+  const originalPlacements = layoutAttendanceTimelineEvents(
+    day.audit.originals.map((event) => event.eventTimestamp),
+    window,
+  );
+  const effectivePlacements = layoutAttendanceTimelineEvents(
+    day.effectiveEvents.map((event) => event.eventTimestamp),
+    window,
+  );
+  const markerLaneHeight = (placements: AttendanceTimelineEventPlacement[]) => (
+    Math.max(72, ((Math.max(-1, ...placements.map((placement) => placement.row)) + 1) * 46) + 16)
+  );
+
+  return (
+    <section className="mt-5 hidden md:block" aria-label="Attendance timeline">
+      <div className="grid grid-cols-[9.5rem_minmax(0,1fr)] items-end gap-4">
+        <p className="text-xs font-bold uppercase text-slate-500">Day timeline</p>
+        <div className="relative h-6">
+          {window.ticks.map((tick) => {
+            const position = timelinePositionPercent(tick, window);
+            const edgeClass = position === 0 ? "" : position === 100 ? "-translate-x-full" : "-translate-x-1/2";
+            return <span className={`absolute text-xs font-semibold text-slate-500 ${edgeClass}`} key={tick} style={{ left: `${position}%` }}>{formatTimelineMinute(tick)}</span>;
+          })}
+        </div>
+      </div>
+      <div className="grid gap-3">
+        <TimelineLane label="Planned rota">
+          <TimelineGrid window={window} />
+          {day.plannedPeriods.length ? day.plannedPeriods.map((period) => {
+            const start = timelinePositionPercent(Number(period.startTime.slice(0, 2)) * 60 + Number(period.startTime.slice(3, 5)), window);
+            const end = timelinePositionPercent(Number(period.endTime.slice(0, 2)) * 60 + Number(period.endTime.slice(3, 5)), window);
+            return (
+              <span
+                className="absolute top-5 flex h-8 items-center justify-center overflow-hidden rounded bg-purple-100 px-2 text-xs font-bold text-purple-950 ring-1 ring-inset ring-purple-300"
+                key={period.id}
+                style={{ left: `${start}%`, width: `${Math.max(1, end - start)}%` }}
+                title={`${period.startTime} to ${period.endTime}`}
+              >
+                {period.startTime} to {period.endTime}
+              </span>
+            );
+          }) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No published rota shift</span>}
+        </TimelineLane>
+        <TimelineLane label="Original kiosk events" height={markerLaneHeight(originalPlacements)}>
+          <TimelineGrid window={window} />
+          {day.audit.originals.length ? day.audit.originals.map((event, index) => (
+            <TimelineEventMarker
+              detail={event.status === "active" ? event.sourceLabel : `Original, ${event.status}`}
+              eventTimestamp={event.eventTimestamp}
+              eventType={event.eventType}
+              key={event.id}
+              placement={originalPlacements[index]}
+              tone={event.status === "active" ? "original" : "replaced"}
+            />
+          )) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No original clock events</span>}
+        </TimelineLane>
+        <TimelineLane label="Hours after corrections" height={markerLaneHeight(effectivePlacements)}>
+          <TimelineGrid window={window} />
+          {day.effectiveEvents.length ? day.effectiveEvents.map((event, index) => (
+            <TimelineEventMarker
+              detail={event.source === "kiosk" ? "Kiosk" : "Manager correction"}
+              eventTimestamp={event.eventTimestamp}
+              eventType={event.eventType}
+              key={event.id}
+              placement={effectivePlacements[index]}
+              tone="effective"
+            />
+          )) : <span className="absolute inset-0 flex items-center px-3 text-sm text-slate-500">No events used for hours</span>}
+        </TimelineLane>
+      </div>
+    </section>
+  );
+}
+
+function MobileAttendanceTable({ day }: { day: StaffHoursDay }) {
+  return (
+    <div className="mt-5 md:hidden">
+      <table className="w-full table-fixed text-left text-sm">
+        <caption className="mb-2 text-left text-sm font-bold text-slate-800">Attendance records</caption>
+        <thead>
+          <tr className="border-b border-slate-300 text-xs uppercase text-slate-500">
+            <th className="w-[28%] py-2 pr-2">Record</th>
+            <th className="w-[32%] px-2 py-2">Event</th>
+            <th className="w-[40%] py-2 pl-2">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {day.plannedPeriods.map((period) => (
+            <tr key={period.id} className="border-b border-slate-200 align-top">
+              <td className="break-words py-3 pr-2 font-semibold">Planned</td>
+              <td className="break-words px-2 py-3">{period.startTime}<br />to {period.endTime}</td>
+              <td className="break-words py-3 pl-2 text-slate-600">Published rota</td>
+            </tr>
+          ))}
+          {day.audit.originals.map((event) => (
+            <tr key={event.id} className="border-b border-slate-200 align-top">
+              <td className="break-words py-3 pr-2 font-semibold">Original</td>
+              <td className="break-words px-2 py-3">{eventLabel(event.eventType)}<br /><strong>{formatTimeUk(event.eventTimestamp)}</strong></td>
+              <td className="break-words py-3 pl-2 text-slate-600">{event.status === "active" ? event.sourceLabel : `Original, ${event.status}`}</td>
+            </tr>
+          ))}
+          {day.effectiveEvents.map((event) => (
+            <tr key={event.id} className="border-b border-slate-200 align-top">
+              <td className="break-words py-3 pr-2 font-semibold">Used for hours</td>
+              <td className="break-words px-2 py-3">{eventLabel(event.eventType)}<br /><strong>{formatTimeUk(event.eventTimestamp)}</strong></td>
+              <td className="break-words py-3 pl-2 text-slate-600">{event.source === "kiosk" ? "Kiosk" : "Manager correction"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -69,7 +251,7 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
   const manualAction = saveBoundClockEventCorrectionAction.bind(null, context);
   const plannedHoursAction = useBoundPlannedHoursAction.bind(null, context);
   return (
-    <div className="border-t-4 border-amber-500 bg-amber-50/40 px-4 py-4">
+    <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-5 sm:px-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-black text-purple-950">{formatDateUk(day.date)}</h3>
@@ -80,30 +262,11 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
 
       {day.warnings.length ? <p className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 px-3 py-3 text-sm font-bold text-amber-950" role="alert"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />Needs attention: {day.warnings.map(warningLabel).join("; ")}</p> : <p className="mt-4 text-sm font-semibold text-green-800">No attendance warnings for this day.</p>}
 
-      <div className="mt-4 grid gap-4">
-        <EventLane label="Planned rota"><p className="text-sm text-slate-700">{plannedPeriodsText(day)}</p></EventLane>
-        <EventLane label="Original events">
-          {day.audit.originals.length ? <ol className="flex flex-wrap gap-2">{day.audit.originals.map((event) => <li key={event.id} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-purple-100"><strong>{formatTimeUk(event.eventTimestamp)}</strong> {eventLabel(event.eventType)} <span className="text-slate-600">{event.sourceLabel}{event.status === "active" ? "" : `, ${event.status}`}</span></li>)}</ol> : <p className="text-sm text-slate-600">No original clock events.</p>}
-        </EventLane>
-        <EventLane label="Effective events">
-          {day.effectiveEvents.length ? <ol className="flex flex-wrap gap-2">{day.effectiveEvents.map((event) => <li key={event.id} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-purple-100"><strong>{formatTimeUk(event.eventTimestamp)}</strong> {eventLabel(event.eventType)} <span className="text-slate-600">{event.source === "kiosk" ? "Kiosk" : "Manager correction"}</span></li>)}</ol> : <p className="text-sm text-slate-600">No effective clock events.</p>}
-        </EventLane>
-      </div>
+      <AttendanceTimeline day={day} />
+      <MobileAttendanceTable day={day} />
 
       <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately.` : ""}</p>
       <AttendanceCorrectionControls day={day} correctionId={correctionId} returnTo={returnTo} manualAction={manualAction} plannedHoursAction={plannedHoursAction} />
-
-      <div className="mt-4 overflow-x-auto md:hidden">
-        <table className="w-full min-w-[34rem] text-left text-sm">
-          <caption className="sr-only">Planned, original and effective attendance events for {formatDateUk(day.date)}</caption>
-          <thead><tr className="border-b border-purple-200 text-purple-950"><th className="p-2">Record</th><th className="p-2">Event</th><th className="p-2">Time</th><th className="p-2">Status</th></tr></thead>
-          <tbody>
-            {day.plannedPeriods.map((period) => <tr key={period.id} className="border-b border-purple-100"><td className="p-2 font-semibold">Planned</td><td className="p-2">Shift</td><td className="p-2">{period.startTime} to {period.endTime}</td><td className="p-2">Published rota</td></tr>)}
-            {day.audit.originals.map((event) => <tr key={event.id} className="border-b border-purple-100"><td className="p-2 font-semibold">Original</td><td className="p-2">{eventLabel(event.eventType)}</td><td className="p-2">{formatTimeUk(event.eventTimestamp)}</td><td className="p-2">{event.status}</td></tr>)}
-            {day.effectiveEvents.map((event) => <tr key={event.id} className="border-b border-purple-100"><td className="p-2 font-semibold">Effective</td><td className="p-2">{eventLabel(event.eventType)}</td><td className="p-2">{formatTimeUk(event.eventTimestamp)}</td><td className="p-2">{event.source === "kiosk" ? "Kiosk" : "Manager correction"}</td></tr>)}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

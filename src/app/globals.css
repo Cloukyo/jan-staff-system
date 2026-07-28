@@ -50,6 +50,10 @@ textarea {
 /* Legacy Safari fallback: keep the manager shell usable if Tailwind utility layers are ignored. */
 .app-shell {
   min-height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
   background:
     radial-gradient(circle at 18% 0%, rgba(75, 42, 122, 0.08), transparent 30%),
     linear-gradient(180deg, #fbfcff 0%, var(--background) 38%, #f2f4f8 100%);
