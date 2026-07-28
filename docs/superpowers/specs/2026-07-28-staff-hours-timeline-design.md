@@ -106,9 +106,14 @@ selected. The event type uses a dropdown and the time field supports both
 typing and the platform time picker.
 
 Use planned hours is available when the day has at least one published rota
-period. Before saving, it shows the exact periods that will be used and asks
-for confirmation. It creates an effective clock-in and clock-out pair for
-every published rota period on the day.
+period. Before saving, it shows the planned start and finish and asks for
+confirmation. It adds or replaces only the first clock-in at the earliest
+planned start and the final clock-out at the latest planned finish.
+
+Intermediate events, including lunchtime clock-outs and clock-ins, remain
+untouched and continue to determine whether break time is excluded from worked
+hours. The action does not invent lunch times, deduct a planned break or replace
+the full day's event sequence.
 
 Use planned hours does not appear when there is no published rota. It never
 changes the rota itself.
@@ -226,10 +231,12 @@ The server validates:
 Use planned hours reloads the rota inside the server action rather than
 trusting times posted by the browser.
 
-The planned-hours database function excludes every currently effective event
-for the selected staff day and adds the published rota start and end pairs as
-one correction batch. This handles missing, reversed, duplicate and extra
-events consistently. If saving fails, no partial correction batch is retained.
+The planned-hours database function identifies the first and final effective
+events for the selected staff day. It replaces a wrong first boundary event or
+adds the missing clock-in at the earliest planned start. It replaces a wrong
+final boundary event or adds the missing clock-out at the latest planned
+finish. All intermediate events remain effective. If saving fails, no partial
+boundary correction batch is retained.
 
 User-facing failures explain what the manager can do next and do not expose
 database details.
@@ -255,6 +262,8 @@ Pure unit tests cover:
 - clock-out before clock-in;
 - duplicate and reversed events;
 - multiple same-day rota periods;
+- preservation of valid lunchtime clock-out and clock-in events;
+- planned-hours correction of only the first and final day events;
 - effective replacement of an original event;
 - an added missing event;
 - exclusion of an incorrect or duplicate event;

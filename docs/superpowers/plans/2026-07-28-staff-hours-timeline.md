@@ -156,8 +156,10 @@ Expected: FAIL because the migration does not exist.
 
 Use immutable insert/select policies for managers. Include foreign keys to
 `staff_profiles`, `clock_events`, `clock_event_corrections` and
-`staff_accounts`. Add constraints that require an original event for replace
-or exclude, forbid it for add, and require a five-character reason.
+`staff_accounts`. Add constraints that require replace and exclude corrections
+to target either an original event or a superseded correction, never neither.
+Add corrections have no original event unless they supersede an earlier
+correction. Require a five-character reason.
 
 - [ ] **Step 4: Create the effective-event SQL function**
 
@@ -172,10 +174,12 @@ The security-definer function must:
 1. require a manager account;
 2. lock and reload published, non-cancelled rota shifts for the staff date;
 3. reject an empty rota;
-4. exclude every currently effective event for that staff date;
-5. add one clock-in and clock-out correction per planned period;
-6. use Europe/London conversion for local shift times;
-7. return the correction batch ID.
+4. use the earliest published start and latest published finish as boundaries;
+5. replace or add the first clock-in boundary;
+6. replace or add the final clock-out boundary;
+7. leave every intermediate event, including lunchtime events, untouched;
+8. use Europe/London conversion for local shift times;
+9. return the correction batch ID.
 
 - [ ] **Step 6: Update manager and staff weekly-hours SQL functions**
 
@@ -279,8 +283,8 @@ git commit -m "Add attendance correction actions"
 - [ ] **Step 1: Add failing loader and date tests**
 
 Test the London date transition, current configured work week, issue-first
-sorting, multiple rota periods and preservation of both audit and effective
-records.
+sorting, multiple rota periods, untouched lunchtime events and preservation of
+both audit and effective records.
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
@@ -407,7 +411,8 @@ feedback, and include original versus corrected values before submission.
 
 - [ ] **Step 4: Implement Use planned hours confirmation**
 
-Show every planned period in UK time. The confirmation form posts only staff
+Show the earliest planned start and latest planned finish in UK time. State
+that lunchtime events are unchanged. The confirmation form posts only staff
 ID, date, reason and return URL.
 
 - [ ] **Step 5: Update manager help**
