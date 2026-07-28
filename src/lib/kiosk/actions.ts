@@ -147,28 +147,3 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
   revalidatePath("/clock");
   return { ok: true, code: "saved", message: "Temporary PIN saved. The employee must replace it at their next use." };
 }
-
-export async function addClockCorrectionAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {
-  const account = await requireAccount(["manager"]);
-  const staffId = String(formData.get("staffId") ?? "");
-  const eventType = String(formData.get("eventType") ?? "");
-  const eventTimestamp = String(formData.get("eventTimestamp") ?? "");
-  const reason = String(formData.get("reason") ?? "").trim();
-  if (!staffId || !["clock_in", "clock_out"].includes(eventType) || !eventTimestamp || reason.length < 5) {
-    return { ok: false, code: "invalid_correction", message: "Choose an event, time and a clear correction reason." };
-  }
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("clock_events").insert({
-    staff_id: staffId,
-    event_type: eventType,
-    event_timestamp: new Date(eventTimestamp).toISOString(),
-    event_source: "manager",
-    manager_correction: true,
-    corrected_by: account.id,
-    correction_reason: reason,
-  });
-  if (error) return { ok: false, code: "save_failed", message: "The correction could not be recorded." };
-  revalidatePath("/attendance");
-  revalidatePath("/clock");
-  return { ok: true, code: "saved", message: "The correction was added without changing the original clock events." };
-}

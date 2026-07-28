@@ -11,6 +11,28 @@ import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/t
 
 const decimalHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
 
+function formatCorrectionAudit(
+  records: PayrollExportDetail["dailyRows"][number]["correctionRecords"],
+): string | null {
+  if (!records.length) return null;
+  return records.map((record) => [
+    record.id,
+    record.status,
+    record.kind,
+    record.eventType ?? "no event",
+    record.eventTimestamp ? formatTimeUk(record.eventTimestamp) : "no time",
+    record.reason,
+    `batch=${record.batchId}`,
+    `role=${record.correctionRole}`,
+    `original=${record.originalEventId ?? ""}`,
+    `supersedes=${record.supersedesCorrectionId ?? ""}`,
+    `recorded_date=${record.recordedDate}`,
+    `event_timestamp=${record.eventTimestamp ?? ""}`,
+    `created_by=${record.createdBy}`,
+    `created_at=${record.createdAt}`,
+  ].join(" | ")).join("; ");
+}
+
 export type PayrollWorkbookReviewState = {
   unresolved: number;
   pendingRequests: number;
@@ -97,8 +119,8 @@ export async function createPayrollPreparationWorkbook(
     });
   }
 
-  const rawMinutesByStaffDate = new Map(
-    detail.dailyRows.map((row) => [`${row.staffId}:${row.date}`, row.rawWorkedMinutes]),
+  const clockedMinutesByStaffDate = new Map(
+    detail.dailyRows.map((row) => [`${row.staffId}:${row.date}`, row.workedMinutes]),
   );
   const hourlyRateByStaffId = new Map(
     rows.map((row) => [
@@ -118,10 +140,10 @@ export async function createPayrollPreparationWorkbook(
     });
     weekly.mergeCells(1, 1, 1, estimatedPayColumnNumber);
     weekly.getCell(1, 1).value = isCombined
-      ? "Planned hours deduct rota breaks. Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll."
+      ? "Planned hours deduct rota breaks. Clocked hours use effective attendance after manager corrections, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll."
       : includePlanned
         ? "Planned hours deduct planned rota breaks. Hourly pay is editable and estimated pay is not completed payroll."
-        : "Clocked hours sum original completed clock-in/out sessions, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll.";
+        : "Clocked hours use effective attendance after manager corrections, so clocked-out breaks are unpaid. Hourly pay is editable and estimated pay is not completed payroll.";
     weekly.getCell(1, 1).font = { bold: true, color: { argb: "FF4C1D95" } };
     weekly.getCell(1, 1).alignment = { wrapText: true, vertical: "middle" };
     weekly.getRow(1).height = 32;
@@ -140,7 +162,7 @@ export async function createPayrollPreparationWorkbook(
         (date) => staffRow.plannedMinutesByDate[date] ?? 0,
       );
       const clockedMinutes = weekDates.map(
-        (date) => rawMinutesByStaffDate.get(`${staffRow.staffId}:${date}`) ?? 0,
+        (date) => clockedMinutesByStaffDate.get(`${staffRow.staffId}:${date}`) ?? 0,
       );
       const firstDateColumn = weekly.getColumn(firstDateColumnNumber).letter;
       const lastDateColumn = weekly.getColumn(totalColumnNumber - 1).letter;
@@ -249,6 +271,7 @@ export async function createPayrollPreparationWorkbook(
     { header: "Original clock-outs", key: "originalOuts", width: 22 },
     { header: "Manager correction clock-ins", key: "managerIns", width: 29 },
     { header: "Manager correction clock-outs", key: "managerOuts", width: 30 },
+    { header: "Correction audit", key: "correctionAudit", width: 56 },
     { header: "Raw worked hours", key: "rawHours", width: 18 },
     { header: "Worked hours including corrections", key: "workedHours", width: 32 },
     { header: "Attendance review status", key: "reviewStatus", width: 25 },
@@ -268,6 +291,7 @@ export async function createPayrollPreparationWorkbook(
       originalOuts: row.originalClockOuts.length ? row.originalClockOuts.map(formatTimeUk).join(", ") : null,
       managerIns: row.managerClockIns.length ? row.managerClockIns.map(formatTimeUk).join(", ") : null,
       managerOuts: row.managerClockOuts.length ? row.managerClockOuts.map(formatTimeUk).join(", ") : null,
+      correctionAudit: formatCorrectionAudit(row.correctionRecords),
       rawHours: decimalHours(row.rawWorkedMinutes),
       workedHours: decimalHours(row.workedMinutes),
       reviewStatus: row.reviewStatus.replaceAll("_", " "),
@@ -281,9 +305,9 @@ export async function createPayrollPreparationWorkbook(
     pattern: "solid",
     fgColor: { argb: "FF5B21B6" },
   };
-  daily.autoFilter = { from: "A1", to: "P1" };
+  daily.autoFilter = { from: "A1", to: "Q1" };
   daily.getColumn("C").numFmt = "dd/mm/yyyy";
-  for (const column of ["G", "L", "M"]) daily.getColumn(column).numFmt = "0.00";
+  for (const column of ["G", "M", "N"]) daily.getColumn(column).numFmt = "0.00";
     daily.eachRow((row, rowNumber) => {
       row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
     });
@@ -316,7 +340,7 @@ export async function createPayrollPreparationWorkbook(
     ["Each numbered worksheet covers one Monday-to-Sunday week within the selected period."],
     ...(includePlanned ? [["Planned hours deduct planned rota breaks."]] : []),
     ...(includeClocked
-      ? [["Clocked hours sum original completed clock-in/out sessions. Clocked-out breaks are unpaid."]]
+      ? [["Clocked hours use effective attendance after manager corrections. Clocked-out breaks are unpaid."]]
       : []),
     ["Hourly pay on each weekly sheet is editable. Blank or salaried rates are left blank."],
     ["Estimated pay is weekly hours multiplied by hourly pay. It is a simple estimate, not completed payroll."],

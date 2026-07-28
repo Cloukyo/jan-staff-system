@@ -20,14 +20,25 @@ export function isPayDetailsReady(
 }
 
 export function calculateClockTotals(events: ProductionClockEvent[], maximumShiftMinutes = 12 * 60) {
-  const ordered = [...events].sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
+  const ordered = [...events].sort((a, b) => (
+    a.recordedDate.localeCompare(b.recordedDate)
+    || Date.parse(a.eventTimestamp) - Date.parse(b.eventTimestamp)
+    || (a.orderKey ?? a.id).localeCompare(b.orderKey ?? b.id)
+    || a.id.localeCompare(b.id)
+  ));
   const warnings: string[] = [];
   let open: ProductionClockEvent | null = null;
+  let recordedDate: string | null = null;
   let recordedMinutes = 0;
   for (const event of ordered) {
+    if (recordedDate !== event.recordedDate) {
+      if (open) warnings.push("Missing clock-out");
+      open = null;
+      recordedDate = event.recordedDate;
+    }
     if (event.managerCorrection) warnings.push("Manager correction");
     if (event.eventType === "clock_in") {
-      if (open) warnings.push("Overlapping sessions");
+      if (open) warnings.push("Duplicate clock-in");
       open = event;
       continue;
     }
@@ -53,35 +64,42 @@ function salaryForPeriod(arrangement: PayArrangement, periodStart: string, perio
 
 export function createPayrollPreparationRow(
   staff: ProductionStaffRow,
-  events: ProductionClockEvent[],
+  originalEvents: ProductionClockEvent[],
+  effectiveEvents: ProductionClockEvent[],
   periodStart: string,
   periodEnd: string,
   reviews: PayrollAttendanceReview[] = [],
 ): PayrollPreparationRow {
   const periodArrangements = arrangementsForPeriod(staff.payArrangements, periodStart, periodEnd);
   const arrangement = arrangementAt(staff.payArrangements, periodEnd);
-  const staffEvents = events.filter((event) => event.staffId === staff.id);
-  const rawTotals = calculateClockTotals(staffEvents.filter((event) => !event.managerCorrection));
-  const adjustedTotals = calculateClockTotals(staffEvents);
-  const warnings = [...adjustedTotals.warnings];
+  const rawStaffEvents = originalEvents.filter(
+    (event) => event.staffId === staff.id && !event.managerCorrection,
+  );
+  const staffEvents = effectiveEvents.filter((event) => event.staffId === staff.id);
+  const rawTotals = calculateClockTotals(rawStaffEvents);
+  const effectiveTotals = calculateClockTotals(staffEvents);
+  const warnings = [...effectiveTotals.warnings];
   if (!arrangement) warnings.push("Missing active pay arrangement");
   if (periodArrangements.length > 1) warnings.push("Pay arrangement changes within period");
-  if (adjustedTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
+  if (effectiveTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
   if (arrangement && arrangement.hoursBasis !== "contracted") warnings.push("Contracted hours not tracked");
   const periodDays = Math.max(1, differenceInMinutes(parseISO(`${periodEnd}T12:00:00`), parseISO(`${periodStart}T12:00:00`)) / 1440 + 1);
   const ordinaryLimit = arrangement?.contractedWeeklyHours === null || arrangement?.contractedWeeklyHours === undefined
     ? null
     : Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7);
   const ordinaryMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.min(adjustedTotals.recordedMinutes, ordinaryLimit)
-    : adjustedTotals.recordedMinutes;
+    ? Math.min(effectiveTotals.recordedMinutes, ordinaryLimit)
+    : effectiveTotals.recordedMinutes;
   const overtimeMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.max(0, adjustedTotals.recordedMinutes - ordinaryLimit)
+    ? Math.max(0, effectiveTotals.recordedMinutes - ordinaryLimit)
     : 0;
   const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
     ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
     : null;
-  const workedDates = new Set(staffEvents.map((event) => event.recordedDate));
+  const workedDates = new Set([
+    ...rawStaffEvents.map((event) => event.recordedDate),
+    ...staffEvents.map((event) => event.recordedDate),
+  ]);
   const staffReviews = reviews.filter((review) => review.staffId === staff.id && workedDates.has(review.reviewDate));
   const reviewedDates = new Set(staffReviews.map((review) => review.reviewDate));
   const unresolvedDays = [...workedDates].filter((date) => !reviewedDates.has(date)).length;
@@ -98,7 +116,7 @@ export function createPayrollPreparationRow(
     contractedWeeklyHours: arrangement?.contractedWeeklyHours ?? null,
     hoursBasis: arrangement?.hoursBasis ?? null,
     recordedMinutes: rawTotals.recordedMinutes,
-    adjustedMinutes: adjustedTotals.recordedMinutes,
+    adjustedMinutes: effectiveTotals.recordedMinutes,
     ordinaryMinutes,
     overtimeMinutes,
     hourlyRate: arrangement?.hourlyRate ?? null,

@@ -1,17 +1,15 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
-import { addClockCorrectionAction } from "@/lib/kiosk/actions";
-import type { KioskActionResult } from "@/lib/kiosk/types";
+import { useMemo, useState } from "react";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
-import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
-import type {
-  AttendanceReviewRow,
-  ManagerHoursPreview,
-} from "@/lib/attendance/review-server";
-
-const initial: KioskActionResult = { ok: false, code: "idle", message: "" };
+import {
+  MissingEventCorrectionForm,
+  type CorrectionFormAction,
+} from "@/components/attendance/attendance-correction-controls";
+import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
+import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
+import type { MissingEventPage } from "@/lib/attendance/staff-hours";
 
 export function buildAttendanceTodayGroups(
   staff: ManagerKioskRow[],
@@ -95,20 +93,29 @@ export function filterAndPaginateAttendanceHistory(
   const normalisedQuery = query.trim().toLowerCase();
   const filtered = events.filter((event) => {
     if (!normalisedQuery) return true;
-    const eventLabel = event.eventType === "clock_in" ? "clock in" : "clock out";
-    const sourceLabel = event.managerCorrection
+    const eventLabel = event.eventType === "clock_in"
+      ? "clock in"
+      : event.eventType === "clock_out"
+        ? "clock out"
+        : "excluded event";
+    const sourceLabel = event.eventSource === "manager_correction"
       ? "manager correction"
       : event.eventSource === "manager"
-        ? "manager"
+        ? "legacy manager event"
         : "kiosk";
     const searchable = [
       staffNames.get(event.staffId) ?? "Unknown staff",
+      event.recordType,
       eventLabel,
       sourceLabel,
+      event.auditStatus,
+      event.correctionKind ?? "",
       event.correctionReason ?? "",
+      event.createdByName ?? "",
       event.recordedDate,
-      formatDateUk(event.eventTimestamp),
-      formatTimeUk(event.eventTimestamp),
+      formatDateUk(event.recordedDate),
+      event.eventTimestamp ? formatDateUk(event.eventTimestamp) : "",
+      event.eventTimestamp ? formatTimeUk(event.eventTimestamp) : "",
     ].join(" ").toLowerCase();
     return searchable.includes(normalisedQuery);
   });
@@ -152,10 +159,27 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
       </div>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Event</th><th className="p-2">Time</th><th className="p-2">Source</th><th className="p-2">Reason</th></tr></thead>
+          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Record</th><th className="p-2">Event time</th><th className="p-2">Added</th><th className="p-2">Source and status</th><th className="p-2">Reason</th></tr></thead>
           <tbody>{result.events.map((event) => {
             const person = staff.find((item) => item.staffId === event.staffId);
-            return <tr key={event.id} className="border-b border-purple-50"><td className="p-2 font-bold">{person?.fullName ?? "Unknown staff"}</td><td className="p-2">{event.eventType === "clock_in" ? "Clock in" : "Clock out"}</td><td className="p-2">{formatDateUk(event.eventTimestamp)} {formatTimeUk(event.eventTimestamp)}</td><td className="p-2">{event.managerCorrection ? <StatusPill tone="purple">Manager correction</StatusPill> : "Kiosk"}</td><td className="p-2">{event.correctionReason ?? ""}</td></tr>;
+            const eventText = event.eventType === "clock_in"
+              ? "Clock in"
+              : event.eventType === "clock_out"
+                ? "Clock out"
+                : "Excluded event";
+            const sourceText = event.eventSource === "manager_correction"
+              ? "Manager correction"
+              : event.eventSource === "manager"
+                ? "Legacy manager event"
+                : "Kiosk";
+            return <tr key={`${event.recordType}-${event.id}`} className="border-b border-purple-50">
+              <td className="p-2 font-bold">{person?.fullName ?? "Unknown staff"}</td>
+              <td className="p-2"><strong>{event.recordType === "original" ? "Original" : "Correction"}</strong><br />{eventText}{event.correctionKind ? `, ${event.correctionKind}` : ""}</td>
+              <td className="p-2">{formatDateUk(event.recordedDate)}{event.eventTimestamp ? <> {formatTimeUk(event.eventTimestamp)}</> : <><br /><span className="text-xs text-slate-600">No effective event time</span></>}</td>
+              <td className="p-2">{formatDateUk(event.createdAt)} {formatTimeUk(event.createdAt)}</td>
+              <td className="p-2"><StatusPill tone={event.auditStatus === "active" ? "green" : "purple"}>{sourceText}, {event.auditStatus}</StatusPill>{event.createdByName ? <span className="mt-1 block text-xs text-slate-600">{event.createdByName}</span> : null}</td>
+              <td className="p-2">{event.correctionReason ?? ""}</td>
+            </tr>;
           })}</tbody>
         </table>
         {!result.totalItems ? <p className="mt-3 text-sm text-slate-600">No clocking records match this search.</p> : null}
@@ -173,68 +197,49 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
   );
 }
 
-export function AttendanceHoursSummary({ hoursPreview }: { hoursPreview: ManagerHoursPreview }) {
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-purple-950">Staff hours summary</h2>
-          <p className="mt-2 text-sm text-slate-600">Completed clock-in to clock-out time for each staff member in the selected range.</p>
-        </div>
-        <a
-          className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200"
-          href={`/attendance?view=hours&hoursFrom=${hoursPreview.currentWeekStart}&hoursTo=${hoursPreview.currentWeekEnd}`}
-        >
-          Current work week
-        </a>
-      </div>
-      <form className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]" method="get">
-        <input type="hidden" name="view" value="hours" />
-        <Field label="Start date"><input className={inputClassName()} name="hoursFrom" type="date" defaultValue={hoursPreview.rangeStart} required /></Field>
-        <Field label="End date"><input className={inputClassName()} name="hoursTo" type="date" defaultValue={hoursPreview.rangeEnd} required /></Field>
-        <button className="min-h-11 self-end rounded-lg bg-purple-700 px-5 font-bold text-white" type="submit">Update summary</button>
-      </form>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Completed hours</th><th className="p-2">Current shift</th></tr></thead>
-          <tbody>{hoursPreview.rows.map((row) => (
-            <tr key={row.staffId} className="border-b border-purple-50">
-              <td className="p-2 font-bold">{row.fullName}</td>
-              <td className="p-2">{formatHours(row.completedMinutes)}</td>
-              <td className="p-2">{row.openShiftCount > 0 ? "In progress, not included" : "None"}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-        {!hoursPreview.rows.length ? <p className="mt-3 text-sm text-slate-600">No active staff found. The selected range has 0 logged hours.</p> : null}
-      </div>
-    </Panel>
-  );
-}
-
-export function AttendanceCorrectionForm({ staff }: { staff: ManagerKioskRow[] }) {
+export function AttendanceCorrectionForm({
+  data,
+  action,
+  correctionId,
+  returnTo,
+}: {
+  data: MissingEventPage;
+  action: CorrectionFormAction | null;
+  correctionId: string;
+  returnTo: string;
+}) {
   return (
     <Panel>
       <h2 className="text-xl font-black text-purple-950">Add a missing clock-in or clock-out</h2>
-      <p className="mt-2 text-sm text-slate-600">This adds a separate manager correction. Original kiosk records are never overwritten.</p>
-      <CorrectionForm>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Field label="Staff member"><select className={inputClassName()} name="staffId" required>{staff.map((person) => <option key={person.staffId} value={person.staffId}>{person.fullName}</option>)}</select></Field>
-          <Field label="Clock event"><select className={inputClassName()} name="eventType"><option value="clock_in">Clock in</option><option value="clock_out">Clock out</option></select></Field>
-          <Field label="Date and time"><input className={inputClassName()} name="eventTimestamp" type="datetime-local" required /></Field>
-          <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
-        </div>
-      </CorrectionForm>
-    </Panel>
-  );
-}
+      <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,14rem)_auto] sm:items-end" method="get">
+        <input name="view" type="hidden" value="add-event" />
+        <Field label="Staff member">
+          <select className={inputClassName()} defaultValue={data.selectedStaffId ?? ""} name="staffId" required>
+            <option value="" disabled>Choose staff</option>
+            {data.staff.map((person) => (
+              <option key={person.staffId} value={person.staffId}>{person.fullName}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Attendance date">
+          <input className={inputClassName()} defaultValue={data.date} name="date" type="date" required />
+        </Field>
+        <Button type="submit" variant="secondary">Review day</Button>
+      </form>
 
-function CorrectionForm({ children }: { children: React.ReactNode }) {
-  const [state, action, pending] = useActionState(addClockCorrectionAction, initial);
-  return (
-    <form action={action}>
-      {children}
-      <button className="mt-4 min-h-11 rounded-lg bg-purple-700 px-4 font-bold text-white disabled:opacity-60" disabled={pending} type="submit">{pending ? "Saving" : "Add correction"}</button>
-      {state.message && <p className={`mt-3 text-sm font-bold ${state.ok ? "text-green-700" : "text-red-700"}`}>{state.message}</p>}
-    </form>
+      {data.day && action ? (
+        <div className="mt-5 border-t border-purple-100 pt-4">
+          <h3 className="text-base font-black text-purple-950">{data.day.fullName}, {formatDateUk(data.day.date)}</h3>
+          <p className="mt-1 text-sm text-slate-700">
+            Current effective sequence: {data.day.effectiveEvents.length
+              ? data.day.effectiveEvents.map((event) => `${formatTimeUk(event.eventTimestamp)} ${event.eventType === "clock_in" ? "clock in" : "clock out"}`).join(", ")
+              : "No clock events"}
+          </p>
+          <MissingEventCorrectionForm day={data.day} correctionId={correctionId} returnTo={returnTo} action={action} />
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-slate-600">Choose a staff member and date to review the day.</p>
+      )}
+    </Panel>
   );
 }

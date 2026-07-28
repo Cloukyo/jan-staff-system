@@ -29,7 +29,7 @@ describe("production payroll repository separation", () => {
     const staffPage = readFileSync(resolve("src/app/staff/page.tsx"), "utf8");
     const payrollPage = readFileSync(resolve("src/app/payroll/page.tsx"), "utf8");
     expect(staffPage).toContain("loadProductionStaffRows");
-    expect(payrollPage).toContain("loadProductionClockEvents");
+    expect(payrollPage).toContain("loadProductionAttendanceData");
     expect(payrollPage).toContain("!person.isManager");
     expect(staffPage).toContain('getAppMode() === "demo"');
     expect(payrollPage).toContain('getAppMode() === "demo"');
@@ -132,21 +132,96 @@ describe("production payroll preparation", () => {
     expect(result.warnings).toContain("Manager correction");
   });
 
+  it("uses the immutable lineage key when effective events share an instant", () => {
+    const events = [
+      {
+        id: "f0000000-0000-0000-0000-000000000000",
+        orderKey: "10000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_in" as const,
+        eventTimestamp: "2026-06-01T08:00:00Z",
+        recordedDate: "2026-06-01",
+        managerCorrection: true,
+      },
+      {
+        id: "20000000-0000-0000-0000-000000000000",
+        orderKey: "20000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_out" as const,
+        eventTimestamp: "2026-06-01T08:00:00Z",
+        recordedDate: "2026-06-01",
+        managerCorrection: false,
+      },
+    ];
+
+    const result = calculateClockTotals(events);
+
+    expect(result.recordedMinutes).toBe(0);
+    expect(result.warnings).not.toContain("Clock-out without clock-in");
+    expect(result.warnings).not.toContain("Missing clock-out");
+  });
+
+  it("uses the latest duplicate clock-in as the payable start", () => {
+    const result = calculateClockTotals([
+      { id: "in-08", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "in-09", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T09:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "out-17", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-01T17:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+    ]);
+
+    expect(result.recordedMinutes).toBe(480);
+    expect(result.warnings).toContain("Duplicate clock-in");
+  });
+
+  it("does not pair a clock-in with a clock-out recorded on the next date", () => {
+    const result = calculateClockTotals([
+      { id: "monday-in", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "tuesday-out", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-02T17:00:00Z", recordedDate: "2026-06-02", managerCorrection: false },
+    ]);
+
+    expect(result.recordedMinutes).toBe(0);
+    expect(result.warnings).toContain("Missing clock-out");
+    expect(result.warnings).toContain("Clock-out without clock-in");
+  });
+
+  it("keeps raw original hours separate from reviewed effective hours", () => {
+    const originalEvents = [
+      { id: "raw-in", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "raw-out", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T17:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+    ];
+    const effectiveEvents = [
+      { id: "reviewed-in", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T09:00:00Z", recordedDate: "2026-06-01", managerCorrection: true },
+      originalEvents[1],
+    ];
+
+    const result = createPayrollPreparationRow(
+      staff,
+      originalEvents,
+      effectiveEvents,
+      "2026-06-01",
+      "2026-06-07",
+    );
+
+    expect(result.recordedMinutes).toBe(540);
+    expect(result.adjustedMinutes).toBe(480);
+    expect(readFileSync(resolve("src/app/payroll/page.tsx"), "utf8"))
+      .toContain("row.recordedMinutes > 0 || row.adjustedMinutes > 0");
+  });
+
   it("calculates hourly pay but keeps salaried attendance informational", () => {
     const events = [
       { id: "1", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
       { id: "2", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T16:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
     ];
-    const hourlyRow = createPayrollPreparationRow(staff, events, "2026-06-01", "2026-06-07");
+    const hourlyRow = createPayrollPreparationRow(staff, events, events, "2026-06-01", "2026-06-07");
     expect(hourlyRow.estimatedGross).toBe(96);
     const salariedStaff = { ...staff, payArrangements: [{ ...hourly, payType: "salaried" as const, hourlyRate: null, annualSalary: 30000 }] };
-    const salariedRow = createPayrollPreparationRow(salariedStaff, events, "2026-06-01", "2026-06-07");
+    const salariedRow = createPayrollPreparationRow(salariedStaff, events, events, "2026-06-01", "2026-06-07");
     expect(salariedRow.estimatedGross).toBeNull();
     expect(salariedRow.salaryBasis).not.toBeNull();
   });
 
   it("warns when a canonical profile has no pay arrangement", () => {
-    const row = createPayrollPreparationRow({ ...staff, payArrangements: [] }, [], "2026-06-01", "2026-06-30");
+    const row = createPayrollPreparationRow({ ...staff, payArrangements: [] }, [], [], "2026-06-01", "2026-06-30");
     expect(row.warnings).toContain("Missing active pay arrangement");
     expect(row.warnings).toContain("Zero recorded hours");
   });

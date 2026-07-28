@@ -12,6 +12,8 @@ import type {
   PayrollDailyRow,
   PayrollExportDetail,
   PayrollRotaShift,
+  ProductionAttendanceData,
+  ProductionClockCorrectionRecord,
   ProductionClockEvent,
   ProductionStaffRow,
 } from "@/lib/payroll/types";
@@ -19,7 +21,7 @@ import type {
 export type PayrollExportDetailInput = {
   staff: ProductionStaffRow[];
   shifts: PayrollRotaShift[];
-  events: ProductionClockEvent[];
+  attendance: ProductionAttendanceData;
   reviews: PayrollAttendanceReview[];
   periodStart: string;
   periodEnd: string;
@@ -55,7 +57,9 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
     end: parseISO(input.periodEnd),
   }).map((date) => format(date, "yyyy-MM-dd"));
   const shiftsByDay = new Map<string, PayrollRotaShift[]>();
-  const eventsByDay = new Map<string, ProductionClockEvent[]>();
+  const effectiveEventsByDay = new Map<string, ProductionClockEvent[]>();
+  const originalEventsByDay = new Map<string, ProductionClockEvent[]>();
+  const correctionsByDay = new Map<string, ProductionClockCorrectionRecord[]>();
   const reviewsByDay = new Map(
     input.reviews.map((review) => [detailKey(review.staffId, review.reviewDate), review]),
   );
@@ -68,11 +72,25 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
     group.push(shift);
     shiftsByDay.set(key, group);
   }
-  for (const event of input.events) {
+  for (const event of input.attendance.effectiveEvents) {
     const key = detailKey(event.staffId, event.recordedDate);
-    const group = eventsByDay.get(key) ?? [];
+    const group = effectiveEventsByDay.get(key) ?? [];
     group.push(event);
-    eventsByDay.set(key, group);
+    effectiveEventsByDay.set(key, group);
+  }
+  for (const event of input.attendance.audit.originalEvents.filter(
+    (record) => !record.managerCorrection,
+  )) {
+    const key = detailKey(event.staffId, event.recordedDate);
+    const group = originalEventsByDay.get(key) ?? [];
+    group.push(event);
+    originalEventsByDay.set(key, group);
+  }
+  for (const correction of input.attendance.audit.correctionRecords) {
+    const key = detailKey(correction.staffId, correction.recordedDate);
+    const group = correctionsByDay.get(key) ?? [];
+    group.push(correction);
+    correctionsByDay.set(key, group);
   }
 
   const plannedRows = input.staff.map((person) => ({
@@ -93,17 +111,26 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
       const key = detailKey(person.id, date);
       const shifts = (shiftsByDay.get(key) ?? [])
         .sort((a, b) => a.startTime.localeCompare(b.startTime));
-      const events = (eventsByDay.get(key) ?? [])
+      const effectiveEvents = (effectiveEventsByDay.get(key) ?? [])
         .sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
+      const originals = (originalEventsByDay.get(key) ?? [])
+        .sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
+      const corrections = (correctionsByDay.get(key) ?? [])
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
       const review = reviewsByDay.get(key);
-      if (shifts.length === 0 && events.length === 0 && !review) return [];
+      if (
+        shifts.length === 0
+        && effectiveEvents.length === 0
+        && originals.length === 0
+        && corrections.length === 0
+        && !review
+      ) return [];
 
-      const originals = events.filter((event) => !event.managerCorrection);
-      const corrections = events.filter((event) => event.managerCorrection);
       const raw = calculateClockTotals(originals);
-      const adjusted = calculateClockTotals(events);
+      const adjusted = calculateClockTotals(effectiveEvents);
       const warnings = [...adjusted.warnings];
-      if (events.length > 0 && !review) warnings.push("Attendance review incomplete");
+      if (corrections.length > 0) warnings.push("Manager correction");
+      if (effectiveEvents.length > 0 && !review) warnings.push("Attendance review incomplete");
 
       return [{
         staffId: person.id,
@@ -121,11 +148,12 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
           .filter((event) => event.eventType === "clock_out")
           .map((event) => event.eventTimestamp),
         managerClockIns: corrections
-          .filter((event) => event.eventType === "clock_in")
-          .map((event) => event.eventTimestamp),
+          .filter((correction) => correction.eventType === "clock_in" && correction.eventTimestamp)
+          .map((correction) => correction.eventTimestamp!),
         managerClockOuts: corrections
-          .filter((event) => event.eventType === "clock_out")
-          .map((event) => event.eventTimestamp),
+          .filter((correction) => correction.eventType === "clock_out" && correction.eventTimestamp)
+          .map((correction) => correction.eventTimestamp!),
+        correctionRecords: corrections,
         rawWorkedMinutes: raw.recordedMinutes,
         workedMinutes: adjusted.recordedMinutes,
         reviewStatus: review?.status ?? "not_reviewed",
