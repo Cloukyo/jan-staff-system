@@ -124,6 +124,20 @@ export function StaffHoursTimeline({ data, selectedDay }: { data: StaffHoursWeek
   );
 }
 
+export function StaffHoursNotFound() {
+  return (
+    <Panel>
+      <EmptyState
+        title="Staff member unavailable"
+        body="This Staff hours link is no longer available. The staff member may be inactive or the link may be out of date."
+      />
+      <Link href="/attendance?view=hours" className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50">
+        Back to Staff hours
+      </Link>
+    </Panel>
+  );
+}
+
 export function YesterdayAttendance({ data }: { data: AttendanceDay }) {
   return (
     <Panel>

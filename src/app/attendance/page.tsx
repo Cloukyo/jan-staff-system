@@ -7,7 +7,7 @@ import {
   AttendanceToday,
 } from "@/components/attendance/production-attendance";
 import { StaffHoursList } from "@/components/attendance/staff-hours-list";
-import { StaffHoursTimeline, YesterdayAttendance } from "@/components/attendance/staff-hours-timeline";
+import { StaffHoursNotFound, StaffHoursTimeline, YesterdayAttendance } from "@/components/attendance/staff-hours-timeline";
 import { ManagerHelpLink } from "@/components/help/manager-help-link";
 import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
@@ -36,7 +36,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   await requireAccount(["manager"]);
   const { view: viewValue, date, day, staffId, hoursFrom, hoursTo } = await searchParams;
   const view = parseAttendanceManagerView(viewValue);
-  const yesterdayDate = day ?? previousLondonDate();
+  const yesterdayDate = previousLondonDate();
   const dataset = view === "today" || view === "add-event" || view === "history"
     ? await loadManagerAttendance()
     : null;
@@ -87,6 +87,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {view === "yesterday" && yesterday ? <YesterdayAttendance data={yesterday} /> : null}
         {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
         {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
+        {view === "hours" && staffId && !staffHoursWeek ? <StaffHoursNotFound /> : null}
         {view === "add-event" && dataset ? <AttendanceCorrectionForm staff={dataset.staff} /> : null}
         {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
       </div>

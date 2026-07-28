@@ -203,6 +203,12 @@ function validIsoDate(value: string | undefined): value is string {
     && parsed.getUTCDate() === day;
 }
 
+export function parseStaffHoursWeekId(value: string | undefined): string | null {
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
 function previousIsoDate(value: string): string {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
@@ -502,8 +508,6 @@ async function loadStaffHoursRange(
       },
     ).order("staff_id").range(from, to)),
   ]);
-  if (staffId && !profiles.length) throw new Error("Staff member could not be found.");
-
   return buildStaffHoursRange({
     ...range,
     currentWeekStart: currentWeek.start,
@@ -528,13 +532,9 @@ export async function loadStaffHoursList(from?: string, to?: string): Promise<St
   };
 }
 
-export async function loadStaffHoursWeek(
-  staffId: string,
-  from?: string,
-  to?: string,
-): Promise<StaffHoursWeek> {
-  const range = await loadStaffHoursRange(from, to, staffId);
+export function toStaffHoursWeek(range: StaffHoursRange): StaffHoursWeek | null {
   const staff = range.staff[0];
+  if (!staff) return null;
   return {
     from: range.from,
     to: range.to,
@@ -545,6 +545,16 @@ export async function loadStaffHoursWeek(
     fullName: staff.fullName,
     days: range.days,
   };
+}
+
+export async function loadStaffHoursWeek(
+  staffId: string,
+  from?: string,
+  to?: string,
+): Promise<StaffHoursWeek | null> {
+  const validStaffId = parseStaffHoursWeekId(staffId);
+  if (!validStaffId) return null;
+  return toStaffHoursWeek(await loadStaffHoursRange(from, to, validStaffId));
 }
 
 export async function loadAttendanceDay(dateValue: string): Promise<AttendanceDay> {

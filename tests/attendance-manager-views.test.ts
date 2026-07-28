@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as attendanceViews from "@/components/attendance/production-attendance";
+import { attendanceViewHref } from "@/components/attendance/attendance-page-nav";
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
+import { parseStaffHoursWeekId, toStaffHoursWeek, type StaffHoursRange } from "@/lib/attendance/staff-hours";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
 
@@ -144,6 +146,47 @@ describe("manager attendance views", () => {
     expect(attendancePage).toContain("loadStaffHoursWeek(staffId, hoursFrom, hoursTo)");
     expect(attendancePage).toContain('<StaffHoursList data={staffHoursList} />');
     expect(attendancePage).toContain('<StaffHoursTimeline data={staffHoursWeek}');
+  });
+
+  it("keeps Yesterday on the London previous-date route when an hours deep link has expansion state", () => {
+    const attendancePage = readFileSync(resolve("src/app/attendance/page.tsx"), "utf8");
+
+    expect(attendanceViewHref("yesterday", {
+      day: "not-a-date",
+      staffId: "stale-staff-id",
+      hoursFrom: "2026-07-20",
+      hoursTo: "2026-07-26",
+    })).toBe("/attendance?view=yesterday");
+    expect(attendancePage).toContain("const yesterdayDate = previousLondonDate();");
+    expect(attendancePage).not.toContain("day ?? previousLondonDate()");
+
+    expect(attendanceViewHref("hours", {
+      day: "2026-07-22",
+      staffId: "staff-1",
+      hoursFrom: "2026-07-20",
+      hoursTo: "2026-07-26",
+    })).toContain("day=2026-07-22");
+  });
+
+  it("renders a staff-hours not-found state when the selected staff member is no longer active", () => {
+    const emptyRange: StaffHoursRange = {
+      from: "2026-07-20",
+      to: "2026-07-26",
+      currentWeekStart: "2026-07-20",
+      currentWeekEnd: "2026-07-26",
+      staff: [],
+      days: [],
+    };
+    const attendancePage = readFileSync(resolve("src/app/attendance/page.tsx"), "utf8");
+
+    expect(toStaffHoursWeek(emptyRange)).toBeNull();
+    expect(parseStaffHoursWeekId("not-a-staff-id")).toBeNull();
+    expect(parseStaffHoursWeekId("3da8ab4b-5c31-4e59-b58f-1e374d4d4615"))
+      .toBe("3da8ab4b-5c31-4e59-b58f-1e374d4d4615");
+    expect(attendancePage).toContain("<StaffHoursNotFound");
+    expect(attendancePage).toContain("!staffHoursWeek");
+    expect(readFileSync(resolve("src/components/attendance/staff-hours-timeline.tsx"), "utf8"))
+      .toContain("Back to Staff hours");
   });
 
   it("searches immutable history by staff, event, source, reason and date", () => {

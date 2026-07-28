@@ -18,16 +18,18 @@ const views = [
   { id: "history", label: "Clocking history" },
 ] as const;
 
-function attendanceViewHref(
+export function attendanceViewHref(
   view: Exclude<AttendanceManagerView, "add-event">,
   parameters: Omit<AttendancePageNavProps, "activeView">,
 ) {
   const search = new URLSearchParams({ view });
-  if (parameters.date) search.set("date", parameters.date);
-  if (parameters.day) search.set("day", parameters.day);
-  if (parameters.staffId) search.set("staffId", parameters.staffId);
-  if (parameters.hoursFrom) search.set("hoursFrom", parameters.hoursFrom);
-  if (parameters.hoursTo) search.set("hoursTo", parameters.hoursTo);
+  if (view === "needs-attention" && parameters.date) search.set("date", parameters.date);
+  if (view === "hours") {
+    if (parameters.day) search.set("day", parameters.day);
+    if (parameters.staffId) search.set("staffId", parameters.staffId);
+    if (parameters.hoursFrom) search.set("hoursFrom", parameters.hoursFrom);
+    if (parameters.hoursTo) search.set("hoursTo", parameters.hoursTo);
+  }
   return `/attendance?${search.toString()}`;
 }
 
