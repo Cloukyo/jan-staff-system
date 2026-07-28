@@ -57,6 +57,27 @@ function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isCorrectionActionInput(value: unknown): value is CorrectionActionInput {
+  return isRecord(value)
+    && typeof value.staffId === "string"
+    && typeof value.eventType === "string"
+    && typeof value.localDateTime === "string"
+    && typeof value.reason === "string"
+    && typeof value.returnTo === "string"
+    && (value.originalEventId === undefined || typeof value.originalEventId === "string");
+}
+
+function isPlannedHoursActionInput(value: unknown): value is PlannedHoursActionInput {
+  return isRecord(value)
+    && typeof value.staffId === "string"
+    && typeof value.attendanceDate === "string"
+    && typeof value.reason === "string";
+}
+
 function revalidateAttendancePaths(returnTo?: string) {
   revalidatePath("/attendance");
   revalidatePath("/clock");
@@ -81,6 +102,7 @@ function effectiveEvent(row: EffectiveEventRow): EffectiveClockEvent {
 
 export async function saveClockEventCorrectionAction(input: CorrectionActionInput): Promise<CorrectionActionResult> {
   await requireAccount(["manager"]);
+  if (!isCorrectionActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
   if (!input.staffId || !["clock_in", "clock_out"].includes(input.eventType) || reason.length < 5) {
     return invalidCorrection;
@@ -102,7 +124,10 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
       .eq("id", input.originalEventId)
       .maybeSingle();
     originalEvent = data as OriginalEventRow | null;
-    if (error || !originalEvent || originalEvent.staff_id !== input.staffId || originalEvent.recorded_date !== localDateTime.recordedDate) {
+    if (error) {
+      return { ok: false, code: "load_failed", message: "The original clock event could not be loaded." };
+    }
+    if (!originalEvent || originalEvent.staff_id !== input.staffId || originalEvent.recorded_date !== localDateTime.recordedDate) {
       return invalidCorrection;
     }
   }
@@ -116,9 +141,13 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
     });
     if (error) return { ok: false, code: "load_failed", message: "The attendance events could not be loaded." };
 
+    const effectiveEvents = ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent);
+    const selectedEvent = effectiveEvents.find(
+      (event) => event.id === originalEvent.id || event.originalEventId === originalEvent.id,
+    );
     consequential = planAlternatingEventTypes({
-      events: ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent),
-      selectedEventId: originalEvent.id,
+      events: effectiveEvents,
+      selectedEventId: selectedEvent?.id ?? originalEvent.id,
       selectedEventType: input.eventType,
     }).map((planned) => ({
       staff_id: input.staffId,
@@ -160,6 +189,7 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
 
 export async function usePlannedHoursAction(input: PlannedHoursActionInput): Promise<CorrectionActionResult> {
   await requireAccount(["manager"]);
+  if (!isPlannedHoursActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
   if (!input.staffId || !validDate(input.attendanceDate) || reason.length < 5) return invalidCorrection;
 

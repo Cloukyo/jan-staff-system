@@ -226,6 +226,20 @@ describe("manager attendance correction actions", () => {
     expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
   });
 
+  it("returns invalid results for malformed manual and planned action input after manager authentication", async () => {
+    const manual = await saveClockEventCorrectionAction(null as unknown as Parameters<typeof saveClockEventCorrectionAction>[0]);
+    const planned = await usePlannedHoursAction(null as unknown as Parameters<typeof usePlannedHoursAction>[0]);
+
+    expect(mocks.requireAccount).toHaveBeenCalledTimes(2);
+    expect(manual).toEqual({
+      ok: false,
+      code: "invalid_correction",
+      message: "Choose an event, time and a clear correction reason.",
+    });
+    expect(planned).toEqual(manual);
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+
   it("loads the original event, verifies ownership and saves same-day consequential replacements", async () => {
     const result = await saveClockEventCorrectionAction({
       staffId: "staff-1",
@@ -269,6 +283,98 @@ describe("manager attendance correction actions", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/clock");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/payroll");
     expect(result.ok).toBe(true);
+  });
+
+  it("plans consequential replacements when the selected original already has an active replacement", async () => {
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_effective_clock_events") {
+        return Promise.resolve({
+          data: [
+            {
+              event_id: "correction-1",
+              original_event_id: "event-1",
+              correction_id: "correction-1",
+              staff_id: "staff-1",
+              event_type: "clock_in",
+              event_timestamp: "2026-07-28T07:00:00.000Z",
+              recorded_date: "2026-07-28",
+              source: "manager_correction",
+            },
+            {
+              event_id: "event-2",
+              original_event_id: null,
+              correction_id: null,
+              staff_id: "staff-1",
+              event_type: "clock_in",
+              event_timestamp: "2026-07-28T11:00:00.000Z",
+              recorded_date: "2026-07-28",
+              source: "kiosk",
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: "batch-2", error: null });
+    });
+
+    await saveClockEventCorrectionAction({
+      staffId: "staff-1",
+      originalEventId: "event-1",
+      eventType: "clock_in",
+      localDateTime: "2026-07-28T08:15",
+      reason: "Correcting the start time again",
+      returnTo: "/attendance",
+    });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, "save_clock_event_correction_chain", expect.objectContaining({
+      plan: expect.objectContaining({
+        consequential: [{
+          staff_id: "staff-1",
+          recorded_date: "2026-07-28",
+          correction_kind: "replace",
+          original_event_id: "event-2",
+          supersedes_correction_id: null,
+          event_type: "clock_out",
+          event_timestamp: "2026-07-28T11:00:00.000Z",
+        }],
+      }),
+    }));
+  });
+
+  it("returns load_failed when the original clock event lookup fails", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: { message: "database unavailable" } });
+
+    const result = await saveClockEventCorrectionAction({
+      staffId: "staff-1",
+      originalEventId: "event-1",
+      eventType: "clock_in",
+      localDateTime: "2026-07-28T08:15",
+      reason: "Correcting the start time",
+      returnTo: "/attendance",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "load_failed",
+      message: "The original clock event could not be loaded.",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns invalid_correction when the original clock event is absent", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+    const result = await saveClockEventCorrectionAction({
+      staffId: "staff-1",
+      originalEventId: "event-1",
+      eventType: "clock_in",
+      localDateTime: "2026-07-28T08:15",
+      reason: "Correcting the start time",
+      returnTo: "/attendance",
+    });
+
+    expect(result.code).toBe("invalid_correction");
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("rejects an original event owned by a different staff member", async () => {
