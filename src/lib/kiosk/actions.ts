@@ -149,7 +149,7 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
 }
 
 export async function addClockCorrectionAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {
-  const account = await requireAccount(["manager"]);
+  await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");
   const eventType = String(formData.get("eventType") ?? "");
   const eventTimestamp = String(formData.get("eventTimestamp") ?? "");
@@ -158,14 +158,20 @@ export async function addClockCorrectionAction(_state: KioskActionResult, formDa
     return { ok: false, code: "invalid_correction", message: "Choose an event, time and a clear correction reason." };
   }
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("clock_events").insert({
-    staff_id: staffId,
-    event_type: eventType,
-    event_timestamp: new Date(eventTimestamp).toISOString(),
-    event_source: "manager",
-    manager_correction: true,
-    corrected_by: account.id,
-    correction_reason: reason,
+  const { error } = await supabase.rpc("save_clock_event_correction_chain", {
+    plan: {
+      reason,
+      primary: {
+        staff_id: staffId,
+        recorded_date: eventTimestamp.slice(0, 10),
+        correction_kind: "add",
+        original_event_id: null,
+        supersedes_correction_id: null,
+        event_type: eventType,
+        event_timestamp: new Date(eventTimestamp).toISOString(),
+      },
+      consequential: [],
+    },
   });
   if (error) return { ok: false, code: "save_failed", message: "The correction could not be recorded." };
   revalidatePath("/attendance");
