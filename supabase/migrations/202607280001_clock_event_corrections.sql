@@ -60,6 +60,49 @@ create index clock_event_corrections_supersedes_idx
 on public.clock_event_corrections (supersedes_correction_id)
 where supersedes_correction_id is not null;
 
+create or replace function public.lock_attendance_staff_writes(target_staff_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if nullif(trim(target_staff_id), '') is null then
+    raise exception 'A staff member is required for attendance writes';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('attendance:' || target_staff_id, 0)
+  );
+end;
+$$;
+
+revoke all on function public.lock_attendance_staff_writes(text)
+from public, anon, authenticated;
+
+create or replace function public.lock_attendance_staff_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.lock_attendance_staff_writes(new.staff_id);
+  return new;
+end;
+$$;
+
+revoke all on function public.lock_attendance_staff_insert()
+from public, anon, authenticated;
+
+create trigger attendance_staff_write_lock
+before insert on public.clock_events
+for each row execute function public.lock_attendance_staff_insert();
+
+create trigger attendance_correction_staff_write_lock
+before insert on public.clock_event_corrections
+for each row execute function public.lock_attendance_staff_insert();
+
 create or replace function public.validate_clock_event_correction_target()
 returns trigger
 language plpgsql
@@ -99,6 +142,34 @@ create trigger clock_event_correction_target_validation
 before insert on public.clock_event_corrections
 for each row execute function public.validate_clock_event_correction_target();
 
+create or replace function public.require_clock_event_correction_batch_primary()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1
+    from public.clock_event_corrections correction
+    where correction.batch_id = new.batch_id
+      and correction.correction_role = 'primary'
+  ) then
+    raise exception 'Each correction batch requires a primary correction';
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.require_clock_event_correction_batch_primary()
+from public, anon, authenticated;
+
+create constraint trigger clock_event_correction_batch_primary
+after insert on public.clock_event_corrections
+deferrable initially deferred
+for each row execute function public.require_clock_event_correction_batch_primary();
+
 alter table public.clock_event_corrections enable row level security;
 
 create policy "Managers can read clock event corrections"
@@ -116,6 +187,11 @@ with check (
 
 revoke all on public.clock_event_corrections from public, anon, authenticated;
 grant select, insert on public.clock_event_corrections to authenticated;
+
+drop policy if exists "Managers can add clock corrections"
+on public.clock_events;
+
+revoke insert on public.clock_events from authenticated;
 
 create or replace function public.get_effective_clock_events(
   range_start date,
@@ -268,6 +344,7 @@ declare
   distinct_staff_count integer;
   distinct_date_count integer;
   invalid_target_count integer;
+  locked_staff_id text;
 begin
   manager_account := public.current_staff_account();
   if manager_account.id is null or manager_account.role <> 'manager' then
@@ -288,6 +365,30 @@ begin
   plan_entries :=
     jsonb_build_array(plan -> 'primary')
     || coalesce(plan -> 'consequential', '[]'::jsonb);
+
+  select coalesce(
+    (
+      select original.staff_id
+      from public.clock_events original
+      where original.id = nullif(plan -> 'primary' ->> 'original_event_id', '')::uuid
+    ),
+    (
+      select superseded.staff_id
+      from public.clock_event_corrections superseded
+      where superseded.id = nullif(
+        plan -> 'primary' ->> 'supersedes_correction_id',
+        ''
+      )::uuid
+    ),
+    nullif(plan -> 'primary' ->> 'staff_id', '')
+  )
+  into locked_staff_id;
+
+  if locked_staff_id is null then
+    raise exception 'The primary correction target does not exist';
+  end if;
+
+  perform public.lock_attendance_staff_writes(locked_staff_id);
 
   with entries as (
     select item
@@ -412,13 +513,19 @@ set search_path = public
 as $$
 declare
   manager_account public.staff_accounts;
-  correction_batch_id uuid := gen_random_uuid();
+  correction_batch_id uuid;
   planned_start time;
   planned_finish time;
   planned_start_at timestamptz;
   planned_finish_at timestamptz;
   event_count integer;
-  effective_event record;
+  left_boundary_count integer;
+  right_boundary_count integer;
+  intermediate_count integer;
+  effective_events jsonb;
+  correction_actions jsonb := '[]'::jsonb;
+  boundary_event record;
+  intermediate_event record;
 begin
   manager_account := public.current_staff_account();
   if manager_account.id is null or manager_account.role <> 'manager' then
@@ -430,6 +537,8 @@ begin
   if reason is null or length(trim(reason)) < 5 then
     raise exception 'Enter a correction reason of at least five characters';
   end if;
+
+  perform public.lock_attendance_staff_writes(target_staff_id);
 
   perform 1
   from public.rota_shifts rs
@@ -460,138 +569,212 @@ begin
   planned_finish_at :=
     (target_date + planned_finish)::timestamp at time zone 'Europe/London';
 
-  perform 1
-  from public.clock_events event
-  where event.staff_id = target_staff_id
-    and event.recorded_date = target_date
-  for update;
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'event_id', event.event_id,
+        'correction_id', event.correction_id,
+        'event_type', event.event_type,
+        'event_timestamp', event.event_timestamp
+      )
+      order by event.event_timestamp, event.event_id
+    ),
+    '[]'::jsonb
+  )
+  into effective_events
+  from public.get_effective_clock_events(
+    target_date,
+    target_date,
+    target_staff_id
+  ) event;
 
-  perform 1
-  from public.clock_event_corrections correction
-  where correction.staff_id = target_staff_id
-    and correction.recorded_date = target_date
-  for update;
+  event_count := jsonb_array_length(effective_events);
 
-  select count(*)
-  into event_count
-  from public.get_effective_clock_events(target_date, target_date, target_staff_id);
+  select
+    count(*) filter (where snapshot.event_timestamp <= planned_start_at),
+    count(*) filter (
+      where snapshot.event_timestamp > planned_start_at
+        and snapshot.event_timestamp < planned_finish_at
+    ),
+    count(*) filter (where snapshot.event_timestamp >= planned_finish_at)
+  into left_boundary_count, intermediate_count, right_boundary_count
+  from jsonb_to_recordset(effective_events) as snapshot(
+    event_id uuid,
+    correction_id uuid,
+    event_type text,
+    event_timestamp timestamptz
+  );
 
-  if event_count = 0 then
-    insert into public.clock_event_corrections (
-      batch_id, correction_role, staff_id, correction_kind,
-      event_type, event_timestamp, recorded_date, reason, created_by
-    )
-    values
-      (
-        correction_batch_id, 'primary', target_staff_id, 'add',
-        'clock_in', planned_start_at, target_date, trim(reason), manager_account.id
-      ),
-      (
-        correction_batch_id, 'consequential', target_staff_id, 'add',
-        'clock_out', planned_finish_at, target_date, trim(reason), manager_account.id
-      );
-
-    return correction_batch_id;
+  if left_boundary_count + intermediate_count + right_boundary_count <> event_count then
+    raise exception 'Attendance event snapshot could not be classified safely';
   end if;
 
-  for effective_event in
+  if left_boundary_count > 1 or right_boundary_count > 1 then
+    raise exception
+      'Multiple clock events fall outside the planned boundaries; make manual corrections first';
+  end if;
+
+  if intermediate_count % 2 = 1 then
+    raise exception
+      'An odd number of intermediate clock events requires manual correction before planned hours can be used';
+  end if;
+
+  if left_boundary_count = 0 then
+    correction_actions := correction_actions || jsonb_build_array(
+      jsonb_build_object(
+        'correction_kind', 'add',
+        'original_event_id', null,
+        'supersedes_correction_id', null,
+        'event_type', 'clock_in',
+        'event_timestamp', planned_start_at
+      )
+    );
+  else
+    select snapshot.*
+    into boundary_event
+    from jsonb_to_recordset(effective_events) as snapshot(
+      event_id uuid,
+      correction_id uuid,
+      event_type text,
+      event_timestamp timestamptz
+    )
+    where snapshot.event_timestamp <= planned_start_at;
+
+    if boundary_event.event_type <> 'clock_in'
+      or boundary_event.event_timestamp <> planned_start_at then
+      correction_actions := correction_actions || jsonb_build_array(
+        jsonb_build_object(
+          'correction_kind', 'replace',
+          'original_event_id',
+            case when boundary_event.correction_id is null
+              then boundary_event.event_id
+              else null
+            end,
+          'supersedes_correction_id', boundary_event.correction_id,
+          'event_type', 'clock_in',
+          'event_timestamp', planned_start_at
+        )
+      );
+    end if;
+  end if;
+
+  for intermediate_event in
     select
-      ce.*,
-      row_number() over (order by ce.event_timestamp, ce.event_id) as event_position,
-      count(*) over () as event_count
-    from public.get_effective_clock_events(target_date, target_date, target_staff_id) ce
+      snapshot.*,
+      row_number() over (
+        order by snapshot.event_timestamp, snapshot.event_id
+      ) as intermediate_position
+    from jsonb_to_recordset(effective_events) as snapshot(
+      event_id uuid,
+      correction_id uuid,
+      event_type text,
+      event_timestamp timestamptz
+    )
+    where snapshot.event_timestamp > planned_start_at
+      and snapshot.event_timestamp < planned_finish_at
+    order by snapshot.event_timestamp, snapshot.event_id
   loop
-    if effective_event.event_position = 1
-      and (
-        effective_event.event_type <> 'clock_in'
-        or effective_event.event_timestamp <> planned_start_at
-      ) then
-      insert into public.clock_event_corrections (
-        batch_id, correction_role, staff_id, correction_kind,
-        original_event_id, supersedes_correction_id,
-        event_type, event_timestamp, recorded_date, reason, created_by
-      )
-      values (
-        correction_batch_id,
-        'primary',
-        target_staff_id,
-        'replace',
-        case when effective_event.correction_id is null then effective_event.event_id else null end,
-        effective_event.correction_id,
-        'clock_in',
-        planned_start_at,
-        target_date,
-        trim(reason),
-        manager_account.id
-      );
-    elsif effective_event.event_position = effective_event.event_count
-      and effective_event.event_count > 1
-      and effective_event.event_count::integer % 2 = 0
-      and (
-        effective_event.event_type <> 'clock_out'
-        or effective_event.event_timestamp <> planned_finish_at
-      ) then
-      insert into public.clock_event_corrections (
-        batch_id, correction_role, staff_id, correction_kind,
-        original_event_id, supersedes_correction_id,
-        event_type, event_timestamp, recorded_date, reason, created_by
-      )
-      values (
-        correction_batch_id,
-        'consequential',
-        target_staff_id,
-        'replace',
-        case when effective_event.correction_id is null then effective_event.event_id else null end,
-        effective_event.correction_id,
-        'clock_out',
-        planned_finish_at,
-        target_date,
-        trim(reason),
-        manager_account.id
-      );
-    elsif effective_event.event_position > 1
-      and (
-        effective_event.event_position < effective_event.event_count
-        or effective_event.event_count::integer % 2 = 1
-      )
-      and effective_event.event_type <> (case
-        when effective_event.event_position::integer % 2 = 1 then 'clock_in'
-        else 'clock_out'
-      end) then
-      insert into public.clock_event_corrections (
-        batch_id, correction_role, staff_id, correction_kind,
-        original_event_id, supersedes_correction_id,
-        event_type, event_timestamp, recorded_date, reason, created_by
-      )
-      values (
-        correction_batch_id,
-        'consequential',
-        target_staff_id,
-        'replace',
-        case when effective_event.correction_id is null then effective_event.event_id else null end,
-        effective_event.correction_id,
-        case
-          when effective_event.event_position::integer % 2 = 1 then 'clock_in'
-          else 'clock_out'
-        end,
-        effective_event.event_timestamp,
-        target_date,
-        trim(reason),
-        manager_account.id
+    if intermediate_event.event_type <> (
+      case
+        when intermediate_event.intermediate_position::integer % 2 = 1
+          then 'clock_out'
+        else 'clock_in'
+      end
+    ) then
+      correction_actions := correction_actions || jsonb_build_array(
+        jsonb_build_object(
+          'correction_kind', 'replace',
+          'original_event_id',
+            case when intermediate_event.correction_id is null
+              then intermediate_event.event_id
+              else null
+            end,
+          'supersedes_correction_id', intermediate_event.correction_id,
+          'event_type',
+            case
+              when intermediate_event.intermediate_position::integer % 2 = 1
+                then 'clock_out'
+              else 'clock_in'
+            end,
+          'event_timestamp', intermediate_event.event_timestamp
+        )
       );
     end if;
   end loop;
 
-  if event_count % 2 = 1 then
-    insert into public.clock_event_corrections (
-      batch_id, correction_role, staff_id, correction_kind,
-      event_type, event_timestamp, recorded_date, reason, created_by
-    )
-    values (
-      correction_batch_id, 'consequential', target_staff_id, 'add',
-      'clock_out', planned_finish_at, target_date, trim(reason), manager_account.id
+  if right_boundary_count = 0 then
+    correction_actions := correction_actions || jsonb_build_array(
+      jsonb_build_object(
+        'correction_kind', 'add',
+        'original_event_id', null,
+        'supersedes_correction_id', null,
+        'event_type', 'clock_out',
+        'event_timestamp', planned_finish_at
+      )
     );
+  else
+    select snapshot.*
+    into boundary_event
+    from jsonb_to_recordset(effective_events) as snapshot(
+      event_id uuid,
+      correction_id uuid,
+      event_type text,
+      event_timestamp timestamptz
+    )
+    where snapshot.event_timestamp >= planned_finish_at;
+
+    if boundary_event.event_type <> 'clock_out'
+      or boundary_event.event_timestamp <> planned_finish_at then
+      correction_actions := correction_actions || jsonb_build_array(
+        jsonb_build_object(
+          'correction_kind', 'replace',
+          'original_event_id',
+            case when boundary_event.correction_id is null
+              then boundary_event.event_id
+              else null
+            end,
+          'supersedes_correction_id', boundary_event.correction_id,
+          'event_type', 'clock_out',
+          'event_timestamp', planned_finish_at
+        )
+      );
+    end if;
   end if;
+
+  if jsonb_array_length(correction_actions) = 0 then
+    return null;
+  end if;
+
+  correction_batch_id := gen_random_uuid();
+
+  insert into public.clock_event_corrections (
+    batch_id,
+    correction_role,
+    staff_id,
+    correction_kind,
+    original_event_id,
+    supersedes_correction_id,
+    event_type,
+    event_timestamp,
+    recorded_date,
+    reason,
+    created_by
+  )
+  select
+    correction_batch_id,
+    case when action.ordinal = 1 then 'primary' else 'consequential' end,
+    target_staff_id,
+    action.item ->> 'correction_kind',
+    nullif(action.item ->> 'original_event_id', '')::uuid,
+    nullif(action.item ->> 'supersedes_correction_id', '')::uuid,
+    action.item ->> 'event_type',
+    (action.item ->> 'event_timestamp')::timestamptz,
+    target_date,
+    trim(reason),
+    manager_account.id
+  from jsonb_array_elements(correction_actions)
+    with ordinality as action(item, ordinal)
+  order by action.ordinal;
 
   return correction_batch_id;
 end;

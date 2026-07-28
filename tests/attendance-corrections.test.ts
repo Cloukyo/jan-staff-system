@@ -356,6 +356,8 @@ describe("append-only attendance correction migration", () => {
     expect(sql).toMatch(/correction_kind in \('add', 'replace', 'exclude'\)/i);
     expect(sql).not.toMatch(/update public\.clock_events|delete from public\.clock_events/i);
     expect(sql).not.toMatch(/clock_event_corrections for (update|delete)/i);
+    expect(sql).toContain('drop policy if exists "Managers can add clock corrections"');
+    expect(sql).toContain("revoke insert on public.clock_events from authenticated");
   });
 
   it("requires replacement and exclusion targets while keeping additions independent", () => {
@@ -394,12 +396,18 @@ describe("append-only attendance correction migration", () => {
     expect(plannedHours).toMatch(/min\(rs\.start_time\)/i);
     expect(plannedHours).toMatch(/max\(rs\.end_time\)/i);
     expect(plannedHours).toContain("at time zone 'Europe/London'");
-    expect(plannedHours).toMatch(/event_position = 1[\s\S]*planned_start_at/i);
-    expect(plannedHours).toMatch(/event_position = (?:effective_event\.)?event_count[\s\S]*planned_finish_at/i);
-    expect(plannedHours).toMatch(/event_position > 1[\s\S]*event_position < (?:effective_event\.)?event_count[\s\S]*event_timestamp/i);
-    expect(plannedHours).toMatch(/event_position(?:::integer)? % 2[\s\S]*clock_in[\s\S]*clock_out/i);
-    expect(plannedHours).toMatch(/event_type <> \(case[\s\S]*end\) then/i);
-    expect(plannedHours).toMatch(/event_count(?:::integer)? % 2 = 1[\s\S]*'add'[\s\S]*'clock_out'[\s\S]*planned_finish_at/i);
+    expect(plannedHours).toMatch(/effective_events jsonb[\s\S]*jsonb_agg/i);
+    expect(plannedHours).toMatch(/jsonb_array_length\(effective_events\)/i);
+    expect(plannedHours).toMatch(/event_timestamp <= planned_start_at/i);
+    expect(plannedHours).toMatch(/event_timestamp > planned_start_at[\s\S]*event_timestamp < planned_finish_at/i);
+    expect(plannedHours).toMatch(/event_timestamp >= planned_finish_at/i);
+    expect(plannedHours).toMatch(/left_boundary_count \+ intermediate_count \+ right_boundary_count <> event_count/i);
+    expect(plannedHours).toMatch(/left_boundary_count > 1 or right_boundary_count > 1/i);
+    expect(plannedHours).toMatch(/intermediate_count % 2 = 1/i);
+    expect(plannedHours).toMatch(/intermediate_position::integer % 2 = 1[\s\S]*clock_out[\s\S]*clock_in/i);
+    expect(plannedHours).toMatch(/'event_timestamp', intermediate_event\.event_timestamp/i);
+    expect(plannedHours).toMatch(/jsonb_array_length\(correction_actions\) = 0[\s\S]*return null/i);
+    expect(plannedHours).toMatch(/case when action\.ordinal = 1 then 'primary'/i);
     expect(plannedHours).toMatch(/return batch_id|return correction_batch_id/i);
   });
 
@@ -414,6 +422,7 @@ describe("append-only attendance correction migration", () => {
     expect(saveChain).toMatch(/insert into public\.clock_event_corrections/i);
     expect(saveChain).toMatch(/batch_id/i);
     expect(saveChain).toMatch(/primary[\s\S]*consequential/i);
+    expect(saveChain).toContain("perform public.lock_attendance_staff_writes");
   });
 
   it("calculates staff and manager hours from effective events", () => {
