@@ -1,14 +1,109 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildAttendanceReviewRow, mapManagerHoursPreview } from "@/lib/attendance/review-server";
+import {
+  buildAttendanceReviewRow,
+  buildAttendanceReviewRows,
+  mapManagerHoursPreview,
+} from "@/lib/attendance/review-server";
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
+import {
+  buildStaffHoursRange,
+  normaliseStaffHoursRange,
+  previousLondonDate,
+} from "@/lib/attendance/staff-hours";
+import { mapEffectiveManagerStatuses } from "@/lib/kiosk/server";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
 }
 
 describe("production attendance review", () => {
+  it("resolves Yesterday from the Europe/London calendar date", () => {
+    expect(previousLondonDate(new Date("2026-07-28T23:30:00.000Z"))).toBe("2026-07-28");
+    expect(previousLondonDate(new Date("2026-01-01T00:30:00.000Z"))).toBe("2025-12-31");
+  });
+
+  it("defaults staff hours to the configured current work week", () => {
+    expect(normaliseStaffHoursRange(undefined, undefined, {
+      start: "2026-07-26",
+      end: "2026-08-01",
+    })).toEqual({
+      from: "2026-07-26",
+      to: "2026-08-01",
+    });
+    expect(normaliseStaffHoursRange("2026-07-27", "2026-07-31", {
+      start: "2026-07-26",
+      end: "2026-08-01",
+    })).toEqual({
+      from: "2026-07-27",
+      to: "2026-07-31",
+    });
+  });
+
+  it("builds issue-first staff hours while preserving split rota and audit records", () => {
+    const range = buildStaffHoursRange({
+      from: "2026-07-27",
+      to: "2026-08-02",
+      currentWeekStart: "2026-07-27",
+      currentWeekEnd: "2026-08-02",
+      profiles: [
+        { id: "alice", display_name: "Alice", full_name: "Alice Adams" },
+        { id: "zoe", display_name: "Zoe", full_name: "Zoe Zaman" },
+      ],
+      shifts: [
+        { id: "am", staff_id: "alice", shift_date: "2026-07-28", start_time: "08:30:00", end_time: "12:00:00", break_minutes: 0 },
+        { id: "pm", staff_id: "alice", shift_date: "2026-07-28", start_time: "13:00:00", end_time: "17:30:00", break_minutes: 0 },
+        { id: "zoe-shift", staff_id: "zoe", shift_date: "2026-07-28", start_time: "09:00:00", end_time: "17:00:00", break_minutes: 30 },
+      ],
+      originals: [
+        { id: "alice-in", staff_id: "alice", event_type: "clock_in", event_timestamp: "2026-07-28T08:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "alice-lunch-out", staff_id: "alice", event_type: "clock_out", event_timestamp: "2026-07-28T12:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "alice-lunch-in", staff_id: "alice", event_type: "clock_in", event_timestamp: "2026-07-28T13:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "alice-out", staff_id: "alice", event_type: "clock_out", event_timestamp: "2026-07-28T18:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "zoe-in", staff_id: "zoe", event_type: "clock_in", event_timestamp: "2026-07-28T09:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+      ],
+      corrections: [
+        { id: "alice-in-fix", batch_id: "batch", correction_role: "primary", staff_id: "alice", correction_kind: "replace", original_event_id: "alice-in", supersedes_correction_id: null, event_type: "clock_in", event_timestamp: "2026-07-28T08:30:00+01:00", recorded_date: "2026-07-28", reason: "Use planned start", created_by: "manager", created_at: "2026-07-29T08:00:00Z" },
+        { id: "alice-out-fix", batch_id: "batch", correction_role: "consequential", staff_id: "alice", correction_kind: "replace", original_event_id: "alice-out", supersedes_correction_id: null, event_type: "clock_out", event_timestamp: "2026-07-28T17:30:00+01:00", recorded_date: "2026-07-28", reason: "Use planned finish", created_by: "manager", created_at: "2026-07-29T08:00:01Z" },
+      ],
+      reviews: [],
+      totals: [
+        { staff_id: "alice", completed_minutes: 480, open_shift_count: 0 },
+        { staff_id: "zoe", completed_minutes: 0, open_shift_count: 1 },
+      ],
+    });
+
+    expect(range.staff.map((row) => row.staffId)).toEqual(["zoe", "alice"]);
+    expect(range.staff[0]).toMatchObject({ daysNeedingAttention: 1, hasOpenShift: true });
+    expect(range.staff[1]).toMatchObject({ completedMinutes: 480, daysNeedingAttention: 0 });
+
+    const alice = range.days.find((day) => day.staffId === "alice")!;
+    expect(alice.plannedPeriods).toEqual([
+      { id: "am", startTime: "08:30", endTime: "12:00", breakMinutes: 0 },
+      { id: "pm", startTime: "13:00", endTime: "17:30", breakMinutes: 0 },
+    ]);
+    expect(alice.audit.originals).toHaveLength(4);
+    expect(alice.audit.corrections).toHaveLength(2);
+    expect(alice.effectiveEvents.map((event) => event.eventTimestamp)).toEqual([
+      "2026-07-28T08:30:00+01:00",
+      "2026-07-28T12:00:00+01:00",
+      "2026-07-28T13:00:00+01:00",
+      "2026-07-28T17:30:00+01:00",
+    ]);
+    expect(alice.completedMinutes).toBe(480);
+    expect(JSON.stringify(range)).not.toMatch(/hourlyRate|annualSalary|monthlySalary|estimatedGross/);
+  });
+
+  it("maps manager kiosk status from effective open shifts", () => {
+    const statuses = mapEffectiveManagerStatuses([
+      { staff_id: "open", open_shift_count: 1 },
+      { staff_id: "closed", open_shift_count: 0 },
+    ]);
+    expect(statuses.get("open")).toBe("clocked_in");
+    expect(statuses.get("closed")).toBe("clocked_out");
+  });
+
   it("defaults unknown attendance views to needs attention", () => {
     expect(parseAttendanceManagerView()).toBe("needs-attention");
     expect(parseAttendanceManagerView("add-event")).toBe("add-event");
@@ -59,6 +154,45 @@ describe("production attendance review", () => {
     expect(row.managerCorrection).toBe(true);
     expect(row.recordedMinutes).toBe(480);
     expect(row.exceptions).toContain("Clock-in without rota shift");
+  });
+
+  it("accepts a complete effective sequence with an unpaid lunchtime clock-out", () => {
+    const row = buildAttendanceReviewRow({
+      staffId: "staff",
+      fullName: "Staff Member",
+      scheduledStart: "08:30",
+      scheduledEnd: "17:30",
+      events: [
+        { staff_id: "staff", event_type: "clock_in", event_timestamp: "2026-07-28T08:30:00+01:00", manager_correction: true },
+        { staff_id: "staff", event_type: "clock_out", event_timestamp: "2026-07-28T12:00:00+01:00", manager_correction: false },
+        { staff_id: "staff", event_type: "clock_in", event_timestamp: "2026-07-28T13:00:00+01:00", manager_correction: false },
+        { staff_id: "staff", event_type: "clock_out", event_timestamp: "2026-07-28T17:30:00+01:00", manager_correction: true },
+      ],
+    });
+
+    expect(row.recordedMinutes).toBe(480);
+    expect(row.exceptions).not.toContain("Overlapping or duplicate events");
+    expect(row.managerCorrection).toBe(true);
+  });
+
+  it("retains a request-only staff row in attendance review", () => {
+    const rows = buildAttendanceReviewRows(
+      [],
+      [{ id: "staff", full_name: "Staff Member" }],
+      new Map([["staff", [{
+        id: "request",
+        issueType: "missing_clock_in",
+        staffNote: "I could not use the kiosk.",
+      }]]]),
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        staffId: "staff",
+        fullName: "Staff Member",
+        pendingClarificationCount: 1,
+      }),
+    ]);
   });
 
   it("stores reviews and staff requests behind RLS", () => {

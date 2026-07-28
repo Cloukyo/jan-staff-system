@@ -4,8 +4,10 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
+import { calculateClockTotals, createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { validatePayrollReview, type PayrollImportBatch, type PayrollImportReviewRow } from "@/lib/payroll/review";
-import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/types";
+import { buildProductionAttendanceData } from "@/lib/payroll/server";
+import type { PayrollExportDetail, PayrollPreparationRow, ProductionStaffRow } from "@/lib/payroll/types";
 
 const batch: PayrollImportBatch = {
   id: "batch",
@@ -39,6 +41,97 @@ const row: PayrollImportReviewRow = {
 };
 
 describe("payroll import review", () => {
+  it("calculates pay-preparation time from effective events and retains separate audit records", () => {
+    const attendance = buildProductionAttendanceData(
+      [{
+        id: "raw-in",
+        staff_id: "staff",
+        event_type: "clock_in",
+        event_timestamp: "2026-07-28T08:00:00+01:00",
+        recorded_date: "2026-07-28",
+        event_source: "kiosk",
+        manager_correction: false,
+        correction_reason: null,
+      }, {
+        id: "raw-out",
+        staff_id: "staff",
+        event_type: "clock_out",
+        event_timestamp: "2026-07-28T16:00:00+01:00",
+        recorded_date: "2026-07-28",
+        event_source: "kiosk",
+        manager_correction: false,
+        correction_reason: null,
+      }],
+      [{
+        id: "fixed-in",
+        batch_id: "batch",
+        correction_role: "primary",
+        staff_id: "staff",
+        correction_kind: "replace",
+        original_event_id: "raw-in",
+        supersedes_correction_id: null,
+        event_type: "clock_in",
+        event_timestamp: "2026-07-28T09:00:00+01:00",
+        recorded_date: "2026-07-28",
+        reason: "Manager confirmed arrival",
+        created_by: "manager",
+        created_at: "2026-07-29T09:00:00Z",
+      }],
+    );
+
+    expect(calculateClockTotals(attendance.effectiveEvents).recordedMinutes).toBe(420);
+    expect(attendance.audit.originalEvents.map((event) => event.eventTimestamp)).toEqual([
+      "2026-07-28T08:00:00+01:00",
+      "2026-07-28T16:00:00+01:00",
+    ]);
+    expect(attendance.audit.correctionRecords).toEqual([
+      expect.objectContaining({
+        id: "fixed-in",
+        sourceLabel: "Manager correction",
+        reason: "Manager confirmed arrival",
+      }),
+    ]);
+
+    const staff: ProductionStaffRow = {
+      id: "staff",
+      fullName: "Staff Member",
+      displayName: "Staff",
+      employmentRole: "Practitioner",
+      mainQualificationLevel: null,
+      active: true,
+      loginStatus: "Active login",
+      kioskStatus: "Enabled",
+      isManager: false,
+      payArrangements: [{
+        id: "arrangement",
+        staffId: "staff",
+        payType: "hourly",
+        hourlyRate: 12,
+        annualSalary: null,
+        monthlySalary: null,
+        contractedWeeklyHours: 35,
+        hoursBasis: "contracted",
+        standardDailyHours: null,
+        overtimeMultiplier: 1,
+        effectiveFrom: "2026-01-01",
+        effectiveTo: null,
+        isActive: true,
+        managerNotes: null,
+        createdByName: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      }],
+    };
+    const preparation = createPayrollPreparationRow(
+      staff,
+      attendance.effectiveEvents,
+      "2026-07-28",
+      "2026-07-28",
+    );
+    expect(preparation.recordedMinutes).toBe(420);
+    expect(preparation.adjustedMinutes).toBe(420);
+  });
+
   it("blocks import until the shared effective date is confirmed", () => {
     const blocked = validatePayrollReview(batch, [row], []);
     expect(blocked.summary.readyForImport).toBe(false);

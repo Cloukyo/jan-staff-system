@@ -1,5 +1,15 @@
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
+import {
+  loadAttendanceDay,
+  toAttendanceCorrection,
+  toOriginalClockEvent,
+  type ClockCorrectionSourceRow,
+  type ClockEventSourceRow,
+  type StaffHoursDay,
+} from "@/lib/attendance/staff-hours";
+import { analyseAttendanceDay, type AttendanceWarning } from "@/lib/attendance/sequence";
 import { isoDateInLondon } from "@/lib/dates/format";
 
 export type AttendanceReviewStatus = "unreviewed" | "approved" | "corrected" | "ignored" | "needs_staff_clarification";
@@ -86,6 +96,23 @@ function validIsoDate(value: string | undefined): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
+function warningLabel(warning: AttendanceWarning): string {
+  switch (warning) {
+    case "missing_clock_in":
+      return "Missing clock-in";
+    case "missing_clock_out":
+      return "Missing clock-out";
+    case "clock_out_before_clock_in":
+      return "Clock-out before clock-in";
+    case "duplicate_clock_in":
+    case "duplicate_clock_out":
+    case "events_wrong_order":
+      return "Overlapping or duplicate events";
+    case "no_planned_shift":
+      return "Clock-in without rota shift";
+  }
+}
+
 export function mapManagerHoursPreview(rows: ManagerHoursPreviewRpcRow[]): ManagerHoursPreviewRow[] {
   return rows.map((row) => ({
     staffId: row.staff_id,
@@ -110,11 +137,22 @@ export function buildAttendanceReviewRow(input: {
   const clockOuts = ordered.filter((event) => event.event_type === "clock_out");
   const firstClockIn = clockIns[0]?.event_timestamp ?? null;
   const finalClockOut = clockOuts.at(-1)?.event_timestamp ?? null;
-  const exceptions: string[] = [];
-  if (input.scheduledStart && !firstClockIn) exceptions.push("Missing clock-in");
-  if (firstClockIn && !finalClockOut) exceptions.push("Missing clock-out");
-  if (!input.scheduledStart && firstClockIn) exceptions.push("Clock-in without rota shift");
-  if (clockIns.length > 1 || clockOuts.length > 1) exceptions.push("Overlapping or duplicate events");
+  const analysis = analyseAttendanceDay({
+    events: ordered.map((event, index) => ({
+      id: `${input.staffId}:${index}`,
+      staffId: input.staffId,
+      eventType: event.event_type,
+      eventTimestamp: event.event_timestamp,
+      recordedDate: isoDateInLondon(new Date(event.event_timestamp)),
+      source: event.manager_correction ? "manager_correction" : "kiosk",
+      originalEventId: null,
+      correctionId: event.manager_correction ? `${input.staffId}:${index}` : null,
+    })),
+    plannedShift: input.scheduledStart && input.scheduledEnd
+      ? { start: input.scheduledStart, end: input.scheduledEnd }
+      : null,
+  });
+  const exceptions = analysis.warnings.map(warningLabel);
 
   const scheduledStart = timeMinutes(input.scheduledStart);
   const scheduledEnd = timeMinutes(input.scheduledEnd);
@@ -123,16 +161,7 @@ export function buildAttendanceReviewRow(input: {
   if (scheduledStart !== null && actualStart !== null && actualStart - scheduledStart > 5) exceptions.push("Late arrival");
   if (scheduledEnd !== null && actualEnd !== null && scheduledEnd - actualEnd > 0) exceptions.push("Early departure");
 
-  let recordedMinutes = 0;
-  let open: Date | null = null;
-  for (const event of ordered) {
-    if (event.event_type === "clock_in") {
-      open = new Date(event.event_timestamp);
-    } else if (open) {
-      recordedMinutes += Math.max(0, Math.round((new Date(event.event_timestamp).getTime() - open.getTime()) / 60000));
-      open = null;
-    }
-  }
+  const recordedMinutes = analysis.completedMinutes;
   if (scheduledStart !== null && scheduledEnd !== null && recordedMinutes - (scheduledEnd - scheduledStart) > 15) {
     exceptions.push("Overtime or extended shift");
   }
@@ -155,30 +184,70 @@ export function buildAttendanceReviewRow(input: {
   };
 }
 
+type AttendanceClarification = {
+  id: string;
+  issueType: string;
+  staffNote: string;
+};
+
+export function buildAttendanceReviewRows(
+  attendanceRows: StaffHoursDay[],
+  profiles: Array<{ id: string; full_name: string }>,
+  requestsByStaff: ReadonlyMap<string, AttendanceClarification[]>,
+): AttendanceReviewRow[] {
+  const dayByStaff = new Map(attendanceRows.map((day) => [day.staffId, day]));
+  return profiles
+    .filter((profile) => dayByStaff.has(profile.id) || requestsByStaff.has(profile.id))
+    .map((profile) => {
+      const day = dayByStaff.get(profile.id);
+      const firstPeriod = day?.plannedPeriods[0];
+      const finalPeriod = day?.plannedPeriods.at(-1);
+      const row = buildAttendanceReviewRow({
+        staffId: profile.id,
+        fullName: profile.full_name,
+        scheduledStart: firstPeriod?.startTime ?? null,
+        scheduledEnd: finalPeriod?.endTime ?? null,
+        events: (day?.effectiveEvents ?? []).map((event) => ({
+          staff_id: event.staffId,
+          event_type: event.eventType,
+          event_timestamp: event.eventTimestamp,
+          manager_correction: event.source !== "kiosk",
+        })),
+        review: day?.review
+          ? {
+              status: day.review.status,
+              reason: day.review.reason,
+              reviewed_at: day.review.reviewedAt,
+            }
+          : null,
+        pendingClarifications: requestsByStaff.get(profile.id) ?? [],
+      });
+      return {
+        ...row,
+        managerCorrection: row.managerCorrection || Boolean(day?.audit.corrections.length),
+      };
+    })
+    .sort((left, right) => {
+      const leftHasIssue = left.exceptions.length > 0 || left.pendingClarificationCount > 0;
+      const rightHasIssue = right.exceptions.length > 0 || right.pendingClarificationCount > 0;
+      return Number(rightHasIssue) - Number(leftHasIssue)
+        || left.fullName.localeCompare(right.fullName, "en-GB", { sensitivity: "base" });
+    });
+}
+
 export async function loadAttendanceReviewDay(dateValue?: string): Promise<AttendanceReviewDay> {
   await requireAccount(["manager"]);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue ?? "") ? dateValue! : isoDateInLondon();
   const supabase = await createSupabaseServerClient();
-  const [profiles, shifts, events, reviews, requests] = await Promise.all([
-    supabase.from("staff_profiles").select("id,full_name,active").eq("active", true).order("full_name"),
-    supabase.from("rota_shifts").select("staff_id,start_time,end_time,status,rota_weeks!inner(status)")
-      .eq("shift_date", date).is("archived_at", null).neq("status", "cancelled").eq("rota_weeks.status", "published"),
-    supabase.from("clock_events").select("staff_id,event_type,event_timestamp,manager_correction").eq("recorded_date", date).order("event_timestamp"),
-    supabase.from("attendance_day_reviews").select("staff_id,status,reason,reviewed_at").eq("review_date", date),
+  const [attendance, profiles, requests] = await Promise.all([
+    loadAttendanceDay(date),
+    supabase.from("staff_profiles").select("id,full_name").eq("active", true).order("full_name"),
     supabase.from("attendance_correction_requests").select("id,staff_id,issue_type,staff_note,status").eq("attendance_date", date).eq("status", "pending"),
   ]);
-  if (profiles.error || shifts.error || events.error || reviews.error || requests.error) {
+  if (profiles.error || requests.error) {
     throw new Error("Attendance review data could not be loaded.");
   }
 
-  const shiftByStaff = new Map((shifts.data ?? []).map((row) => [row.staff_id, row]));
-  const reviewByStaff = new Map((reviews.data ?? []).map((row) => [row.staff_id, row]));
-  const eventsByStaff = new Map<string, ClockRow[]>();
-  for (const event of (events.data ?? []) as ClockRow[]) {
-    const list = eventsByStaff.get(event.staff_id) ?? [];
-    list.push(event);
-    eventsByStaff.set(event.staff_id, list);
-  }
   const requestsByStaff = new Map<string, Array<{ id: string; issueType: string; staffNote: string }>>();
   for (const request of requests.data ?? []) {
     const list = requestsByStaff.get(request.staff_id) ?? [];
@@ -186,20 +255,11 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
     requestsByStaff.set(request.staff_id, list);
   }
 
-  const rows = (profiles.data ?? [])
-    .filter((profile) => shiftByStaff.has(profile.id) || eventsByStaff.has(profile.id) || requestsByStaff.has(profile.id))
-    .map((profile) => {
-      const shift = shiftByStaff.get(profile.id);
-      return buildAttendanceReviewRow({
-        staffId: profile.id,
-        fullName: profile.full_name,
-        scheduledStart: shift ? String(shift.start_time).slice(0, 5) : null,
-        scheduledEnd: shift ? String(shift.end_time).slice(0, 5) : null,
-        events: eventsByStaff.get(profile.id) ?? [],
-        review: reviewByStaff.get(profile.id) ?? null,
-        pendingClarifications: requestsByStaff.get(profile.id) ?? [],
-      });
-    });
+  const rows = buildAttendanceReviewRows(
+    attendance.rows,
+    (profiles.data ?? []) as Array<{ id: string; full_name: string }>,
+    requestsByStaff,
+  );
 
   return {
     date,
@@ -217,14 +277,27 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
 export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number }> {
   await requireAccount(["manager"]);
   const supabase = await createSupabaseServerClient();
-  const [reviews, requests, eventDays] = await Promise.all([
+  const [reviews, requests, originals, corrections] = await Promise.all([
     supabase.from("attendance_day_reviews").select("staff_id,review_date,status").gte("review_date", from).lte("review_date", to),
     supabase.from("attendance_correction_requests").select("id").eq("status", "pending").gte("attendance_date", from).lte("attendance_date", to),
-    supabase.from("clock_events").select("staff_id,recorded_date").gte("recorded_date", from).lte("recorded_date", to),
+    supabase.from("clock_events")
+      .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+      .gte("recorded_date", from)
+      .lte("recorded_date", to),
+    supabase.from("clock_event_corrections")
+      .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+      .gte("recorded_date", from)
+      .lte("recorded_date", to),
   ]);
-  if (reviews.error || requests.error || eventDays.error) throw new Error("Attendance review readiness could not be loaded.");
+  if (reviews.error || requests.error || originals.error || corrections.error) {
+    throw new Error("Attendance review readiness could not be loaded.");
+  }
   const reviewed = new Set((reviews.data ?? []).map((row) => `${row.staff_id}:${row.review_date}`));
-  const workedDays = new Set((eventDays.data ?? []).map((row) => `${row.staff_id}:${row.recorded_date}`));
+  const resolved = resolveEffectiveEvents(
+    ((originals.data ?? []) as ClockEventSourceRow[]).map(toOriginalClockEvent),
+    ((corrections.data ?? []) as ClockCorrectionSourceRow[]).map(toAttendanceCorrection),
+  );
+  const workedDays = new Set(resolved.effective.map((event) => `${event.staffId}:${event.recordedDate}`));
   return {
     unresolved: [...workedDays].filter((key) => !reviewed.has(key)).length,
     pendingRequests: requests.data?.length ?? 0,

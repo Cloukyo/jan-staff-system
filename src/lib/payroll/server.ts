@@ -1,5 +1,16 @@
 import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
+import {
+  resolveEffectiveEvents,
+  type AttendanceCorrectionKind,
+  type AttendanceEventType,
+} from "@/lib/attendance/effective-events";
+import {
+  toAttendanceCorrection,
+  toOriginalClockEvent,
+  type ClockCorrectionSourceRow,
+  type ClockEventSourceRow,
+} from "@/lib/attendance/staff-hours";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDateInLondon, londonDateStartUtc } from "@/lib/dates/format";
 import { isPayDetailsReady } from "@/lib/payroll/calculations";
@@ -14,6 +25,83 @@ import type {
 
 export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
+}
+
+export type ProductionClockCorrectionRecord = {
+  id: string;
+  batchId: string;
+  correctionRole: "primary" | "consequential";
+  staffId: string;
+  kind: AttendanceCorrectionKind;
+  originalEventId: string | null;
+  supersedesCorrectionId: string | null;
+  eventType: AttendanceEventType | null;
+  eventTimestamp: string | null;
+  recordedDate: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+  sourceLabel: "Manager correction";
+  status: "active" | "superseded";
+};
+
+export type ProductionAttendanceData = {
+  effectiveEvents: ProductionClockEvent[];
+  audit: {
+    originalEvents: ProductionClockEvent[];
+    correctionRecords: ProductionClockCorrectionRecord[];
+  };
+};
+
+export function buildProductionAttendanceData(
+  originalRows: ClockEventSourceRow[],
+  correctionRows: ClockCorrectionSourceRow[],
+): ProductionAttendanceData {
+  const resolved = resolveEffectiveEvents(
+    originalRows.map(toOriginalClockEvent),
+    correctionRows.map(toAttendanceCorrection),
+  );
+  const correctionById = new Map(correctionRows.map((row) => [row.id, row]));
+  return {
+    effectiveEvents: resolved.effective.map((event) => ({
+      id: event.id,
+      staffId: event.staffId,
+      eventType: event.eventType,
+      eventTimestamp: event.eventTimestamp,
+      recordedDate: event.recordedDate,
+      managerCorrection: event.source !== "kiosk",
+    })),
+    audit: {
+      originalEvents: originalRows.map((row) => ({
+        id: row.id,
+        staffId: row.staff_id,
+        eventType: row.event_type,
+        eventTimestamp: row.event_timestamp,
+        recordedDate: row.recorded_date,
+        managerCorrection: row.event_source === "manager" || row.manager_correction,
+      })),
+      correctionRecords: resolved.audit.corrections.map((audit) => {
+        const row = correctionById.get(audit.correctionId)!;
+        return {
+          id: row.id,
+          batchId: row.batch_id,
+          correctionRole: row.correction_role,
+          staffId: row.staff_id,
+          kind: row.correction_kind,
+          originalEventId: row.original_event_id,
+          supersedesCorrectionId: row.supersedes_correction_id,
+          eventType: row.event_type,
+          eventTimestamp: row.event_timestamp,
+          recordedDate: row.recorded_date,
+          reason: row.reason,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          sourceLabel: "Manager correction",
+          status: audit.status,
+        };
+      }),
+    },
+  };
 }
 
 export function toStaffDirectoryRows(
@@ -88,24 +176,37 @@ export async function loadProductionStaffRows(): Promise<ProductionStaffRow[]> {
   });
 }
 
-export async function loadProductionClockEvents(periodStart: string, periodEnd: string): Promise<ProductionClockEvent[]> {
+export async function loadProductionAttendanceData(
+  periodStart: string,
+  periodEnd: string,
+): Promise<ProductionAttendanceData> {
   const supabase = await createSupabaseServerClient();
   const start = londonDateStartUtc(periodStart).toISOString();
   const dayAfterEnd = format(addDays(parseISO(periodEnd), 1), "yyyy-MM-dd");
   const end = londonDateStartUtc(dayAfterEnd).toISOString();
-  const { data, error } = await supabase.from("clock_events")
-    .select("id,staff_id,event_type,event_timestamp,recorded_date,manager_correction")
-    .gte("event_timestamp", start).lt("event_timestamp", end)
-    .order("event_timestamp");
-  if (error) throw new Error("Production clock events could not be loaded.");
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    staffId: row.staff_id,
-    eventType: row.event_type,
-    eventTimestamp: row.event_timestamp,
-    recordedDate: row.recorded_date,
-    managerCorrection: row.manager_correction,
-  }));
+  const [originals, corrections] = await Promise.all([
+    supabase.from("clock_events")
+      .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+      .gte("event_timestamp", start).lt("event_timestamp", end)
+      .order("event_timestamp"),
+    supabase.from("clock_event_corrections")
+      .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+      .gte("recorded_date", periodStart)
+      .lte("recorded_date", periodEnd)
+      .order("created_at"),
+  ]);
+  if (originals.error || corrections.error) {
+    throw new Error("Production clock events could not be loaded.");
+  }
+  return buildProductionAttendanceData(
+    (originals.data ?? []) as ClockEventSourceRow[],
+    (corrections.data ?? []) as ClockCorrectionSourceRow[],
+  );
+}
+
+export async function loadProductionClockEvents(periodStart: string, periodEnd: string): Promise<ProductionClockEvent[]> {
+  const attendance = await loadProductionAttendanceData(periodStart, periodEnd);
+  return attendance.effectiveEvents;
 }
 
 export async function loadPayrollAttendanceReviews(periodStart: string, periodEnd: string): Promise<PayrollAttendanceReview[]> {

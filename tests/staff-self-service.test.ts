@@ -59,10 +59,19 @@ describe("staff self-service", () => {
     const day = summariseAttendanceDay("2026-06-13", [
       { id: "in", eventType: "clock_in", eventTimestamp: "2026-06-13T08:00:00+01:00", managerCorrection: false },
       { id: "out", eventType: "clock_out", eventTimestamp: "2026-06-13T16:30:00+01:00", managerCorrection: true },
+    ], [
+      { id: "original-in", eventType: "clock_in", eventTimestamp: "2026-06-13T07:45:00+01:00", managerCorrection: false },
+      { id: "original-out", eventType: "clock_out", eventTimestamp: "2026-06-13T16:30:00+01:00", managerCorrection: false },
+    ], [
+      { id: "in", eventType: "clock_in", eventTimestamp: "2026-06-13T08:00:00+01:00", sourceLabel: "Manager correction", status: "active" },
     ]);
     expect(day.totalMinutes).toBe(510);
     expect(day.missingClockOut).toBe(false);
     expect(day.hasManagerCorrection).toBe(true);
     expect(day.events).toHaveLength(2);
+    expect(day.originalEvents).toHaveLength(2);
+    expect(day.corrections).toEqual([
+      { id: "in", eventType: "clock_in", eventTimestamp: "2026-06-13T08:00:00+01:00", sourceLabel: "Manager correction", status: "active" },
+    ]);
   });
 });

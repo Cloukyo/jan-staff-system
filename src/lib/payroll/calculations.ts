@@ -61,22 +61,21 @@ export function createPayrollPreparationRow(
   const periodArrangements = arrangementsForPeriod(staff.payArrangements, periodStart, periodEnd);
   const arrangement = arrangementAt(staff.payArrangements, periodEnd);
   const staffEvents = events.filter((event) => event.staffId === staff.id);
-  const rawTotals = calculateClockTotals(staffEvents.filter((event) => !event.managerCorrection));
-  const adjustedTotals = calculateClockTotals(staffEvents);
-  const warnings = [...adjustedTotals.warnings];
+  const effectiveTotals = calculateClockTotals(staffEvents);
+  const warnings = [...effectiveTotals.warnings];
   if (!arrangement) warnings.push("Missing active pay arrangement");
   if (periodArrangements.length > 1) warnings.push("Pay arrangement changes within period");
-  if (adjustedTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
+  if (effectiveTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
   if (arrangement && arrangement.hoursBasis !== "contracted") warnings.push("Contracted hours not tracked");
   const periodDays = Math.max(1, differenceInMinutes(parseISO(`${periodEnd}T12:00:00`), parseISO(`${periodStart}T12:00:00`)) / 1440 + 1);
   const ordinaryLimit = arrangement?.contractedWeeklyHours === null || arrangement?.contractedWeeklyHours === undefined
     ? null
     : Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7);
   const ordinaryMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.min(adjustedTotals.recordedMinutes, ordinaryLimit)
-    : adjustedTotals.recordedMinutes;
+    ? Math.min(effectiveTotals.recordedMinutes, ordinaryLimit)
+    : effectiveTotals.recordedMinutes;
   const overtimeMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.max(0, adjustedTotals.recordedMinutes - ordinaryLimit)
+    ? Math.max(0, effectiveTotals.recordedMinutes - ordinaryLimit)
     : 0;
   const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
     ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
@@ -97,8 +96,8 @@ export function createPayrollPreparationRow(
     payType: arrangement?.payType ?? null,
     contractedWeeklyHours: arrangement?.contractedWeeklyHours ?? null,
     hoursBasis: arrangement?.hoursBasis ?? null,
-    recordedMinutes: rawTotals.recordedMinutes,
-    adjustedMinutes: adjustedTotals.recordedMinutes,
+    recordedMinutes: effectiveTotals.recordedMinutes,
+    adjustedMinutes: effectiveTotals.recordedMinutes,
     ordinaryMinutes,
     overtimeMinutes,
     hourlyRate: arrangement?.hourlyRate ?? null,

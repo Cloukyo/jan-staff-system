@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getAppMode } from "@/lib/app-mode";
 import { getSupabaseConfig, hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { isoDateInLondon } from "@/lib/dates/format";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
 
@@ -111,19 +112,40 @@ export type ManagerClockEvent = {
   correctionReason: string | null;
 };
 
+type ManagerEffectiveStatusRow = {
+  staff_id: string;
+  open_shift_count: number | null;
+};
+
+export function mapEffectiveManagerStatuses(
+  rows: ManagerEffectiveStatusRow[],
+): Map<string, KioskRosterEntry["currentStatus"]> {
+  return new Map(rows.map((row) => [
+    row.staff_id,
+    (row.open_shift_count ?? 0) > 0 ? "clocked_in" as const : "clocked_out" as const,
+  ]));
+}
+
 export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[]; events: ManagerClockEvent[] }> {
   const supabase = await createSupabaseServerClient();
-  const [profiles, settings, events] = await Promise.all([
+  const [profiles, settings, events, effectiveStatuses] = await Promise.all([
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),
     supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason").order("event_timestamp", { ascending: false }).limit(250),
+    supabase.rpc("get_manager_hours_preview", {
+      range_start: "1970-01-01",
+      range_end: isoDateInLondon(),
+    }),
   ]);
-  if (profiles.error || settings.error || events.error) throw new Error("Production attendance could not be loaded.");
+  if (profiles.error || settings.error || events.error || effectiveStatuses.error) {
+    throw new Error("Production attendance could not be loaded.");
+  }
   const settingMap = new Map((settings.data ?? []).map((row) => [row.staff_id, row]));
   const eventRows = (events.data ?? []) as Array<Record<string, unknown>>;
-  const latestByStaff = new Map<string, string>();
+  const statusByStaff = mapEffectiveManagerStatuses(
+    (effectiveStatuses.data ?? []) as ManagerEffectiveStatusRow[],
+  );
   const lastKioskUseByStaff = new Map<string, string>();
-  for (const event of eventRows) if (!latestByStaff.has(String(event.staff_id))) latestByStaff.set(String(event.staff_id), String(event.event_type));
   for (const event of eventRows) {
     const staffId = String(event.staff_id);
     if (String(event.event_source) === "kiosk" && !lastKioskUseByStaff.has(staffId)) {
@@ -138,7 +160,7 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
         displayName: row.display_name,
         fullName: row.full_name,
         employmentRole: row.employment_role,
-        currentStatus: latestByStaff.get(row.id) === "clock_in" ? "clocked_in" : "clocked_out",
+        currentStatus: statusByStaff.get(row.id) ?? "clocked_out",
         pinReady: Boolean(setting?.pin_updated_at) && !setting?.pin_reset_required,
         kioskEnabled: setting?.kiosk_enabled ?? false,
         pinUpdatedAt: setting?.pin_updated_at ?? null,
