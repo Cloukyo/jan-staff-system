@@ -180,9 +180,11 @@ describe("manager attendance views", () => {
     const attendancePage = readFileSync(resolve("src/app/attendance/page.tsx"), "utf8");
 
     expect(toStaffHoursWeek(emptyRange)).toBeNull();
-    expect(parseStaffHoursWeekId("not-a-staff-id")).toBeNull();
-    expect(parseStaffHoursWeekId("3da8ab4b-5c31-4e59-b58f-1e374d4d4615"))
-      .toBe("3da8ab4b-5c31-4e59-b58f-1e374d4d4615");
+    expect(parseStaffHoursWeekId(" stf-001 ")).toBe("stf-001");
+    expect(parseStaffHoursWeekId("")).toBeNull();
+    expect(parseStaffHoursWeekId("   ")).toBeNull();
+    expect(parseStaffHoursWeekId("bad/staff id")).toBeNull();
+    expect(parseStaffHoursWeekId("s".repeat(129))).toBeNull();
     expect(attendancePage).toContain("<StaffHoursNotFound");
     expect(attendancePage).toContain("!staffHoursWeek");
     expect(readFileSync(resolve("src/components/attendance/staff-hours-timeline.tsx"), "utf8"))

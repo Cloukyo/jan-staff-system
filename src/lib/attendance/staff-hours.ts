@@ -204,8 +204,9 @@ function validIsoDate(value: string | undefined): value is string {
 }
 
 export function parseStaffHoursWeekId(value: string | undefined): string | null {
-  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-    ? value
+  const staffId = value?.trim();
+  return staffId && staffId.length <= 128 && /^[A-Za-z0-9_-]+$/.test(staffId)
+    ? staffId
     : null;
 }
 
