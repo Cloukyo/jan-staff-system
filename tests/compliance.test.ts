@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { StaffCertificate, StaffCentralRecord, StaffProfile } from "@/types";
 import { activeComplianceRecords, canEditCompliance, centralRecordCompletion, certificateStatus, complianceDashboardCounts, maskDbsNumber, parseUkDateForImport } from "@/lib/calculations/compliance";
+import { parseStaffRecordSection, staffRecordSections } from "@/lib/staff/record-sections";
+
+function source(path: string): string {
+  return readFileSync(resolve(path), "utf8");
+}
 
 function certificate(expiryDate: string | null, overrides: Partial<StaffCertificate> = {}): StaffCertificate {
   return {
@@ -87,5 +94,61 @@ describe("central records and import review helpers", () => {
     expect(canEditCompliance("manager")).toBe(true);
     expect(canEditCompliance("staff")).toBe(false);
     expect(canEditCompliance(null)).toBe(false);
+  });
+});
+
+describe("staff record sections", () => {
+  it("parses supported sections and defaults invalid values to overview", () => {
+    expect(parseStaffRecordSection("clocking-in")).toBe("clocking-in");
+    expect(parseStaffRecordSection("bad")).toBe("overview");
+    expect(parseStaffRecordSection(undefined)).toBe("overview");
+  });
+
+  it("uses the six approved manager task labels", () => {
+    expect(staffRecordSections.map((section) => section.label)).toEqual([
+      "Overview",
+      "Employment",
+      "Clocking in",
+      "Staff login",
+      "Training & checks",
+      "Pay details",
+    ]);
+  });
+
+  it("renders a query-driven record without exposing technical identifiers or pay values in overview", () => {
+    const detail = source("src/components/compliance/production-compliance-detail.tsx");
+    expect(detail).toContain("Name shown on Staff Clock");
+    expect(detail).not.toContain("Canonical staff ID");
+    expect(detail).toContain("<StaffRecordNav");
+    expect(detail).toContain('section === "overview"');
+    expect(detail).toContain('section === "employment"');
+    expect(detail).toContain('section === "training-checks"');
+
+    const overview = detail.slice(
+      detail.indexOf("function StaffRecordOverview"),
+      detail.indexOf("function QualificationFields"),
+    );
+    expect(overview).not.toMatch(/hourlyRate|annualSalary|monthlySalary|formatMoney/);
+  });
+
+  it("keeps all six specialist training and check groups behind a local jump list", () => {
+    const detail = source("src/components/compliance/production-compliance-detail.tsx");
+    expect(detail).toContain('aria-label="Training and checks sections"');
+    const targets = [
+      ["qualifications", "Qualifications"],
+      ["training-certificates", "Training and certificates"],
+      ["dbs-suitability", "DBS and suitability"],
+      ["central-record", "Central-record checklist"],
+      ["references", "References"],
+      ["import-warnings", "Import warnings"],
+    ];
+    for (const [id, heading] of targets) {
+      expect(detail).toContain(`["${id}", "${heading}"]`);
+      expect(detail).toMatch(
+        new RegExp(
+          `id="${id}" className="[^"]*scroll-mt-44[^"]*md:scroll-mt-36[^"]*lg:scroll-mt-16`,
+        ),
+      );
+    }
   });
 });

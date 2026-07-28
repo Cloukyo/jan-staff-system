@@ -28,6 +28,15 @@ async function managerSupabase() {
   return createSupabaseServerClient();
 }
 
+function revalidateStaffProfileViews(staffId: string): void {
+  revalidatePath("/staff");
+  revalidatePath("/compliance");
+  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidatePath("/clock");
+  revalidatePath("/attendance");
+  revalidatePath("/settings/kiosk");
+}
+
 export async function quickUpdateStaffProfileAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
   const supabase = await managerSupabase();
   if (!supabase) return fail("Production Supabase configuration is required.");
@@ -39,8 +48,7 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
     main_qualification_level: text(formData, "mainQualificationLevel"),
   }).eq("id", staffId);
   if (error) return fail("Quick edit could not be saved.");
-  revalidatePath("/compliance");
-  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidateStaffProfileViews(staffId);
   return ok("Quick edit saved.");
 }
 
@@ -63,8 +71,7 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
     notes: text(formData, "notes"),
   }).eq("id", staffId);
   if (error) return fail("Staff profile could not be saved.");
-  revalidatePath("/compliance");
-  revalidatePath(`/compliance/staff/${staffId}`);
+  revalidateStaffProfileViews(staffId);
   return ok("Staff details saved.");
 }
 

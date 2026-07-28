@@ -2,12 +2,34 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildAttendanceReviewRow, mapManagerHoursPreview } from "@/lib/attendance/review-server";
+import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
 }
 
 describe("production attendance review", () => {
+  it("defaults unknown attendance views to needs attention", () => {
+    expect(parseAttendanceManagerView()).toBe("needs-attention");
+    expect(parseAttendanceManagerView("add-event")).toBe("add-event");
+    expect(parseAttendanceManagerView("unknown")).toBe("needs-attention");
+  });
+
+  it("puts the missing clock event command before attendance review", () => {
+    const page = source("src/app/attendance/page.tsx");
+    expect(page).toContain("Add a missing clock-in or clock-out");
+    expect(page.indexOf("Add a missing clock-in or clock-out"))
+      .toBeLessThan(page.indexOf("<AttendanceReview"));
+    expect(page).toContain("<AttendancePageNav");
+  });
+
+  it("leaves the mobile attendance submenu unset for the add-event workflow", () => {
+    const attendanceNav = source("src/components/attendance/attendance-page-nav.tsx");
+    const pageNav = source("src/components/layout/manager-page-nav.tsx");
+    expect(attendanceNav).toContain('activeView === "add-event" ? "" : activeView');
+    expect(pageNav).toContain('{!activeItem ? <option value="">Choose a section</option> : null}');
+  });
+
   it("detects daily attendance exceptions", () => {
     const row = buildAttendanceReviewRow({
       staffId: "staff",

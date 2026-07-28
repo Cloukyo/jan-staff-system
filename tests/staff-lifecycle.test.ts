@@ -140,13 +140,14 @@ describe("production staff lifecycle actions", () => {
 
 describe("production staff lifecycle interface", () => {
   const staffScreen = source("src/components/staff/production-staff-screen.tsx");
+  const addStaffForm = source("src/components/staff/add-staff-form.tsx");
   const complianceScreen = source("src/components/compliance/production-compliance-screen.tsx");
   const staffPage = source("src/app/staff/page.tsx");
   const payPage = source("src/app/payroll/arrangements/page.tsx");
 
   it("creates staff from Staff and not Compliance", () => {
-    expect(staffScreen).toContain("Add staff member");
-    expect(staffScreen).toContain("createStaffProfileAction");
+    expect(addStaffForm).toContain("Add staff member");
+    expect(addStaffForm).toContain("createStaffProfileAction");
     expect(complianceScreen).not.toContain("Add staff member");
     expect(complianceScreen).not.toContain("createStaffProfileAction");
   });

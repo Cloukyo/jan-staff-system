@@ -26,6 +26,23 @@ describe("production dashboard separation", () => {
     expect(screen).not.toContain("Priya");
     expect(screen).not.toContain("estimated payroll");
   });
+
+  it("puts urgent manager work before daily context and summaries", () => {
+    const screen = readFileSync(resolve("src/components/dashboard/production-dashboard.tsx"), "utf8");
+    const needsAttention = screen.indexOf(">Needs attention<");
+    const today = screen.indexOf(">Today<");
+    const quickActions = screen.indexOf(">Quick actions<");
+    const recordsSummary = screen.indexOf(">Records and checks summary<");
+
+    expect(screen).toContain(">Home<");
+    expect(needsAttention).toBeGreaterThan(-1);
+    expect(today).toBeGreaterThan(needsAttention);
+    expect(quickActions).toBeGreaterThan(today);
+    expect(recordsSummary).toBeGreaterThan(quickActions);
+    expect(screen).toContain("Review {data.missingClockOuts} missing clock-out");
+    expect(screen).not.toContain(">Live<");
+    expect(screen).not.toMatch(/Production data|Supabase/);
+  });
 });
 
 describe("manager dashboard summary mapping", () => {

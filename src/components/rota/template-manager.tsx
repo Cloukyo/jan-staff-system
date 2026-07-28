@@ -21,8 +21,7 @@ export function TemplateManager({ data }: { data: RotaTemplateDataset }) {
     <>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-          <h1 className="mt-1 text-3xl font-black text-purple-950">Rota templates</h1>
+          <h1 className="text-3xl font-black text-purple-950">Rota templates</h1>
           <p className="mt-2 text-slate-600">Build reusable staff patterns in the same weekly view as the live rota.</p>
         </div>
         <Link className="inline-flex min-h-11 items-center rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900 hover:bg-purple-50" href="/rota">Back to rota</Link>

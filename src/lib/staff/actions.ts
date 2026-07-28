@@ -20,6 +20,7 @@ function refreshStaffPaths(staffId: string) {
   revalidatePath("/accounts");
   revalidatePath("/settings/kiosk");
   revalidatePath("/clock");
+  revalidatePath("/attendance");
   revalidatePath("/rota");
   revalidatePath("/compliance");
   revalidatePath(`/compliance/staff/${staffId}`);
@@ -45,8 +46,7 @@ export async function createStaffProfileAction(
     active: formData.get("active") === "on",
   });
   if (error) return fail("Staff profile could not be created. Check for a duplicate staff record.");
-  revalidatePath("/staff");
-  revalidatePath("/compliance");
+  refreshStaffPaths(id);
   redirect(`/compliance/staff/${id}`);
 }
 
