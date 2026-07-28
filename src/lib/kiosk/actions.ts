@@ -1,10 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  saveClockEventCorrectionAction,
-  type CorrectionActionInput,
-} from "@/lib/attendance/correction-actions";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { createPublicKioskClient } from "@/lib/kiosk/server";
@@ -150,18 +146,4 @@ export async function setKioskPinAction(_state: KioskActionResult, formData: For
   revalidatePath("/settings/kiosk");
   revalidatePath("/clock");
   return { ok: true, code: "saved", message: "Temporary PIN saved. The employee must replace it at their next use." };
-}
-
-export async function addClockCorrectionAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {
-  const staffId = String(formData.get("staffId") ?? "");
-  const eventType = String(formData.get("eventType") ?? "");
-  const eventTimestamp = String(formData.get("eventTimestamp") ?? "");
-  const reason = String(formData.get("reason") ?? "").trim();
-  return saveClockEventCorrectionAction({
-    staffId,
-    eventType: eventType as CorrectionActionInput["eventType"],
-    localDateTime: eventTimestamp,
-    reason,
-    returnTo: "/attendance",
-  });
 }

@@ -60,6 +60,7 @@ export async function GET(request: Request) {
   const allRows = includedStaff
     .map((person) => createPayrollPreparationRow(
       person,
+      attendance.audit.originalEvents,
       attendance.effectiveEvents,
       periodStart,
       periodEnd,

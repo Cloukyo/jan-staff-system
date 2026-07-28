@@ -57,7 +57,12 @@ function EventLane({ label, children }: { label: string; children: React.ReactNo
 export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; from: string; to: string }) {
   const correctionCount = day.audit.corrections.length;
   const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
-  const context = { staffId: day.staffId, attendanceDate: day.date, returnTo };
+  const context = {
+    staffId: day.staffId,
+    attendanceDate: day.date,
+    returnTo,
+    eventRevision: day.eventRevision,
+  };
   const manualAction = saveBoundClockEventCorrectionAction.bind(null, context);
   const plannedHoursAction = useBoundPlannedHoursAction.bind(null, context);
   return (

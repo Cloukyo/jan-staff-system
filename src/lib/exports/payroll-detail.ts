@@ -78,7 +78,9 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
     group.push(event);
     effectiveEventsByDay.set(key, group);
   }
-  for (const event of input.attendance.audit.originalEvents) {
+  for (const event of input.attendance.audit.originalEvents.filter(
+    (record) => !record.managerCorrection,
+  )) {
     const key = detailKey(event.staffId, event.recordedDate);
     const group = originalEventsByDay.get(key) ?? [];
     group.push(event);

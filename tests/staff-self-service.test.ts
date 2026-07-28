@@ -17,25 +17,32 @@ describe("staff self-service", () => {
     expect(server).toContain('.in("status", ["scheduled", "completed"])');
   });
 
-  it("loads only the signed-in staff member's clock events", () => {
-    expect(server).toContain('supabase.from("clock_events")');
-    expect(server).toContain('.eq("staff_id", account.staffId)');
+  it("loads attendance through the authenticated limited-return RPC", () => {
+    expect(server).toContain('.rpc("get_own_attendance_records"');
+    expect(server).toContain("range_start: range.from");
+    expect(server).toContain("range_end: range.to");
+    expect(server).not.toContain('supabase.from("clock_events")');
     expect(server).not.toContain('supabase.from("staff_profiles")');
+    expect(server).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(server).not.toContain("createClient(");
   });
 
-  it("selects only resolver fields from the service-role correction query", () => {
-    const start = server.indexOf('admin.from("clock_event_corrections")');
-    const end = server.indexOf(".order(", start);
-    const correctionQuery = server.slice(start, end);
+  it("limits the ownership-checked RPC to attendance resolver fields", () => {
+    const migration = source("supabase/migrations/202607280001_clock_event_corrections.sql");
+    const start = migration.indexOf("create or replace function public.get_own_attendance_records");
+    const end = migration.indexOf("\n$$;", start);
+    const ownAttendanceRpc = migration.slice(start, end);
 
     expect(start).toBeGreaterThan(-1);
-    expect(correctionQuery).toContain("original_event_id");
-    expect(correctionQuery).toContain("supersedes_correction_id");
-    expect(correctionQuery).toContain('.eq("staff_id", account.staffId)');
-    expect(correctionQuery).toContain('.gte("recorded_date", range.from)');
-    expect(correctionQuery).toContain('.lte("recorded_date", range.to)');
-    expect(correctionQuery).not.toMatch(/\breason\b|created_by/);
-    expect(correctionQuery).not.toMatch(/insert|update|delete|upsert/i);
+    expect(ownAttendanceRpc).toContain("security definer");
+    expect(ownAttendanceRpc).toContain("staff_account := public.current_staff_account()");
+    expect(ownAttendanceRpc).toContain("correction.staff_id = staff_account.staff_id");
+    expect(ownAttendanceRpc).toContain("original_event_id");
+    expect(ownAttendanceRpc).toContain("supersedes_correction_id");
+    expect(ownAttendanceRpc).not.toMatch(/\breason\b|created_by|hourly_rate|salary/i);
+    expect(migration).toMatch(
+      /grant execute on function public\.get_own_attendance_records\(date, date\)[\s\S]*?to authenticated/i,
+    );
   });
 
   it("keeps self-service pages read-only", () => {

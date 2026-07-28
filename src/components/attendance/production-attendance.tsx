@@ -2,10 +2,14 @@
 
 import { useMemo, useState } from "react";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
-import Link from "next/link";
-import { Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import {
+  MissingEventCorrectionForm,
+  type CorrectionFormAction,
+} from "@/components/attendance/attendance-correction-controls";
+import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
+import type { MissingEventPage } from "@/lib/attendance/staff-hours";
 
 export function buildAttendanceTodayGroups(
   staff: ManagerKioskRow[],
@@ -89,20 +93,29 @@ export function filterAndPaginateAttendanceHistory(
   const normalisedQuery = query.trim().toLowerCase();
   const filtered = events.filter((event) => {
     if (!normalisedQuery) return true;
-    const eventLabel = event.eventType === "clock_in" ? "clock in" : "clock out";
-    const sourceLabel = event.managerCorrection
+    const eventLabel = event.eventType === "clock_in"
+      ? "clock in"
+      : event.eventType === "clock_out"
+        ? "clock out"
+        : "excluded event";
+    const sourceLabel = event.eventSource === "manager_correction"
       ? "manager correction"
       : event.eventSource === "manager"
-        ? "manager"
+        ? "legacy manager event"
         : "kiosk";
     const searchable = [
       staffNames.get(event.staffId) ?? "Unknown staff",
+      event.recordType,
       eventLabel,
       sourceLabel,
+      event.auditStatus,
+      event.correctionKind ?? "",
       event.correctionReason ?? "",
+      event.createdByName ?? "",
       event.recordedDate,
-      formatDateUk(event.eventTimestamp),
-      formatTimeUk(event.eventTimestamp),
+      formatDateUk(event.recordedDate),
+      event.eventTimestamp ? formatDateUk(event.eventTimestamp) : "",
+      event.eventTimestamp ? formatTimeUk(event.eventTimestamp) : "",
     ].join(" ").toLowerCase();
     return searchable.includes(normalisedQuery);
   });
@@ -146,10 +159,27 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
       </div>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Event</th><th className="p-2">Time</th><th className="p-2">Source</th><th className="p-2">Reason</th></tr></thead>
+          <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Record</th><th className="p-2">Event time</th><th className="p-2">Added</th><th className="p-2">Source and status</th><th className="p-2">Reason</th></tr></thead>
           <tbody>{result.events.map((event) => {
             const person = staff.find((item) => item.staffId === event.staffId);
-            return <tr key={event.id} className="border-b border-purple-50"><td className="p-2 font-bold">{person?.fullName ?? "Unknown staff"}</td><td className="p-2">{event.eventType === "clock_in" ? "Clock in" : "Clock out"}</td><td className="p-2">{formatDateUk(event.eventTimestamp)} {formatTimeUk(event.eventTimestamp)}</td><td className="p-2">{event.managerCorrection ? <StatusPill tone="purple">Manager correction</StatusPill> : "Kiosk"}</td><td className="p-2">{event.correctionReason ?? ""}</td></tr>;
+            const eventText = event.eventType === "clock_in"
+              ? "Clock in"
+              : event.eventType === "clock_out"
+                ? "Clock out"
+                : "Excluded event";
+            const sourceText = event.eventSource === "manager_correction"
+              ? "Manager correction"
+              : event.eventSource === "manager"
+                ? "Legacy manager event"
+                : "Kiosk";
+            return <tr key={`${event.recordType}-${event.id}`} className="border-b border-purple-50">
+              <td className="p-2 font-bold">{person?.fullName ?? "Unknown staff"}</td>
+              <td className="p-2"><strong>{event.recordType === "original" ? "Original" : "Correction"}</strong><br />{eventText}{event.correctionKind ? `, ${event.correctionKind}` : ""}</td>
+              <td className="p-2">{formatDateUk(event.recordedDate)}{event.eventTimestamp ? <> {formatTimeUk(event.eventTimestamp)}</> : <><br /><span className="text-xs text-slate-600">No effective event time</span></>}</td>
+              <td className="p-2">{formatDateUk(event.createdAt)} {formatTimeUk(event.createdAt)}</td>
+              <td className="p-2"><StatusPill tone={event.auditStatus === "active" ? "green" : "purple"}>{sourceText}, {event.auditStatus}</StatusPill>{event.createdByName ? <span className="mt-1 block text-xs text-slate-600">{event.createdByName}</span> : null}</td>
+              <td className="p-2">{event.correctionReason ?? ""}</td>
+            </tr>;
           })}</tbody>
         </table>
         {!result.totalItems ? <p className="mt-3 text-sm text-slate-600">No clocking records match this search.</p> : null}
@@ -167,12 +197,47 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
   );
 }
 
-export function AttendanceCorrectionForm() {
+export function AttendanceCorrectionForm({
+  data,
+  action,
+  returnTo,
+}: {
+  data: MissingEventPage;
+  action: CorrectionFormAction | null;
+  returnTo: string;
+}) {
   return (
     <Panel>
       <h2 className="text-xl font-black text-purple-950">Add a missing clock-in or clock-out</h2>
-      <p className="mt-2 text-sm text-slate-600">Choose a staff member in Staff hours to add an event with a same-day preview. Original kiosk records remain unchanged.</p>
-      <Link href="/attendance?view=hours" className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-purple-700 px-4 text-sm font-bold text-white hover:bg-purple-800">Open Staff hours</Link>
+      <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,14rem)_auto] sm:items-end" method="get">
+        <input name="view" type="hidden" value="add-event" />
+        <Field label="Staff member">
+          <select className={inputClassName()} defaultValue={data.selectedStaffId ?? ""} name="staffId" required>
+            <option value="" disabled>Choose staff</option>
+            {data.staff.map((person) => (
+              <option key={person.staffId} value={person.staffId}>{person.fullName}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Attendance date">
+          <input className={inputClassName()} defaultValue={data.date} name="date" type="date" required />
+        </Field>
+        <Button type="submit" variant="secondary">Review day</Button>
+      </form>
+
+      {data.day && action ? (
+        <div className="mt-5 border-t border-purple-100 pt-4">
+          <h3 className="text-base font-black text-purple-950">{data.day.fullName}, {formatDateUk(data.day.date)}</h3>
+          <p className="mt-1 text-sm text-slate-700">
+            Current effective sequence: {data.day.effectiveEvents.length
+              ? data.day.effectiveEvents.map((event) => `${formatTimeUk(event.eventTimestamp)} ${event.eventType === "clock_in" ? "clock in" : "clock out"}`).join(", ")
+              : "No clock events"}
+          </p>
+          <MissingEventCorrectionForm day={data.day} returnTo={returnTo} action={action} />
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-slate-600">Choose a staff member and date to review the day.</p>
+      )}
     </Panel>
   );
 }

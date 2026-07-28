@@ -176,47 +176,55 @@ describe("paged attendance data loaders", () => {
     expect(client.ordersFor("clock_event_corrections")[0]).toEqual(["created_at", "id"]);
   });
 
-  it("aggregates staff self-service pages while retaining own-profile filters", async () => {
+  it("aggregates the authenticated own-attendance RPC without a service-role client", async () => {
     const serverClient = new PagedPostgrestClient({
-      clock_events: [
-        ...Array.from({ length: 1_001 }, (_, index) => originalRow(index, "own-staff")),
-        originalRow(9_999, "other-staff"),
-      ],
-    });
-    const adminClient = new PagedPostgrestClient({
-      clock_event_corrections: [
+      get_own_attendance_records: [
+        ...Array.from({ length: 1_001 }, (_, index) => ({
+          ...originalRow(index, "own-staff"),
+          record_kind: "original",
+          correction_kind: null,
+          original_event_id: null,
+          supersedes_correction_id: null,
+          created_at: timestamp,
+        })),
         ...Array.from({ length: 1_001 }, (_, index) => {
           const row = correctionRow(index, "own-staff");
-          delete row.reason;
-          delete row.created_by;
-          return row;
+          return {
+            record_kind: "correction",
+            id: row.id,
+            event_type: row.event_type,
+            event_timestamp: row.event_timestamp,
+            recorded_date: row.recorded_date,
+            event_source: null,
+            manager_correction: true,
+            correction_kind: row.correction_kind,
+            original_event_id: row.original_event_id,
+            supersedes_correction_id: row.supersedes_correction_id,
+            created_at: row.created_at,
+          };
         }),
-        correctionRow(9_999, "other-staff"),
       ],
     });
     mocks.createSupabaseServerClient.mockResolvedValue(serverClient);
-    mocks.createServiceRoleClient.mockReturnValue(adminClient);
 
     const attendance = await loadStaffAttendance(date, date);
 
     expect(attendance.days[0].originalEvents).toHaveLength(1_001);
     expect(attendance.days[0].corrections).toHaveLength(1_001);
-    expect(serverClient.rangesFor("clock_events")).toEqual([[0, 999], [1_000, 1_999]]);
-    expect(adminClient.rangesFor("clock_event_corrections")).toEqual([
+    expect(serverClient.rangesFor("get_own_attendance_records")).toEqual([
       [0, 999],
       [1_000, 1_999],
+      [2_000, 2_999],
     ]);
-    expect(serverClient.filtersFor("clock_events")[0]).toContainEqual({
-      operation: "eq",
-      column: "staff_id",
-      value: "own-staff",
-    });
-    expect(adminClient.filtersFor("clock_event_corrections")[0]).toContainEqual({
-      operation: "eq",
-      column: "staff_id",
-      value: "own-staff",
-    });
-    expect(serverClient.ordersFor("clock_events")[0]).toEqual(["event_timestamp", "id"]);
-    expect(adminClient.ordersFor("clock_event_corrections")[0]).toEqual(["created_at", "id"]);
+    expect(serverClient.rpcArgsFor("get_own_attendance_records")).toEqual([
+      { range_start: date, range_end: date },
+      { range_start: date, range_end: date },
+      { range_start: date, range_end: date },
+    ]);
+    expect(serverClient.ordersFor("get_own_attendance_records")[0]).toEqual([
+      "recorded_date",
+      "id",
+    ]);
+    expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,7 @@ create table public.clock_event_corrections (
     (
       correction_kind = 'add'
       and original_event_id is null
+      and supersedes_correction_id is null
     )
     or
     (
@@ -114,11 +115,28 @@ declare
   target_recorded_date date;
 begin
   if new.original_event_id is not null then
+    if exists (
+      select 1
+      from public.clock_event_corrections existing
+      where existing.original_event_id = new.original_event_id
+    ) then
+      raise exception
+        'An active correction already exists for this original; supersede its active correction';
+    end if;
+
     select event.staff_id, event.recorded_date
     into target_staff_id, target_recorded_date
     from public.clock_events event
     where event.id = new.original_event_id;
   elsif new.supersedes_correction_id is not null then
+    if exists (
+      select 1
+      from public.clock_event_corrections child
+      where child.supersedes_correction_id = new.supersedes_correction_id
+    ) then
+      raise exception 'A correction can only be superseded once';
+    end if;
+
     select correction.staff_id, correction.recorded_date
     into target_staff_id, target_recorded_date
     from public.clock_event_corrections correction
@@ -330,6 +348,42 @@ $$;
 revoke all on function public.get_effective_clock_events(date, date, text)
 from public, anon, authenticated;
 
+create or replace function public.get_attendance_event_revision(
+  target_staff_id text,
+  target_date date
+)
+returns text
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    'events:'
+    || coalesce(
+      (
+        select string_agg(event.id::text, ',' order by event.id)
+        from public.clock_events event
+        where event.staff_id = target_staff_id
+          and event.recorded_date = target_date
+      ),
+      ''
+    )
+    || '|corrections:'
+    || coalesce(
+      (
+        select string_agg(correction.id::text, ',' order by correction.id)
+        from public.clock_event_corrections correction
+        where correction.staff_id = target_staff_id
+          and correction.recorded_date = target_date
+      ),
+      ''
+    );
+$$;
+
+revoke all on function public.get_attendance_event_revision(text, date)
+from public, anon, authenticated;
+
 create or replace function public.save_clock_event_correction_chain(plan jsonb)
 returns uuid
 language plpgsql
@@ -499,12 +553,198 @@ $$;
 
 revoke all on function public.save_clock_event_correction_chain(jsonb)
 from public, anon, authenticated;
-grant execute on function public.save_clock_event_correction_chain(jsonb) to authenticated;
+
+create or replace function public.save_manual_clock_event_correction(
+  target_staff_id text,
+  target_date date,
+  target_event_id uuid,
+  requested_event_type text,
+  requested_event_timestamp timestamptz,
+  reason text,
+  expected_revision text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  manager_account public.staff_accounts;
+  selected_event record;
+  following_event record;
+  selected_effective_event_id uuid;
+  selected_sort_id uuid;
+  expected_type text;
+  primary_action jsonb;
+  consequential_actions jsonb := '[]'::jsonb;
+begin
+  manager_account := public.current_staff_account();
+  if manager_account.id is null or manager_account.role <> 'manager' then
+    raise exception 'Manager access required';
+  end if;
+  if target_staff_id is null or target_date is null then
+    raise exception 'Choose a staff member and date';
+  end if;
+  if not exists (
+    select 1
+    from public.staff_profiles profile
+    where profile.id = target_staff_id
+  ) then
+    raise exception 'The staff member does not exist';
+  end if;
+  if requested_event_type not in ('clock_in', 'clock_out')
+    or requested_event_timestamp is null
+    or (requested_event_timestamp at time zone 'Europe/London')::date <> target_date then
+    raise exception 'Choose a valid same-day clock event';
+  end if;
+  if reason is null or length(trim(reason)) < 5 then
+    raise exception 'Enter a correction reason of at least five characters';
+  end if;
+  if expected_revision is null then
+    raise exception 'Reload attendance and review the correction again';
+  end if;
+
+  perform public.lock_attendance_staff_writes(target_staff_id);
+
+  if public.get_attendance_event_revision(target_staff_id, target_date)
+    is distinct from expected_revision then
+    raise exception using
+      errcode = '40001',
+      message = 'Attendance changed after this preview';
+  end if;
+
+  if target_event_id is not null then
+    select event.*
+    into selected_event
+    from public.get_effective_clock_events(
+      target_date,
+      target_date,
+      target_staff_id
+    ) event
+    where event.event_id = target_event_id
+      or event.original_event_id = target_event_id
+    order by
+      case when event.event_id = target_event_id then 0 else 1 end,
+      event.event_timestamp,
+      event.event_id
+    limit 1;
+
+    if not found then
+      raise exception 'The effective clock event no longer exists';
+    end if;
+
+    selected_effective_event_id := selected_event.event_id;
+    selected_sort_id := selected_event.event_id;
+    primary_action := jsonb_build_object(
+      'staff_id', target_staff_id,
+      'recorded_date', target_date,
+      'correction_kind', 'replace',
+      'original_event_id',
+        case when selected_event.correction_id is null
+          then selected_event.event_id
+          else null
+        end,
+      'supersedes_correction_id', selected_event.correction_id,
+      'event_type', requested_event_type,
+      'event_timestamp', requested_event_timestamp
+    );
+  else
+    selected_sort_id := '00000000-0000-0000-0000-000000000000'::uuid;
+    primary_action := jsonb_build_object(
+      'staff_id', target_staff_id,
+      'recorded_date', target_date,
+      'correction_kind', 'add',
+      'original_event_id', null,
+      'supersedes_correction_id', null,
+      'event_type', requested_event_type,
+      'event_timestamp', requested_event_timestamp
+    );
+  end if;
+
+  expected_type := case
+    when requested_event_type = 'clock_in' then 'clock_out'
+    else 'clock_in'
+  end;
+
+  for following_event in
+    select event.*
+    from public.get_effective_clock_events(
+      target_date,
+      target_date,
+      target_staff_id
+    ) event
+    where (
+      selected_effective_event_id is null
+      or event.event_id <> selected_effective_event_id
+    )
+      and (
+        event.event_timestamp > requested_event_timestamp
+        or (
+          event.event_timestamp = requested_event_timestamp
+          and event.event_id > selected_sort_id
+        )
+      )
+    order by event.event_timestamp, event.event_id
+  loop
+    if following_event.event_type <> expected_type then
+      consequential_actions := consequential_actions || jsonb_build_array(
+        jsonb_build_object(
+          'staff_id', target_staff_id,
+          'recorded_date', target_date,
+          'correction_kind', 'replace',
+          'original_event_id',
+            case when following_event.correction_id is null
+              then following_event.event_id
+              else null
+            end,
+          'supersedes_correction_id', following_event.correction_id,
+          'event_type', expected_type,
+          'event_timestamp', following_event.event_timestamp
+        )
+      );
+    end if;
+
+    expected_type := case
+      when expected_type = 'clock_in' then 'clock_out'
+      else 'clock_in'
+    end;
+  end loop;
+
+  return public.save_clock_event_correction_chain(
+    jsonb_build_object(
+      'reason', trim(reason),
+      'primary', primary_action,
+      'consequential', consequential_actions
+    )
+  );
+end;
+$$;
+
+revoke all on function public.save_manual_clock_event_correction(
+  text,
+  date,
+  uuid,
+  text,
+  timestamptz,
+  text,
+  text
+)
+from public, anon, authenticated;
+grant execute on function public.save_manual_clock_event_correction(
+  text,
+  date,
+  uuid,
+  text,
+  timestamptz,
+  text,
+  text
+) to authenticated;
 
 create or replace function public.use_planned_hours(
   target_staff_id text,
   target_date date,
-  reason text
+  reason text,
+  expected_revision text
 )
 returns uuid
 language plpgsql
@@ -539,6 +779,16 @@ begin
   end if;
 
   perform public.lock_attendance_staff_writes(target_staff_id);
+
+  if expected_revision is null then
+    raise exception 'Reload attendance and review the correction again';
+  end if;
+  if public.get_attendance_event_revision(target_staff_id, target_date)
+    is distinct from expected_revision then
+    raise exception using
+      errcode = '40001',
+      message = 'Attendance changed after this preview';
+  end if;
 
   perform 1
   from public.rota_shifts rs
@@ -780,9 +1030,9 @@ begin
 end;
 $$;
 
-revoke all on function public.use_planned_hours(text, date, text)
+revoke all on function public.use_planned_hours(text, date, text, text)
 from public, anon, authenticated;
-grant execute on function public.use_planned_hours(text, date, text) to authenticated;
+grant execute on function public.use_planned_hours(text, date, text, text) to authenticated;
 
 create or replace function public.get_staff_weekly_hours(
   target_staff_id text,
@@ -813,9 +1063,11 @@ begin
       ce.event_type,
       ce.event_timestamp,
       lead(ce.event_type) over (
+        partition by ce.recorded_date
         order by ce.event_timestamp, ce.event_id
       ) as next_event_type,
       lead(ce.event_timestamp) over (
+        partition by ce.recorded_date
         order by ce.event_timestamp, ce.event_id
       ) as next_event_timestamp
     from public.get_effective_clock_events(range_start, range_end, target_staff_id) ce
@@ -882,11 +1134,11 @@ begin
       ce.event_type,
       ce.event_timestamp,
       lead(ce.event_type) over (
-        partition by ce.staff_id
+        partition by ce.staff_id, ce.recorded_date
         order by ce.event_timestamp, ce.event_id
       ) as next_event_type,
       lead(ce.event_timestamp) over (
-        partition by ce.staff_id
+        partition by ce.staff_id, ce.recorded_date
         order by ce.event_timestamp, ce.event_id
       ) as next_event_timestamp
     from public.get_effective_clock_events(range_start, range_end, null) ce
@@ -926,6 +1178,106 @@ $$;
 revoke all on function public.get_manager_hours_preview(date, date)
 from public, anon, authenticated;
 grant execute on function public.get_manager_hours_preview(date, date) to authenticated;
+
+create or replace function public.get_own_attendance_records(
+  range_start date,
+  range_end date
+)
+returns table (
+  record_kind text,
+  id uuid,
+  event_type text,
+  event_timestamp timestamptz,
+  recorded_date date,
+  event_source text,
+  manager_correction boolean,
+  correction_kind text,
+  original_event_id uuid,
+  supersedes_correction_id uuid,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  staff_account public.staff_accounts;
+begin
+  staff_account := public.current_staff_account();
+  if staff_account.id is null
+    or staff_account.role <> 'staff'
+    or staff_account.active is not true then
+    raise exception 'Staff access required';
+  end if;
+  if range_start is null
+    or range_end is null
+    or range_start > range_end
+    or (range_end - range_start) + 1 > 94 then
+    raise exception 'Choose a valid attendance range of up to 94 days';
+  end if;
+
+  return query
+  select
+    records.record_kind,
+    records.id,
+    records.event_type,
+    records.event_timestamp,
+    records.recorded_date,
+    records.event_source,
+    records.manager_correction,
+    records.correction_kind,
+    records.original_event_id,
+    records.supersedes_correction_id,
+    records.created_at
+  from (
+    select
+      'original'::text as record_kind,
+      event.id,
+      event.event_type,
+      event.event_timestamp,
+      event.recorded_date,
+      event.event_source,
+      event.manager_correction,
+      null::text as correction_kind,
+      null::uuid as original_event_id,
+      null::uuid as supersedes_correction_id,
+      event.created_at
+    from public.clock_events event
+    where event.staff_id = staff_account.staff_id
+      and event.recorded_date between range_start and range_end
+
+    union all
+
+    select
+      'correction'::text,
+      correction.id,
+      correction.event_type,
+      correction.event_timestamp,
+      correction.recorded_date,
+      'manager_correction'::text,
+      true,
+      correction.correction_kind,
+      correction.original_event_id,
+      correction.supersedes_correction_id,
+      correction.created_at
+    from public.clock_event_corrections correction
+    where correction.staff_id = staff_account.staff_id
+      and correction.recorded_date between range_start and range_end
+  ) records
+  order by
+    records.recorded_date,
+    case when records.record_kind = 'original' then 0 else 1 end,
+    coalesce(records.event_timestamp, records.created_at),
+    records.created_at,
+    records.id;
+end;
+$$;
+
+revoke all on function public.get_own_attendance_records(date, date)
+from public, anon, authenticated;
+grant execute on function public.get_own_attendance_records(date, date)
+to authenticated;
 
 create or replace function public.get_latest_effective_clock_event(
   target_staff_id text,

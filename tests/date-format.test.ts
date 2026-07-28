@@ -15,4 +15,16 @@ describe("London local datetime conversion", () => {
     expect(converted.recordedDate).toBe("2026-01-28");
     expect(converted.timestamp.toISOString()).toBe("2026-01-28T23:30:00.000Z");
   });
+
+  it("rejects a local time skipped by the spring clock change", () => {
+    expect(() => londonLocalDateTimeToUtc("2026-03-29T01:30"))
+      .toThrow("Invalid local date and time.");
+  });
+
+  it("selects the later GMT occurrence during the autumn overlap", () => {
+    const converted = londonLocalDateTimeToUtc("2026-10-25T01:30");
+
+    expect(converted.recordedDate).toBe("2026-10-25");
+    expect(converted.timestamp.toISOString()).toBe("2026-10-25T01:30:00.000Z");
+  });
 });

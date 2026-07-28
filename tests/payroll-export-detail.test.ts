@@ -183,6 +183,31 @@ describe("payroll export detail calculations", () => {
     expect(detail.dailyRows[0].warnings).toContain("Manager correction");
   });
 
+  it("excludes legacy manager-entered originals from raw kiosk hours", () => {
+    const rawIn = event("raw-in", "clock_in", "2026-07-01T08:00:00+01:00");
+    const rawOut = event("raw-out", "clock_out", "2026-07-01T17:00:00+01:00");
+    const legacyIn = event("legacy-in", "clock_in", "2026-07-01T18:00:00+01:00", true);
+    const legacyOut = event("legacy-out", "clock_out", "2026-07-01T20:00:00+01:00", true);
+    const detail = createPayrollExportDetail({
+      staff: [staff],
+      shifts: [],
+      attendance: {
+        effectiveEvents: [rawIn, rawOut],
+        audit: {
+          originalEvents: [rawIn, rawOut, legacyIn, legacyOut],
+          correctionRecords: [],
+        },
+      },
+      reviews: [],
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-01",
+    });
+
+    expect(detail.dailyRows[0].rawWorkedMinutes).toBe(540);
+    expect(detail.dailyRows[0].originalClockIns).toEqual([rawIn.eventTimestamp]);
+    expect(detail.dailyRows[0].originalClockOuts).toEqual([rawOut.eventTimestamp]);
+  });
+
   it("exports replaced originals separately while calculating from effective corrections", () => {
     const attendance = buildProductionAttendanceData(
       [{

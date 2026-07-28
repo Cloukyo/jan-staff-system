@@ -41,7 +41,7 @@ const row: PayrollImportReviewRow = {
 };
 
 describe("payroll import review", () => {
-  it("calculates pay-preparation time from effective events and retains separate audit records", () => {
+  it("calculates raw and reviewed pay-preparation time from separate audit representations", () => {
     const attendance = buildProductionAttendanceData(
       [{
         id: "raw-in",
@@ -124,11 +124,12 @@ describe("payroll import review", () => {
     };
     const preparation = createPayrollPreparationRow(
       staff,
+      attendance.audit.originalEvents,
       attendance.effectiveEvents,
       "2026-07-28",
       "2026-07-28",
     );
-    expect(preparation.recordedMinutes).toBe(420);
+    expect(preparation.recordedMinutes).toBe(480);
     expect(preparation.adjustedMinutes).toBe(420);
   });
 

@@ -14,11 +14,18 @@ import Link from "next/link";
 import { ClockPlus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
 import { parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
+import { saveBoundClockEventCorrectionAction } from "@/lib/attendance/correction-actions";
 import { requireAccount } from "@/lib/auth/permissions";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
 import { loadAttendanceReviewDay } from "@/lib/attendance/review-server";
-import { loadAttendanceDay, loadStaffHoursList, loadStaffHoursWeek, previousLondonDate } from "@/lib/attendance/staff-hours";
+import {
+  loadAttendanceDay,
+  loadMissingEventPage,
+  loadStaffHoursList,
+  loadStaffHoursWeek,
+  previousLondonDate,
+} from "@/lib/attendance/staff-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +45,22 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const yesterday = view === "yesterday" ? await loadAttendanceDay(yesterdayDate) : null;
   const staffHoursList = view === "hours" && !staffIdProvided ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
   const staffHoursWeek = view === "hours" && staffIdProvided && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
+  const missingEvent = view === "add-event" ? await loadMissingEventPage(staffId, date) : null;
+  const missingEventReturnTo = missingEvent?.day
+    ? `/attendance?${new URLSearchParams({
+        view: "add-event",
+        staffId: missingEvent.day.staffId,
+        date: missingEvent.date,
+      }).toString()}`
+    : "/attendance?view=add-event";
+  const missingEventAction = missingEvent?.day
+    ? saveBoundClockEventCorrectionAction.bind(null, {
+        staffId: missingEvent.day.staffId,
+        attendanceDate: missingEvent.date,
+        returnTo: missingEventReturnTo,
+        eventRevision: missingEvent.day.eventRevision,
+      })
+    : null;
   return (
     <AppShell>
       <div className="mb-5">
@@ -78,7 +101,13 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
         {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
         {view === "hours" && staffIdProvided && !staffHoursWeek ? <StaffHoursNotFound /> : null}
-        {view === "add-event" ? <AttendanceCorrectionForm /> : null}
+        {view === "add-event" && missingEvent ? (
+          <AttendanceCorrectionForm
+            data={missingEvent}
+            action={missingEventAction}
+            returnTo={missingEventReturnTo}
+          />
+        ) : null}
         {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
       </div>
     </AppShell>

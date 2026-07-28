@@ -31,6 +31,26 @@ function londonOffsetAt(instant: number) {
   ) - instant;
 }
 
+function matchesLondonDateTime(
+  instant: number,
+  expected: {
+    year: string;
+    month: string;
+    day: string;
+    hour: string;
+    minute: string;
+    second: string;
+  },
+): boolean {
+  const actual = londonDateTimeParts(instant);
+  return actual.year === expected.year
+    && actual.month === expected.month
+    && actual.day === expected.day
+    && actual.hour === expected.hour
+    && actual.minute === expected.minute
+    && actual.second === expected.second;
+}
+
 export function isoDateInLondon(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     year: "numeric",
@@ -54,20 +74,57 @@ export function londonLocalDateTimeToUtc(value: string): { recordedDate: string;
   if (!match) throw new RangeError("Invalid local date and time.");
 
   const [, year, month, day, hour, minute, second = "00"] = match;
+  const numeric = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second),
+  };
   const intended = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
+    numeric.year,
+    numeric.month - 1,
+    numeric.day,
+    numeric.hour,
+    numeric.minute,
+    numeric.second,
   );
-  let result = intended - londonOffsetAt(intended);
-  result = intended - londonOffsetAt(result);
-  const timestamp = new Date(result);
+  const intendedDate = new Date(intended);
+  if (
+    intendedDate.getUTCFullYear() !== numeric.year
+    || intendedDate.getUTCMonth() !== numeric.month - 1
+    || intendedDate.getUTCDate() !== numeric.day
+    || intendedDate.getUTCHours() !== numeric.hour
+    || intendedDate.getUTCMinutes() !== numeric.minute
+    || intendedDate.getUTCSeconds() !== numeric.second
+  ) {
+    throw new RangeError("Invalid local date and time.");
+  }
 
+  const expected = { year, month, day, hour, minute, second };
+  const sampleWindow = 36 * 60 * 60 * 1000;
+  const offsets = new Set([
+    londonOffsetAt(intended - sampleWindow),
+    londonOffsetAt(intended),
+    londonOffsetAt(intended + sampleWindow),
+  ]);
+  const candidates = [...offsets]
+    .map((offset) => intended - offset)
+    .filter((candidate) => matchesLondonDateTime(candidate, expected))
+    .sort((left, right) => left - right);
+  const selected = candidates.at(-1);
+  if (selected === undefined || !matchesLondonDateTime(selected, expected)) {
+    throw new RangeError("Invalid local date and time.");
+  }
+
+  const timestamp = new Date(selected);
+  const recordedDate = `${year}-${month}-${day}`;
+  if (isoDateInLondon(timestamp) !== recordedDate) {
+    throw new RangeError("Invalid local date and time.");
+  }
   return {
-    recordedDate: isoDateInLondon(timestamp),
+    recordedDate,
     timestamp,
   };
 }

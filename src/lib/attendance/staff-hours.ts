@@ -134,6 +134,7 @@ export type StaffHoursDay = {
   displayName: string;
   fullName: string;
   date: string;
+  eventRevision: string;
   plannedPeriods: StaffHoursPlannedPeriod[];
   audit: {
     originals: StaffHoursOriginalAudit[];
@@ -179,6 +180,13 @@ export type StaffHoursWeek = Omit<StaffHoursRange, "staff"> & {
 export type AttendanceDay = {
   date: string;
   rows: StaffHoursDay[];
+};
+
+export type MissingEventPage = {
+  date: string;
+  staff: StaffHoursListRow[];
+  selectedStaffId: string | null;
+  day: StaffHoursDay | null;
 };
 
 export type StaffHoursRangeSource = {
@@ -277,6 +285,13 @@ export function toAttendanceCorrection(row: ClockCorrectionResolverSourceRow): A
   };
 }
 
+export function buildAttendanceEventRevision(
+  originalEventIds: string[],
+  correctionIds: string[],
+): string {
+  return `events:${[...originalEventIds].sort().join(",")}|corrections:${[...correctionIds].sort().join(",")}`;
+}
+
 function buildStaffDay(
   profile: StaffHoursProfileSourceRow,
   date: string,
@@ -314,6 +329,10 @@ function buildStaffDay(
     displayName: profile.display_name,
     fullName: profile.full_name,
     date,
+    eventRevision: buildAttendanceEventRevision(
+      originalRows.map((row) => row.id),
+      correctionRows.map((row) => row.id),
+    ),
     plannedPeriods,
     audit: {
       originals: orderedByTimestamp(resolved.audit.originals.map((audit) => {
@@ -418,6 +437,43 @@ export function buildStaffHoursRange(input: StaffHoursRangeSource): StaffHoursRa
     currentWeekEnd: input.currentWeekEnd,
     staff,
     days,
+  };
+}
+
+export function buildMissingEventPage(
+  range: StaffHoursRange,
+  selectedStaffId: string | null,
+  date: string,
+): MissingEventPage {
+  const selectedStaff = selectedStaffId
+    ? range.staff.find((person) => person.staffId === selectedStaffId)
+    : undefined;
+  const existingDay = selectedStaff
+    ? range.days.find((day) => day.staffId === selectedStaff.staffId && day.date === date)
+    : undefined;
+  const day = existingDay ?? (selectedStaff
+    ? {
+        staffId: selectedStaff.staffId,
+        displayName: selectedStaff.displayName,
+        fullName: selectedStaff.fullName,
+        date,
+        eventRevision: buildAttendanceEventRevision([], []),
+        plannedPeriods: [],
+        audit: { originals: [], corrections: [] },
+        effectiveEvents: [],
+        sessions: [],
+        completedMinutes: 0,
+        hasOpenShift: false,
+        warnings: [],
+        suggestedMissingType: "clock_in" as const,
+        review: null,
+      }
+    : null);
+  return {
+    date,
+    staff: range.staff,
+    selectedStaffId: selectedStaff?.staffId ?? null,
+    day,
   };
 }
 
@@ -568,4 +624,14 @@ export async function loadAttendanceDay(dateValue: string): Promise<AttendanceDa
       return issueOrder || compareNames(left, right);
     }),
   };
+}
+
+export async function loadMissingEventPage(
+  staffIdValue?: string,
+  dateValue?: string,
+): Promise<MissingEventPage> {
+  const date = validIsoDate(dateValue) ? dateValue : isoDateInLondon();
+  const staffId = parseStaffHoursWeekId(staffIdValue);
+  const range = await loadStaffHoursRange(date, date);
+  return buildMissingEventPage(range, staffId, date);
 }

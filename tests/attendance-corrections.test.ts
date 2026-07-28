@@ -412,7 +412,7 @@ describe("attendance correction control contracts", () => {
       events: effectiveEvents,
       selectedEventId: null,
       selectedEventType: "clock_in",
-      localDateTime: "2026-07-28T08:00",
+      localDateTime: "2026-07-28T10:00",
       staffId: "staff-1",
     })).toEqual([
       {
@@ -421,6 +421,29 @@ describe("attendance correction control contracts", () => {
         eventTimestamp: "2026-07-28T11:00:00.000Z",
       },
     ]);
+  });
+
+  it("previews an existing event after an addition at the same instant using the database tie-break", () => {
+    expect(previewManualCorrectionChanges({
+      events: [{
+        id: "10000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_in",
+        eventTimestamp: "2026-07-28T07:00:00.000Z",
+        recordedDate: date,
+        source: "kiosk",
+        originalEventId: null,
+        correctionId: null,
+      }],
+      selectedEventId: null,
+      selectedEventType: "clock_in",
+      localDateTime: "2026-07-28T08:00",
+      staffId: "staff-1",
+    })).toEqual([{
+      targetEventId: "10000000-0000-0000-0000-000000000000",
+      eventType: "clock_out",
+      eventTimestamp: "2026-07-28T07:00:00.000Z",
+    }]);
   });
 
   it("leaves the added-event preview empty while its date and time are incomplete", () => {
@@ -523,6 +546,43 @@ describe("attendance correction control contracts", () => {
       canApply: true,
     });
   });
+
+  it("classifies equivalent offset and Z timestamps at the same planned boundaries", () => {
+    expect(previewPlannedHoursChanges({
+      date,
+      plannedPeriods: [
+        { id: "day", startTime: "08:00", endTime: "17:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [
+        {
+          id: "start",
+          staffId: "staff-1",
+          eventType: "clock_in",
+          eventTimestamp: "2026-07-28T08:00:00+01:00",
+          recordedDate: date,
+          source: "kiosk",
+          originalEventId: null,
+          correctionId: null,
+        },
+        {
+          id: "finish",
+          staffId: "staff-1",
+          eventType: "clock_out",
+          eventTimestamp: "2026-07-28T17:00:00+01:00",
+          recordedDate: date,
+          source: "kiosk",
+          originalEventId: null,
+          correctionId: null,
+        },
+      ],
+    })).toEqual({
+      plannedStart: "08:00",
+      plannedFinish: "17:00",
+      changes: [],
+      additions: [],
+      canApply: true,
+    });
+  });
 });
 
 describe("append-only attendance correction migration", () => {
@@ -616,8 +676,10 @@ describe("append-only attendance correction migration", () => {
       "utf8",
     );
 
-    expect(actions).toContain("save_clock_event_correction_chain");
+    expect(actions).toContain("save_manual_clock_event_correction");
     expect(actions).toContain("use_planned_hours");
+    expect(actions).toContain("expected_revision");
+    expect(actions).not.toContain('rpc("save_clock_event_correction_chain"');
     expect(actions).not.toMatch(/clock_events[\s\S]{0,120}\.(update|delete)\b/i);
     expect(actions).toContain('revalidatePath("/attendance")');
     expect(actions).toContain('revalidatePath("/clock")');

@@ -2,6 +2,13 @@ import { createClient } from "@supabase/supabase-js";
 import { getAppMode } from "@/lib/app-mode";
 import { getSupabaseConfig, hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import {
+  resolveEffectiveEvents,
+  type AttendanceCorrection,
+  type AttendanceCorrectionKind,
+  type AttendanceEventType,
+  type OriginalClockEvent,
+} from "@/lib/attendance/effective-events";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
@@ -104,12 +111,45 @@ export type ManagerKioskRow = KioskRosterEntry & {
 export type ManagerClockEvent = {
   id: string;
   staffId: string;
-  eventType: "clock_in" | "clock_out";
-  eventTimestamp: string;
+  recordType: "original" | "correction";
+  eventType: AttendanceEventType | null;
+  eventTimestamp: string | null;
   recordedDate: string;
-  eventSource: "kiosk" | "manager";
+  eventSource: "kiosk" | "manager" | "manager_correction";
   managerCorrection: boolean;
   correctionReason: string | null;
+  auditStatus: "active" | "replaced" | "excluded" | "superseded";
+  correctionKind: AttendanceCorrectionKind | null;
+  originalEventId: string | null;
+  supersedesCorrectionId: string | null;
+  createdAt: string;
+  createdByName: string | null;
+};
+
+type ManagerClockEventSourceRow = {
+  id: string;
+  staff_id: string;
+  event_type: AttendanceEventType;
+  event_timestamp: string;
+  recorded_date: string;
+  event_source: "kiosk" | "manager";
+  manager_correction: boolean;
+  correction_reason: string | null;
+  created_at: string;
+};
+
+type ManagerClockCorrectionSourceRow = {
+  id: string;
+  staff_id: string;
+  correction_kind: AttendanceCorrectionKind;
+  original_event_id: string | null;
+  supersedes_correction_id: string | null;
+  event_type: AttendanceEventType | null;
+  event_timestamp: string | null;
+  recorded_date: string;
+  reason: string;
+  created_by: string;
+  created_at: string;
 };
 
 type ManagerEffectiveStatusRow = {
@@ -126,21 +166,104 @@ export function mapEffectiveManagerStatuses(
   ]));
 }
 
+export function buildManagerClockHistory(
+  originalRows: ManagerClockEventSourceRow[],
+  correctionRows: ManagerClockCorrectionSourceRow[],
+  accountNames: Map<string, string>,
+): ManagerClockEvent[] {
+  const originals: OriginalClockEvent[] = originalRows.map((row) => ({
+    id: row.id,
+    staffId: row.staff_id,
+    eventType: row.event_type,
+    eventTimestamp: row.event_timestamp,
+    recordedDate: row.recorded_date,
+    source: row.event_source === "manager" || row.manager_correction
+      ? "legacy_manager"
+      : "kiosk",
+  }));
+  const corrections: AttendanceCorrection[] = correctionRows.map((row) => ({
+    id: row.id,
+    staffId: row.staff_id,
+    kind: row.correction_kind,
+    originalEventId: row.original_event_id,
+    eventType: row.event_type,
+    eventTimestamp: row.event_timestamp,
+    recordedDate: row.recorded_date,
+    supersedesCorrectionId: row.supersedes_correction_id,
+    createdAt: row.created_at,
+  }));
+  const audit = resolveEffectiveEvents(originals, corrections).audit;
+  const originalStatus = new Map(audit.originals.map((record) => [
+    record.event.id,
+    record.status,
+  ]));
+  const correctionStatus = new Map(audit.corrections.map((record) => [
+    record.correctionId,
+    record.status,
+  ]));
+
+  return [
+    ...originalRows.map((row): ManagerClockEvent => ({
+      id: row.id,
+      staffId: row.staff_id,
+      recordType: "original",
+      eventType: row.event_type,
+      eventTimestamp: row.event_timestamp,
+      recordedDate: row.recorded_date,
+      eventSource: row.event_source,
+      managerCorrection: row.event_source === "manager" || row.manager_correction,
+      correctionReason: row.correction_reason,
+      auditStatus: originalStatus.get(row.id) ?? "active",
+      correctionKind: null,
+      originalEventId: null,
+      supersedesCorrectionId: null,
+      createdAt: row.created_at,
+      createdByName: null,
+    })),
+    ...correctionRows.map((row): ManagerClockEvent => ({
+      id: row.id,
+      staffId: row.staff_id,
+      recordType: "correction",
+      eventType: row.event_type,
+      eventTimestamp: row.event_timestamp,
+      recordedDate: row.recorded_date,
+      eventSource: "manager_correction",
+      managerCorrection: true,
+      correctionReason: row.reason,
+      auditStatus: correctionStatus.get(row.id) ?? "superseded",
+      correctionKind: row.correction_kind,
+      originalEventId: row.original_event_id,
+      supersedesCorrectionId: row.supersedes_correction_id,
+      createdAt: row.created_at,
+      createdByName: accountNames.get(row.created_by) ?? "Manager account",
+    })),
+  ].sort((left, right) => (
+    Date.parse(right.createdAt) - Date.parse(left.createdAt)
+    || right.id.localeCompare(left.id)
+  ));
+}
+
 export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[]; events: ManagerClockEvent[] }> {
   const supabase = await createSupabaseServerClient();
-  const [profiles, settings, events, effectiveStatuses] = await Promise.all([
+  const [profiles, settings, events, corrections, accounts, effectiveStatuses] = await Promise.all([
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),
-    supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason").order("event_timestamp", { ascending: false }).limit(250),
+    supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason,created_at").order("event_timestamp", { ascending: false }).limit(250),
+    supabase.from("clock_event_corrections").select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at").order("created_at", { ascending: false }).limit(250),
+    supabase.from("staff_accounts").select("id,full_name").eq("role", "manager"),
     supabase.rpc("get_manager_kiosk_statuses", {
       reference_date: isoDateInLondon(),
     }),
   ]);
-  if (profiles.error || settings.error || events.error || effectiveStatuses.error) {
+  if (profiles.error || settings.error || events.error || corrections.error || accounts.error || effectiveStatuses.error) {
     throw new Error("Production attendance could not be loaded.");
   }
   const settingMap = new Map((settings.data ?? []).map((row) => [row.staff_id, row]));
-  const eventRows = (events.data ?? []) as Array<Record<string, unknown>>;
+  const eventRows = (events.data ?? []) as ManagerClockEventSourceRow[];
+  const correctionRows = (corrections.data ?? []) as ManagerClockCorrectionSourceRow[];
+  const accountNames = new Map(
+    (accounts.data ?? []).map((row) => [String(row.id), String(row.full_name)]),
+  );
   const statusByStaff = mapEffectiveManagerStatuses(
     (effectiveStatuses.data ?? []) as ManagerEffectiveStatusRow[],
   );
@@ -169,15 +292,6 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
         lastKioskUseAt: lastKioskUseByStaff.get(row.id) ?? null,
       };
     }),
-    events: eventRows.map((row) => ({
-      id: String(row.id),
-      staffId: String(row.staff_id),
-      eventType: String(row.event_type) as "clock_in" | "clock_out",
-      eventTimestamp: String(row.event_timestamp),
-      recordedDate: String(row.recorded_date),
-      eventSource: String(row.event_source) as "kiosk" | "manager",
-      managerCorrection: Boolean(row.manager_correction),
-      correctionReason: row.correction_reason ? String(row.correction_reason) : null,
-    })),
+    events: buildManagerClockHistory(eventRows, correctionRows, accountNames),
   };
 }

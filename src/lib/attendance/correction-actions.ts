@@ -1,20 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
-import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
+import type { AttendanceEventType } from "@/lib/attendance/effective-events";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { londonLocalDateTimeToUtc } from "@/lib/dates/format";
 
 export type CorrectionActionInput = {
   staffId: string;
-  originalEventId?: string;
+  attendanceDate: string;
+  targetEventId?: string;
   eventType: "clock_in" | "clock_out";
   localDateTime: string;
   reason: string;
   returnTo: string;
-  expectedAttendanceDate?: string;
+  expectedRevision: string;
 };
 
 export type PlannedHoursActionInput = {
@@ -22,6 +22,7 @@ export type PlannedHoursActionInput = {
   attendanceDate: string;
   reason: string;
   returnTo?: string;
+  expectedRevision: string;
 };
 
 export type CorrectionActionResult = {
@@ -34,25 +35,7 @@ export type BoundAttendanceCorrectionContext = {
   staffId: string;
   attendanceDate: string;
   returnTo: string;
-};
-
-type OriginalEventRow = {
-  id: string;
-  staff_id: string;
-  event_type: AttendanceEventType;
-  event_timestamp: string;
-  recorded_date: string;
-};
-
-type EffectiveEventRow = {
-  event_id: string;
-  original_event_id: string | null;
-  correction_id: string | null;
-  staff_id: string;
-  event_type: AttendanceEventType;
-  event_timestamp: string;
-  recorded_date: string;
-  source: EffectiveClockEvent["source"];
+  eventRevision: string;
 };
 
 const invalidCorrection: CorrectionActionResult = {
@@ -72,12 +55,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isCorrectionActionInput(value: unknown): value is CorrectionActionInput {
   return isRecord(value)
     && typeof value.staffId === "string"
+    && typeof value.attendanceDate === "string"
     && typeof value.eventType === "string"
     && typeof value.localDateTime === "string"
     && typeof value.reason === "string"
     && typeof value.returnTo === "string"
-    && (value.expectedAttendanceDate === undefined || typeof value.expectedAttendanceDate === "string")
-    && (value.originalEventId === undefined || typeof value.originalEventId === "string");
+    && typeof value.expectedRevision === "string"
+    && (value.targetEventId === undefined || typeof value.targetEventId === "string");
 }
 
 function isPlannedHoursActionInput(value: unknown): value is PlannedHoursActionInput {
@@ -85,6 +69,7 @@ function isPlannedHoursActionInput(value: unknown): value is PlannedHoursActionI
     && typeof value.staffId === "string"
     && typeof value.attendanceDate === "string"
     && typeof value.reason === "string"
+    && typeof value.expectedRevision === "string"
     && (value.returnTo === undefined || typeof value.returnTo === "string");
 }
 
@@ -97,24 +82,30 @@ function revalidateAttendancePaths(returnTo?: string) {
   }
 }
 
-function effectiveEvent(row: EffectiveEventRow): EffectiveClockEvent {
+function attendanceChanged(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === "40001"
+    || Boolean(error?.message?.includes("Attendance changed after this preview"));
+}
+
+function attendanceChangedResult(): CorrectionActionResult {
   return {
-    id: row.event_id,
-    originalEventId: row.original_event_id,
-    correctionId: row.correction_id,
-    staffId: row.staff_id,
-    eventType: row.event_type,
-    eventTimestamp: row.event_timestamp,
-    recordedDate: row.recorded_date,
-    source: row.source,
+    ok: false,
+    code: "attendance_changed",
+    message: "Attendance changed after this preview. Reload the day and review it again before saving.",
   };
 }
 
-export async function saveClockEventCorrectionAction(input: CorrectionActionInput): Promise<CorrectionActionResult> {
+async function saveClockEventCorrection(input: CorrectionActionInput): Promise<CorrectionActionResult> {
   await requireAccount(["manager"]);
   if (!isCorrectionActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
-  if (!input.staffId || !["clock_in", "clock_out"].includes(input.eventType) || reason.length < 5) {
+  if (
+    !input.staffId
+    || !validDate(input.attendanceDate)
+    || !["clock_in", "clock_out"].includes(input.eventType)
+    || !input.expectedRevision
+    || reason.length < 5
+  ) {
     return invalidCorrection;
   }
 
@@ -124,75 +115,28 @@ export async function saveClockEventCorrectionAction(input: CorrectionActionInpu
   } catch {
     return invalidCorrection;
   }
-  if (input.expectedAttendanceDate && localDateTime.recordedDate !== input.expectedAttendanceDate) {
+  if (localDateTime.recordedDate !== input.attendanceDate) {
     return invalidCorrection;
   }
 
   const supabase = await createSupabaseServerClient();
-  let originalEvent: OriginalEventRow | null = null;
-  if (input.originalEventId) {
-    const { data, error } = await supabase
-      .from("clock_events")
-      .select("id,staff_id,event_type,event_timestamp,recorded_date")
-      .eq("id", input.originalEventId)
-      .maybeSingle();
-    originalEvent = data as OriginalEventRow | null;
-    if (error) {
-      return { ok: false, code: "load_failed", message: "The original clock event could not be loaded." };
-    }
-    if (!originalEvent || originalEvent.staff_id !== input.staffId || originalEvent.recorded_date !== localDateTime.recordedDate) {
-      return invalidCorrection;
-    }
-  }
-
-  const attendanceDate = originalEvent?.recorded_date ?? localDateTime.recordedDate;
-  const { data, error: effectiveEventsError } = await supabase.rpc("get_effective_clock_events", {
-    range_start: attendanceDate,
-    range_end: attendanceDate,
+  const { error } = await supabase.rpc("save_manual_clock_event_correction", {
     target_staff_id: input.staffId,
+    target_date: input.attendanceDate,
+    target_event_id: input.targetEventId?.trim() || null,
+    requested_event_type: input.eventType,
+    requested_event_timestamp: localDateTime.timestamp.toISOString(),
+    reason,
+    expected_revision: input.expectedRevision,
   });
-  if (effectiveEventsError) return { ok: false, code: "load_failed", message: "The attendance events could not be loaded." };
-
-  const effectiveEvents = ((data ?? []) as EffectiveEventRow[]).map(effectiveEvent);
-  const consequential = planManualCorrectionConsequences({
-    events: effectiveEvents,
-    selectedEventId: originalEvent?.id ?? null,
-    staffId: input.staffId,
-    recordedDate: attendanceDate,
-    eventType: input.eventType,
-    eventTimestamp: localDateTime.timestamp.toISOString(),
-  }).map((planned) => ({
-    staff_id: input.staffId,
-    recorded_date: attendanceDate,
-    correction_kind: "replace",
-    original_event_id: planned.originalEventId,
-    supersedes_correction_id: planned.supersedesCorrectionId,
-    event_type: planned.eventType,
-    event_timestamp: planned.eventTimestamp,
-  }));
-
-  const { error } = await supabase.rpc("save_clock_event_correction_chain", {
-    plan: {
-      reason,
-      primary: {
-        staff_id: input.staffId,
-        recorded_date: localDateTime.recordedDate,
-        correction_kind: originalEvent ? "replace" : "add",
-        original_event_id: originalEvent?.id ?? null,
-        supersedes_correction_id: null,
-        event_type: input.eventType,
-        event_timestamp: localDateTime.timestamp.toISOString(),
-      },
-      consequential,
-    },
-  });
+  if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) return { ok: false, code: "save_failed", message: "The correction could not be recorded." };
 
   revalidateAttendancePaths(input.returnTo);
   return {
     ok: true,
     code: "saved",
-    message: originalEvent
+    message: input.targetEventId
       ? "The correction was saved without changing the original clock events."
       : "The correction was added without changing the original clock events.",
   };
@@ -203,18 +147,19 @@ export async function saveBoundClockEventCorrectionAction(
   _state: CorrectionActionResult,
   formData: FormData,
 ): Promise<CorrectionActionResult> {
-  return saveClockEventCorrectionAction({
+  return saveClockEventCorrection({
     staffId: context.staffId,
-    originalEventId: String(formData.get("originalEventId") ?? "") || undefined,
+    attendanceDate: context.attendanceDate,
+    targetEventId: String(formData.get("targetEventId") ?? "") || undefined,
     eventType: String(formData.get("eventType") ?? "") as AttendanceEventType,
     localDateTime: String(formData.get("localDateTime") ?? ""),
     reason: String(formData.get("reason") ?? ""),
     returnTo: context.returnTo,
-    expectedAttendanceDate: context.attendanceDate,
+    expectedRevision: context.eventRevision,
   });
 }
 
-export async function usePlannedHoursAction(input: PlannedHoursActionInput): Promise<CorrectionActionResult> {
+async function applyPlannedHours(input: PlannedHoursActionInput): Promise<CorrectionActionResult> {
   await requireAccount(["manager"]);
   if (!isPlannedHoursActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
@@ -225,7 +170,9 @@ export async function usePlannedHoursAction(input: PlannedHoursActionInput): Pro
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     reason,
+    expected_revision: input.expectedRevision,
   });
+  if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) return { ok: false, code: "save_failed", message: "Planned hours could not be applied." };
   if (!data) return { ok: true, code: "no_changes", message: "Attendance already matches the published planned hours." };
 
@@ -233,17 +180,16 @@ export async function usePlannedHoursAction(input: PlannedHoursActionInput): Pro
   return { ok: true, code: "saved", message: "Published planned hours were applied as manager corrections." };
 }
 
-const applyPublishedPlannedHoursAction = usePlannedHoursAction;
-
 export async function useBoundPlannedHoursAction(
   context: BoundAttendanceCorrectionContext,
   _state: CorrectionActionResult,
   formData: FormData,
 ): Promise<CorrectionActionResult> {
-  return applyPublishedPlannedHoursAction({
+  return applyPlannedHours({
     staffId: context.staffId,
     attendanceDate: context.attendanceDate,
     reason: String(formData.get("reason") ?? ""),
     returnTo: context.returnTo,
+    expectedRevision: context.eventRevision,
   });
 }

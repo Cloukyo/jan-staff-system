@@ -7,9 +7,11 @@ import type { PGlite } from "@electric-sql/pglite";
 import {
   MANAGER_ACCOUNT_ID,
   STAFF_ACCOUNT_ID,
+  attendanceRevision,
   createAttendanceTestDatabase,
   effectiveEvents,
   resetRole,
+  saveManualCorrection,
   seedClockEvent,
   seedStaffShift,
   setAuthenticatedRole,
@@ -380,6 +382,217 @@ describe("attendance correction PostgreSQL migration", () => {
     ]);
   });
 
+  it("fixes an active manager-added correction by superseding that correction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "fix-added-correction", date: "2026-08-15" });
+
+    const firstBatch = await saveManualCorrection(db, {
+      staffId: "fix-added-correction",
+      date: "2026-08-15",
+      eventType: "clock_in",
+      timestamp: "2026-08-15T09:00:00+01:00",
+    });
+    const first = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [firstBatch],
+    );
+
+    const secondBatch = await saveManualCorrection(db, {
+      staffId: "fix-added-correction",
+      date: "2026-08-15",
+      targetEventId: first.rows[0].id,
+      eventType: "clock_in",
+      timestamp: "2026-08-15T09:15:00+01:00",
+    });
+    const second = await db.query<{
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+    }>(
+      `select original_event_id::text, supersedes_correction_id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [secondBatch],
+    );
+
+    expect(second.rows[0]).toEqual({
+      original_event_id: null,
+      supersedes_correction_id: first.rows[0].id,
+    });
+    expect(await effectiveEvents(db, "fix-added-correction", "2026-08-15"))
+      .toMatchObject([{ event_type: "clock_in", local_time: "09:15" }]);
+  });
+
+  it("re-fixes an original by superseding its active leaf instead of forking the chain", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "refix-original", date: "2026-08-16" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "refix-original",
+      timestamp: "2026-08-16T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const firstBatch = await saveManualCorrection(db, {
+      staffId: "refix-original",
+      date: "2026-08-16",
+      targetEventId: originalId,
+      eventType: "clock_in",
+      timestamp: "2026-08-16T09:00:00+01:00",
+    });
+    const first = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [firstBatch],
+    );
+
+    const secondBatch = await saveManualCorrection(db, {
+      staffId: "refix-original",
+      date: "2026-08-16",
+      targetEventId: originalId,
+      eventType: "clock_in",
+      timestamp: "2026-08-16T09:30:00+01:00",
+    });
+    const second = await db.query<{
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+    }>(
+      `select original_event_id::text, supersedes_correction_id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [secondBatch],
+    );
+
+    expect(second.rows[0]).toEqual({
+      original_event_id: null,
+      supersedes_correction_id: first.rows[0].id,
+    });
+  });
+
+  it("rejects a sibling correction that targets an already-corrected original", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "reject-correction-fork", date: "2026-08-17" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "reject-correction-fork",
+      timestamp: "2026-08-17T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    await saveManualCorrection(db, {
+      staffId: "reject-correction-fork",
+      date: "2026-08-17",
+      targetEventId: originalId,
+      eventType: "clock_in",
+      timestamp: "2026-08-17T09:00:00+01:00",
+    });
+
+    await expect(db.query(
+      `insert into public.clock_event_corrections (
+         batch_id, correction_role, staff_id, correction_kind,
+         original_event_id, event_type, event_timestamp, recorded_date,
+         reason, created_by
+       )
+       values (
+         gen_random_uuid(), 'primary', 'reject-correction-fork', 'replace',
+         $1::uuid, 'clock_in', '2026-08-17T09:30:00+01:00', '2026-08-17',
+         'Invalid sibling correction', $2::uuid
+       )`,
+      [originalId, MANAGER_ACCOUNT_ID],
+    )).rejects.toThrow(/active correction|supersede/i);
+  });
+
+  it("plans all manual consequences inside the database transaction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "database-manual-plan", date: "2026-08-18" });
+    const firstId = await seedClockEvent(db, {
+      staffId: "database-manual-plan",
+      timestamp: "2026-08-18T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    await seedClockEvent(db, {
+      staffId: "database-manual-plan",
+      timestamp: "2026-08-18T12:00:00+01:00",
+      eventType: "clock_in",
+    });
+
+    const batchId = await saveManualCorrection(db, {
+      staffId: "database-manual-plan",
+      date: "2026-08-18",
+      targetEventId: firstId,
+      eventType: "clock_in",
+      timestamp: "2026-08-18T08:15:00+01:00",
+    });
+    const roles = await db.query<{ correction_role: string }>(
+      `select correction_role
+       from public.clock_event_corrections
+       where batch_id = $1::uuid
+       order by correction_role desc`,
+      [batchId],
+    );
+
+    expect(roles.rows.map((row) => row.correction_role)).toEqual([
+      "primary",
+      "consequential",
+    ]);
+    expect(await effectiveEvents(db, "database-manual-plan", "2026-08-18"))
+      .toMatchObject([
+        { event_type: "clock_in", local_time: "08:15" },
+        { event_type: "clock_out", local_time: "12:00" },
+      ]);
+  });
+
+  it("rejects a stale manual preview without persisting any correction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "stale-manual-preview", date: "2026-08-19" });
+    const revision = await attendanceRevision(db, "stale-manual-preview", "2026-08-19");
+    await seedClockEvent(db, {
+      staffId: "stale-manual-preview",
+      timestamp: "2026-08-19T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+
+    await expect(saveManualCorrection(db, {
+      staffId: "stale-manual-preview",
+      date: "2026-08-19",
+      eventType: "clock_out",
+      timestamp: "2026-08-19T17:00:00+01:00",
+      expectedRevision: revision,
+    })).rejects.toThrow(/changed after this preview/i);
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where staff_id = 'stale-manual-preview'`,
+    );
+    expect(count.rows[0].count).toBe(0);
+  });
+
+  it("rejects a stale planned-hours preview without persisting any correction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "stale-planned-preview", date: "2026-08-20" });
+    const revision = await attendanceRevision(db, "stale-planned-preview", "2026-08-20");
+    await seedClockEvent(db, {
+      staffId: "stale-planned-preview",
+      timestamp: "2026-08-20T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+
+    await expect(db.query(
+      `select public.use_planned_hours($1, $2::date, $3, $4)`,
+      ["stale-planned-preview", "2026-08-20", "Use published hours", revision],
+    )).rejects.toThrow(/changed after this preview/i);
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where staff_id = 'stale-planned-preview'`,
+    );
+    expect(count.rows[0].count).toBe(0);
+  });
+
   it.each([
     { kind: "replace" as const, staffId: "kiosk-replaced" },
     { kind: "exclude" as const, staffId: "kiosk-excluded" },
@@ -517,6 +730,129 @@ describe("attendance correction PostgreSQL migration", () => {
        from public.get_staff_weekly_hours('sql-duplicate-in', '2026-08-14')`,
     );
     expect(result.rows[0].completed_minutes).toBe(480);
+  });
+
+  it("does not pair SQL attendance events across recorded dates", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('sql-cross-date', 'SQL cross date')`,
+    );
+    await seedClockEvent(db, {
+      staffId: "sql-cross-date",
+      timestamp: "2026-08-17T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    await seedClockEvent(db, {
+      staffId: "sql-cross-date",
+      timestamp: "2026-08-18T17:00:00+01:00",
+      eventType: "clock_out",
+    });
+
+    const staff = await db.query<{
+      completed_minutes: number;
+      open_shift_in_progress: boolean;
+    }>(
+      `select completed_minutes, open_shift_in_progress
+       from public.get_staff_weekly_hours('sql-cross-date', '2026-08-17')`,
+    );
+    const manager = await db.query<{
+      completed_minutes: number;
+      open_shift_count: number;
+    }>(
+      `select completed_minutes, open_shift_count
+       from public.get_manager_hours_preview('2026-08-17', '2026-08-18')
+       where staff_id = 'sql-cross-date'`,
+    );
+
+    expect(staff.rows[0]).toEqual({
+      completed_minutes: 0,
+      open_shift_in_progress: true,
+    });
+    expect(manager.rows[0]).toEqual({
+      completed_minutes: 0,
+      open_shift_count: 1,
+    });
+  });
+
+  it("returns only limited own-attendance records through the authenticated staff RPC", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const ownOriginalId = await seedClockEvent(db, {
+      staffId: "staff-profile",
+      timestamp: "2026-08-21T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('other-staff-rpc', 'Other staff RPC')`,
+    );
+    const otherId = await seedClockEvent(db, {
+      staffId: "other-staff-rpc",
+      timestamp: "2026-08-21T08:30:00+01:00",
+      eventType: "clock_in",
+    });
+    const batchId = await saveManualCorrection(db, {
+      staffId: "staff-profile",
+      date: "2026-08-21",
+      targetEventId: ownOriginalId,
+      eventType: "clock_in",
+      timestamp: "2026-08-21T09:00:00+01:00",
+      reason: "Private manager correction reason",
+    });
+    const ownCorrection = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [batchId],
+    );
+
+    await setCurrentAccount(db, STAFF_ACCOUNT_ID);
+    await setAuthenticatedRole(db);
+    const records = await db.query<Record<string, unknown>>(
+      `select *
+       from public.get_own_attendance_records('2026-08-21', '2026-08-21')`,
+    );
+
+    expect(records.rows.map((row) => row.id)).toEqual([
+      ownOriginalId,
+      ownCorrection.rows[0].id,
+    ]);
+    expect(records.rows.map((row) => row.id)).not.toContain(otherId);
+    for (const row of records.rows) {
+      expect(row).not.toHaveProperty("staff_id");
+      expect(row).not.toHaveProperty("reason");
+      expect(row).not.toHaveProperty("created_by");
+      expect(row).not.toHaveProperty("hourly_rate");
+    }
+    await resetRole(db);
+  });
+
+  it("keeps authoritative correction RPCs manager-only and prevents plan bypass", async () => {
+    await resetRole(db);
+    const revision = await attendanceRevision(db, "staff-profile", "2026-08-22");
+    await setCurrentAccount(db, STAFF_ACCOUNT_ID);
+    await setAuthenticatedRole(db);
+
+    await expect(db.query(
+      `select public.save_manual_clock_event_correction(
+         'staff-profile',
+         '2026-08-22',
+         null,
+         'clock_in',
+         '2026-08-22T09:00:00+01:00',
+         'Staff cannot correct attendance',
+         $1
+       )`,
+      [revision],
+    )).rejects.toThrow(/manager access required/i);
+    await expect(db.query(
+      `select public.save_clock_event_correction_chain(
+         '{"reason":"Bypass preview","primary":{},"consequential":[]}'::jsonb
+       )`,
+    )).rejects.toThrow(/permission denied/i);
+    await resetRole(db);
   });
 
   it("rejects manager hours RPC ranges above 366 inclusive days", async () => {

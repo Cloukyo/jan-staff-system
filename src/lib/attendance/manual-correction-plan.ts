@@ -30,7 +30,7 @@ export function planManualCorrectionConsequences(
         recordedDate: input.recordedDate,
       }
     : {
-        id: "new-event-preview",
+        id: "00000000-0000-0000-0000-000000000000",
         staffId: input.staffId,
         eventType: input.eventType,
         eventTimestamp: input.eventTimestamp,

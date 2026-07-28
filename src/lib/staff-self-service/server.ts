@@ -1,5 +1,4 @@
 import { addDays, differenceInMinutes, isValid, parseISO } from "date-fns";
-import { createClient } from "@supabase/supabase-js";
 import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
 import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import {
@@ -9,7 +8,6 @@ import {
   type ClockEventSourceRow,
 } from "@/lib/attendance/staff-hours";
 import { analyseAttendanceDay } from "@/lib/attendance/sequence";
-import { getSupabaseConfig } from "@/lib/auth/config";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
@@ -75,6 +73,20 @@ export type StaffAttendanceRange = {
   from: string;
   to: string;
   days: StaffAttendanceDay[];
+};
+
+type OwnAttendanceRecordRow = {
+  record_kind: "original" | "correction";
+  id: string;
+  event_type: "clock_in" | "clock_out" | null;
+  event_timestamp: string | null;
+  recorded_date: string;
+  event_source: "kiosk" | "manager" | "manager_correction" | null;
+  manager_correction: boolean;
+  correction_kind: "add" | "replace" | "exclude" | null;
+  original_event_id: string | null;
+  supersedes_correction_id: string | null;
+  created_at: string;
 };
 
 export function normaliseWeekStart(value?: string): string {
@@ -184,36 +196,45 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
   const range = normaliseDateRange(fromValue, toValue);
   requireAttendanceDateRange(range.from, range.to);
   const supabase = await createSupabaseServerClient();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) throw new Error("Your attendance could not be loaded.");
-  const admin = createClient(getSupabaseConfig().url, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  let rows: [ClockEventSourceRow[], ClockCorrectionResolverSourceRow[]];
+  let records: OwnAttendanceRecordRow[];
   try {
-    rows = await Promise.all([
-      loadAllPostgrestPages<ClockEventSourceRow>((from, to) => supabase.from("clock_events")
-        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
-        .eq("staff_id", account.staffId)
-        .gte("recorded_date", range.from)
-        .lte("recorded_date", range.to)
-        .order("event_timestamp")
+    records = await loadAllPostgrestPages<OwnAttendanceRecordRow>((from, to) => supabase
+      .rpc("get_own_attendance_records", {
+        range_start: range.from,
+        range_end: range.to,
+      })
+        .order("recorded_date")
         .order("id")
-        .range(from, to)),
-      loadAllPostgrestPages<ClockCorrectionResolverSourceRow>((from, to) => admin.from("clock_event_corrections")
-        .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,created_at")
-        .eq("staff_id", account.staffId)
-        .gte("recorded_date", range.from)
-        .lte("recorded_date", range.to)
-        .order("created_at")
-        .order("id")
-        .range(from, to)),
-    ]);
+        .range(from, to));
   } catch {
     throw new Error("Your attendance could not be loaded.");
   }
 
-  const [originalRows, correctionRows] = rows;
+  const originalRows: ClockEventSourceRow[] = records
+    .filter((row) => row.record_kind === "original" && row.event_type && row.event_timestamp)
+    .map((row) => ({
+      id: row.id,
+      staff_id: account.staffId,
+      event_type: row.event_type!,
+      event_timestamp: row.event_timestamp!,
+      recorded_date: row.recorded_date,
+      event_source: row.event_source === "manager" ? "manager" : "kiosk",
+      manager_correction: row.manager_correction,
+      correction_reason: null,
+    }));
+  const correctionRows: ClockCorrectionResolverSourceRow[] = records
+    .filter((row) => row.record_kind === "correction" && row.correction_kind)
+    .map((row) => ({
+      id: row.id,
+      staff_id: account.staffId,
+      correction_kind: row.correction_kind!,
+      original_event_id: row.original_event_id,
+      supersedes_correction_id: row.supersedes_correction_id,
+      event_type: row.event_type,
+      event_timestamp: row.event_timestamp,
+      recorded_date: row.recorded_date,
+      created_at: row.created_at,
+    }));
   const resolved = resolveEffectiveEvents(
     originalRows.map(toOriginalClockEvent),
     correctionRows.map(toAttendanceCorrection),

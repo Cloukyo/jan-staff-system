@@ -59,12 +59,19 @@ function clockEvent(
   return {
     id: `event-${index}`,
     staffId: "staff-1",
+    recordType: "original",
     eventType: index % 2 === 0 ? "clock_in" : "clock_out",
     eventTimestamp: `2026-07-${String((index % 28) + 1).padStart(2, "0")}T08:00:00.000Z`,
     recordedDate: `2026-07-${String((index % 28) + 1).padStart(2, "0")}`,
     eventSource: "kiosk",
     managerCorrection: false,
     correctionReason: null,
+    auditStatus: "active",
+    correctionKind: null,
+    originalEventId: null,
+    supersedesCorrectionId: null,
+    createdAt: `2026-07-${String((index % 28) + 1).padStart(2, "0")}T08:00:00.000Z`,
+    createdByName: null,
     ...overrides,
   };
 }
@@ -274,21 +281,44 @@ describe("manager attendance views", () => {
         managerCorrection: true,
         correctionReason: "Forgot to clock out",
       }),
+      {
+        ...clockEvent(3),
+        id: "superseded-correction",
+        staffId: "staff-1",
+        recordType: "correction",
+        eventType: null,
+        eventTimestamp: null,
+        eventSource: "manager_correction",
+        managerCorrection: true,
+        correctionReason: "Duplicate kiosk tap",
+        auditStatus: "superseded",
+        correctionKind: "exclude",
+        originalEventId: "event-3",
+        supersedesCorrectionId: "older-correction",
+        createdAt: "2026-07-28T10:00:00Z",
+        createdByName: "Manager Account",
+      } as unknown as ManagerClockEvent,
     ];
 
-    for (const query of [
-      "Rehana",
-      "clock out",
-      "manager correction",
-      "forgot",
-      "27/07/2026",
-    ]) {
+    for (const query of ["Rehana", "clock out", "forgot", "27/07/2026"]) {
       expect(
         filterAndPaginateAttendanceHistory(staff, events, query, 1).events.map(
           (event) => event.id,
         ),
       ).toEqual(["corrected"]);
     }
+
+    for (const query of ["superseded", "exclude", "duplicate", "Manager Account", "04/07/2026"]) {
+      expect(
+        filterAndPaginateAttendanceHistory(staff, events, query, 1).events.map(
+          (event) => event.id,
+        ),
+      ).toEqual(["superseded-correction"]);
+    }
+
+    const loader = readFileSync(resolve("src/lib/kiosk/server.ts"), "utf8");
+    expect(loader).toContain('from("clock_event_corrections")');
+    expect(loader).toContain("created_by");
   });
 
   it("paginates history in stable 25-row pages and clamps invalid pages", () => {

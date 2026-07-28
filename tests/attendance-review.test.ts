@@ -8,6 +8,8 @@ import {
 } from "@/lib/attendance/review-server";
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 import {
+  buildAttendanceEventRevision,
+  buildMissingEventPage,
   buildStaffHoursRange,
   loadAllPages,
   normaliseStaffHoursRange,
@@ -112,6 +114,9 @@ describe("production attendance review", () => {
     ]);
     expect(alice.audit.originals).toHaveLength(4);
     expect(alice.audit.corrections).toHaveLength(2);
+    expect(alice.eventRevision).toBe(
+      "events:alice-in,alice-lunch-in,alice-lunch-out,alice-out|corrections:alice-in-fix,alice-out-fix",
+    );
     expect(alice.effectiveEvents.map((event) => event.eventTimestamp)).toEqual([
       "2026-07-28T08:30:00+01:00",
       "2026-07-28T12:00:00+01:00",
@@ -120,6 +125,36 @@ describe("production attendance review", () => {
     ]);
     expect(alice.completedMinutes).toBe(480);
     expect(JSON.stringify(range)).not.toMatch(/hourlyRate|annualSalary|monthlySalary|estimatedGross/);
+  });
+
+  it("builds a correction context for an unscheduled blank day without adding it to Staff hours", () => {
+    const range = buildStaffHoursRange({
+      from: "2026-07-28",
+      to: "2026-07-28",
+      currentWeekStart: "2026-07-27",
+      currentWeekEnd: "2026-08-02",
+      profiles: [{ id: "staff", display_name: "Sam", full_name: "Sam Patel" }],
+      shifts: [],
+      originals: [],
+      corrections: [],
+      reviews: [],
+    });
+
+    expect(range.days).toEqual([]);
+    expect(buildAttendanceEventRevision(["event-b", "event-a"], ["correction-b", "correction-a"]))
+      .toBe("events:event-a,event-b|corrections:correction-a,correction-b");
+    expect(buildMissingEventPage(range, "staff", "2026-07-28")).toMatchObject({
+      date: "2026-07-28",
+      selectedStaffId: "staff",
+      day: {
+        staffId: "staff",
+        fullName: "Sam Patel",
+        date: "2026-07-28",
+        eventRevision: "events:|corrections:",
+        plannedPeriods: [],
+        effectiveEvents: [],
+      },
+    });
   });
 
   it("maps manager kiosk status from effective open shifts", () => {
@@ -171,6 +206,30 @@ describe("production attendance review", () => {
     expect(page.indexOf("Add a missing clock-in or clock-out"))
       .toBeLessThan(page.indexOf("<AttendanceReview"));
     expect(page).toContain("<AttendancePageNav");
+  });
+
+  it("binds correction controls to effective events and the displayed day revision", () => {
+    const controls = source("src/components/attendance/attendance-correction-controls.tsx");
+    const timeline = source("src/components/attendance/staff-hours-timeline.tsx");
+
+    expect(controls).toContain("day.effectiveEvents.map");
+    expect(controls).toContain('name="targetEventId"');
+    expect(controls).toContain("Current effective event");
+    expect(controls).not.toContain('name="originalEventId"');
+    expect(timeline).toContain("eventRevision: day.eventRevision");
+  });
+
+  it("loads a usable global missing-event workflow for selected staff and date", () => {
+    const page = source("src/app/attendance/page.tsx");
+    const form = source("src/components/attendance/production-attendance.tsx");
+
+    expect(page).toContain("loadMissingEventPage(staffId, date)");
+    expect(page).toContain("saveBoundClockEventCorrectionAction.bind");
+    expect(page).toContain("eventRevision: missingEvent.day.eventRevision");
+    expect(form).toContain('name="staffId"');
+    expect(form).toContain('name="date"');
+    expect(form).toContain("<MissingEventCorrectionForm");
+    expect(form).not.toContain("Open Staff hours");
   });
 
   it("leaves the mobile attendance submenu unset for the add-event workflow", () => {

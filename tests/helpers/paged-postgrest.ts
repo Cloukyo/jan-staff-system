@@ -7,6 +7,11 @@ export type QueryTrace = {
   range: [number, number] | null;
 };
 
+export type RpcTrace = {
+  functionName: string;
+  args: Record<string, unknown>;
+};
+
 type QueryResult = {
   data: TestRow[];
   error: null;
@@ -94,11 +99,23 @@ class PagedPostgrestQuery implements PromiseLike<QueryResult> {
 
 export class PagedPostgrestClient {
   readonly traces: QueryTrace[] = [];
+  readonly rpcTraces: RpcTrace[] = [];
 
   constructor(private readonly data: Record<string, TestRow[]>) {}
 
   from(table: string): PagedPostgrestQuery {
     return new PagedPostgrestQuery(table, this.data[table] ?? [], this.traces);
+  }
+
+  rpc(functionName: string, args: Record<string, unknown>): PagedPostgrestQuery {
+    this.rpcTraces.push({ functionName, args });
+    return new PagedPostgrestQuery(functionName, this.data[functionName] ?? [], this.traces);
+  }
+
+  rpcArgsFor(functionName: string): Record<string, unknown>[] {
+    return this.rpcTraces
+      .filter((trace) => trace.functionName === functionName)
+      .map((trace) => trace.args);
   }
 
   rangesFor(table: string): Array<[number, number] | null> {

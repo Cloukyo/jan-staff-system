@@ -546,13 +546,60 @@ export async function seedClockEvent(
 }
 
 export async function usePlannedHours(db: PGlite, staffId: string, date: string) {
+  const expectedRevision = await attendanceRevision(db, staffId, date);
   const result = await db.query<{ batch_id: string | null }>(
     `select public.use_planned_hours(
        $1,
        $2::date,
-       'Use published hours'
+       'Use published hours',
+       $3
      )::text as batch_id`,
+    [staffId, date, expectedRevision],
+  );
+  return result.rows[0].batch_id;
+}
+
+export async function attendanceRevision(db: PGlite, staffId: string, date: string) {
+  const result = await db.query<{ revision: string }>(
+    `select public.get_attendance_event_revision($1, $2::date) as revision`,
     [staffId, date],
+  );
+  return result.rows[0].revision;
+}
+
+export async function saveManualCorrection(
+  db: PGlite,
+  input: {
+    staffId: string;
+    date: string;
+    targetEventId?: string | null;
+    eventType: "clock_in" | "clock_out";
+    timestamp: string;
+    reason?: string;
+    expectedRevision?: string;
+  },
+) {
+  const expectedRevision = input.expectedRevision
+    ?? await attendanceRevision(db, input.staffId, input.date);
+  const result = await db.query<{ batch_id: string }>(
+    `select public.save_manual_clock_event_correction(
+       $1,
+       $2::date,
+       $3::uuid,
+       $4,
+       $5::timestamptz,
+       $6,
+       $7
+     )::text as batch_id`,
+    [
+      input.staffId,
+      input.date,
+      input.targetEventId ?? null,
+      input.eventType,
+      input.timestamp,
+      input.reason ?? "Manager confirmed attendance",
+      expectedRevision,
+    ],
   );
   return result.rows[0].batch_id;
 }
