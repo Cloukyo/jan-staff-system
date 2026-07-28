@@ -53,7 +53,11 @@ export function buildAttendanceTimelineWindow({
   for (let minute = startMinutes; minute <= endMinutes; minute += 120) {
     ticks.push(minute);
   }
-  if (ticks.at(-1) !== endMinutes) ticks.push(endMinutes);
+  const finalTick = ticks.at(-1);
+  if (
+    finalTick !== endMinutes
+    && (finalTick === undefined || endMinutes - finalTick >= 90)
+  ) ticks.push(endMinutes);
 
   return { startMinutes, endMinutes, ticks };
 }
@@ -69,7 +73,7 @@ export function timelinePositionPercent(
 export function layoutAttendanceTimelineEvents(
   timestamps: string[],
   window: AttendanceTimelineWindow,
-  minimumGapPercent = 16,
+  minimumGapPercent = 32,
 ): AttendanceTimelineEventPlacement[] {
   const ordered = timestamps
     .map((timestamp, index) => ({

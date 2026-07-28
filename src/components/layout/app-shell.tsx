@@ -47,6 +47,7 @@ export function AppShell({ children, role = "manager" }: { children: React.React
     function handlePageScroll(event: KeyboardEvent) {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target;
+      if (document.querySelector('[aria-modal="true"]')) return;
       if (
         target instanceof HTMLElement
         && target.matches("input, textarea, select, [contenteditable='true']")
@@ -64,6 +65,21 @@ export function AppShell({ children, role = "manager" }: { children: React.React
         event.preventDefault();
         shell.scrollBy({
           top: shell.clientHeight * (event.key === "PageDown" ? 0.85 : -0.85),
+          behavior: "smooth",
+        });
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        shell.scrollBy({
+          top: event.key === "ArrowDown" ? 48 : -48,
+          behavior: "smooth",
+        });
+      } else if (
+        event.key === " "
+        && !(target instanceof HTMLElement && target.closest("a, button, summary"))
+      ) {
+        event.preventDefault();
+        shell.scrollBy({
+          top: shell.clientHeight * (event.shiftKey ? -0.85 : 0.85),
           behavior: "smooth",
         });
       }

@@ -95,7 +95,7 @@ describe("manager attendance views", () => {
     expect(window).toEqual({
       startMinutes: 420,
       endMinutes: 1080,
-      ticks: [420, 540, 660, 780, 900, 1020, 1080],
+      ticks: [420, 540, 660, 780, 900, 1020],
     });
     expect(timelinePositionPercent(420, window)).toBe(0);
     expect(timelinePositionPercent(750, window)).toBe(50);
@@ -119,6 +119,17 @@ describe("manager attendance views", () => {
     expect(placements[0].positionPercent).toBeLessThan(placements[1].positionPercent);
     expect(placements[1].positionPercent).toBeLessThan(placements[2].positionPercent);
     expect(new Set(placements.map((placement) => placement.row)).size).toBe(3);
+
+    const narrowDesktopPlacements = layoutAttendanceTimelineEvents([
+      "2026-07-28T07:00:00.000Z",
+      "2026-07-28T09:30:00.000Z",
+    ], {
+      startMinutes: 420,
+      endMinutes: 1080,
+      ticks: [420, 540, 660, 780, 900, 1020],
+    });
+    expect(narrowDesktopPlacements[0].row)
+      .not.toBe(narrowDesktopPlacements[1].row);
   });
 
   it("keeps the expanded attendance view faithful to the approved responsive timeline", () => {
@@ -158,6 +169,9 @@ describe("manager attendance views", () => {
     expect(globalStyles).toContain("overscroll-behavior-y: contain");
     expect(appShell).toContain('window.addEventListener("keydown", handlePageScroll)');
     expect(appShell).toContain("shell.scrollBy");
+    expect(appShell).toContain('event.key === " "');
+    expect(appShell).toContain('event.key === "ArrowDown"');
+    expect(appShell).toContain('[aria-modal="true"]');
   });
 
   it("adds and removes the expanded day without losing the staff-week route", () => {
