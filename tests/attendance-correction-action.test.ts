@@ -35,6 +35,7 @@ function context(
     attendanceDate: "2026-07-28",
     returnTo: "/attendance?view=hours&staffId=staff-1&day=2026-07-28",
     eventRevision: "events:event-1|corrections:correction-1",
+    correctionId: "40000000-0000-4000-8000-000000000000",
     ...overrides,
   };
 }
@@ -43,6 +44,7 @@ function correctionForm(overrides: Record<string, string> = {}) {
   const form = new FormData();
   const values = {
     targetEventId: "correction-1",
+    correctionId: "30000000-0000-4000-8000-000000000000",
     eventType: "clock_in",
     localDateTime: "2026-07-28T09:15",
     reason: "Correcting the start time",
@@ -73,6 +75,7 @@ describe("bound manager attendance correction actions", () => {
       target_staff_id: "staff-1",
       target_date: "2026-07-28",
       target_event_id: "correction-1",
+      primary_correction_id: "40000000-0000-4000-8000-000000000000",
       requested_event_type: "clock_in",
       requested_event_timestamp: "2026-07-28T08:15:00.000Z",
       reason: "Correcting the start time",
@@ -90,6 +93,7 @@ describe("bound manager attendance correction actions", () => {
     form.set("attendanceDate", "2026-07-29");
     form.set("returnTo", "/payroll");
     form.set("eventRevision", "fabricated");
+    form.set("correctionId", "50000000-0000-4000-8000-000000000000");
 
     await saveBoundClockEventCorrectionAction(context(), initialState, form);
 
@@ -98,6 +102,7 @@ describe("bound manager attendance correction actions", () => {
       expect.objectContaining({
         target_staff_id: "staff-1",
         target_date: "2026-07-28",
+        primary_correction_id: "40000000-0000-4000-8000-000000000000",
         expected_revision: "events:event-1|corrections:correction-1",
       }),
     );
@@ -119,6 +124,7 @@ describe("bound manager attendance correction actions", () => {
       target_staff_id: "staff-1",
       target_date: "2026-01-28",
       target_event_id: null,
+      primary_correction_id: "40000000-0000-4000-8000-000000000000",
       requested_event_type: "clock_in",
       requested_event_timestamp: "2026-01-28T23:30:00.000Z",
       reason: "Adding a missed clock event",

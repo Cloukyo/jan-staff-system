@@ -195,16 +195,8 @@ on public.clock_event_corrections for select
 to authenticated
 using (public.current_staff_role() = 'manager');
 
-create policy "Managers can add clock event corrections"
-on public.clock_event_corrections for insert
-to authenticated
-with check (
-  public.current_staff_role() = 'manager'
-  and created_by = (public.current_staff_account()).id
-);
-
 revoke all on public.clock_event_corrections from public, anon, authenticated;
-grant select, insert on public.clock_event_corrections to authenticated;
+grant select on public.clock_event_corrections to authenticated;
 
 drop policy if exists "Managers can add clock corrections"
 on public.clock_events;
@@ -218,6 +210,7 @@ create or replace function public.get_effective_clock_events(
 )
 returns table (
   event_id uuid,
+  event_order_key text,
   original_event_id uuid,
   correction_id uuid,
   staff_id text,
@@ -305,6 +298,7 @@ as $$
   effective_events as (
     select
       original.id as event_id,
+      original.id::text || ':original' as event_order_key,
       null::uuid as original_event_id,
       null::uuid as correction_id,
       original.staff_id,
@@ -329,6 +323,11 @@ as $$
 
     select
       active.correction_id as event_id,
+      case
+        when active.original_event_id is not null
+          then active.original_event_id::text || ':original'
+        else active.root_correction_id::text || ':correction'
+      end as event_order_key,
       active.original_event_id,
       active.correction_id,
       active.staff_id,
@@ -342,7 +341,7 @@ as $$
   )
   select *
   from effective_events
-  order by event_timestamp, event_id;
+  order by event_timestamp, event_order_key, event_id;
 $$;
 
 revoke all on function public.get_effective_clock_events(date, date, text)
@@ -503,6 +502,10 @@ begin
     select
       entries.item,
       entries.ordinal,
+      coalesce(
+        nullif(entries.item ->> 'id', '')::uuid,
+        gen_random_uuid()
+      ) as correction_id,
       nullif(entries.item ->> 'staff_id', '') as supplied_staff_id,
       nullif(entries.item ->> 'recorded_date', '')::date as supplied_recorded_date,
       nullif(entries.item ->> 'original_event_id', '')::uuid as original_event_id,
@@ -520,6 +523,7 @@ begin
       on superseded.id = parsed.supersedes_correction_id
   )
   insert into public.clock_event_corrections (
+    id,
     batch_id,
     correction_role,
     staff_id,
@@ -533,6 +537,7 @@ begin
     created_by
   )
   select
+    correction_id,
     correction_batch_id,
     case when ordinal = 1 then 'primary' else 'consequential' end,
     staff_id,
@@ -558,6 +563,7 @@ create or replace function public.save_manual_clock_event_correction(
   target_staff_id text,
   target_date date,
   target_event_id uuid,
+  primary_correction_id uuid,
   requested_event_type text,
   requested_event_timestamp timestamptz,
   reason text,
@@ -573,7 +579,7 @@ declare
   selected_event record;
   following_event record;
   selected_effective_event_id uuid;
-  selected_sort_id uuid;
+  selected_order_key text;
   expected_type text;
   primary_action jsonb;
   consequential_actions jsonb := '[]'::jsonb;
@@ -584,6 +590,9 @@ begin
   end if;
   if target_staff_id is null or target_date is null then
     raise exception 'Choose a staff member and date';
+  end if;
+  if primary_correction_id is null then
+    raise exception 'Reload attendance and review the correction again';
   end if;
   if not exists (
     select 1
@@ -626,6 +635,7 @@ begin
     order by
       case when event.event_id = target_event_id then 0 else 1 end,
       event.event_timestamp,
+      event.event_order_key,
       event.event_id
     limit 1;
 
@@ -634,8 +644,9 @@ begin
     end if;
 
     selected_effective_event_id := selected_event.event_id;
-    selected_sort_id := selected_event.event_id;
+    selected_order_key := selected_event.event_order_key;
     primary_action := jsonb_build_object(
+      'id', primary_correction_id,
       'staff_id', target_staff_id,
       'recorded_date', target_date,
       'correction_kind', 'replace',
@@ -649,8 +660,9 @@ begin
       'event_timestamp', requested_event_timestamp
     );
   else
-    selected_sort_id := '00000000-0000-0000-0000-000000000000'::uuid;
+    selected_order_key := primary_correction_id::text || ':correction';
     primary_action := jsonb_build_object(
+      'id', primary_correction_id,
       'staff_id', target_staff_id,
       'recorded_date', target_date,
       'correction_kind', 'add',
@@ -680,15 +692,22 @@ begin
       and (
         event.event_timestamp > requested_event_timestamp
         or (
-          event.event_timestamp = requested_event_timestamp
-          and event.event_id > selected_sort_id
+        event.event_timestamp = requested_event_timestamp
+          and (
+            event.event_order_key > selected_order_key
+            or (
+              event.event_order_key = selected_order_key
+              and event.event_id > primary_correction_id
+            )
+          )
         )
       )
-    order by event.event_timestamp, event.event_id
+    order by event.event_timestamp, event.event_order_key, event.event_id
   loop
     if following_event.event_type <> expected_type then
       consequential_actions := consequential_actions || jsonb_build_array(
         jsonb_build_object(
+          'id', gen_random_uuid(),
           'staff_id', target_staff_id,
           'recorded_date', target_date,
           'correction_kind', 'replace',
@@ -724,6 +743,7 @@ revoke all on function public.save_manual_clock_event_correction(
   text,
   date,
   uuid,
+  uuid,
   text,
   timestamptz,
   text,
@@ -733,6 +753,7 @@ from public, anon, authenticated;
 grant execute on function public.save_manual_clock_event_correction(
   text,
   date,
+  uuid,
   uuid,
   text,
   timestamptz,
@@ -823,11 +844,12 @@ begin
     jsonb_agg(
       jsonb_build_object(
         'event_id', event.event_id,
+        'event_order_key', event.event_order_key,
         'correction_id', event.correction_id,
         'event_type', event.event_type,
         'event_timestamp', event.event_timestamp
       )
-      order by event.event_timestamp, event.event_id
+      order by event.event_timestamp, event.event_order_key, event.event_id
     ),
     '[]'::jsonb
   )
@@ -850,6 +872,7 @@ begin
   into left_boundary_count, intermediate_count, right_boundary_count
   from jsonb_to_recordset(effective_events) as snapshot(
     event_id uuid,
+    event_order_key text,
     correction_id uuid,
     event_type text,
     event_timestamp timestamptz
@@ -872,6 +895,7 @@ begin
   if left_boundary_count = 0 then
     correction_actions := correction_actions || jsonb_build_array(
       jsonb_build_object(
+        'id', gen_random_uuid(),
         'correction_kind', 'add',
         'original_event_id', null,
         'supersedes_correction_id', null,
@@ -884,6 +908,7 @@ begin
     into boundary_event
     from jsonb_to_recordset(effective_events) as snapshot(
       event_id uuid,
+      event_order_key text,
       correction_id uuid,
       event_type text,
       event_timestamp timestamptz
@@ -894,6 +919,7 @@ begin
       or boundary_event.event_timestamp <> planned_start_at then
       correction_actions := correction_actions || jsonb_build_array(
         jsonb_build_object(
+          'id', gen_random_uuid(),
           'correction_kind', 'replace',
           'original_event_id',
             case when boundary_event.correction_id is null
@@ -912,17 +938,24 @@ begin
     select
       snapshot.*,
       row_number() over (
-        order by snapshot.event_timestamp, snapshot.event_id
+        order by
+          snapshot.event_timestamp,
+          snapshot.event_order_key,
+          snapshot.event_id
       ) as intermediate_position
     from jsonb_to_recordset(effective_events) as snapshot(
       event_id uuid,
+      event_order_key text,
       correction_id uuid,
       event_type text,
       event_timestamp timestamptz
     )
     where snapshot.event_timestamp > planned_start_at
       and snapshot.event_timestamp < planned_finish_at
-    order by snapshot.event_timestamp, snapshot.event_id
+    order by
+      snapshot.event_timestamp,
+      snapshot.event_order_key,
+      snapshot.event_id
   loop
     if intermediate_event.event_type <> (
       case
@@ -933,6 +966,7 @@ begin
     ) then
       correction_actions := correction_actions || jsonb_build_array(
         jsonb_build_object(
+          'id', gen_random_uuid(),
           'correction_kind', 'replace',
           'original_event_id',
             case when intermediate_event.correction_id is null
@@ -955,6 +989,7 @@ begin
   if right_boundary_count = 0 then
     correction_actions := correction_actions || jsonb_build_array(
       jsonb_build_object(
+        'id', gen_random_uuid(),
         'correction_kind', 'add',
         'original_event_id', null,
         'supersedes_correction_id', null,
@@ -967,6 +1002,7 @@ begin
     into boundary_event
     from jsonb_to_recordset(effective_events) as snapshot(
       event_id uuid,
+      event_order_key text,
       correction_id uuid,
       event_type text,
       event_timestamp timestamptz
@@ -977,6 +1013,7 @@ begin
       or boundary_event.event_timestamp <> planned_finish_at then
       correction_actions := correction_actions || jsonb_build_array(
         jsonb_build_object(
+          'id', gen_random_uuid(),
           'correction_kind', 'replace',
           'original_event_id',
             case when boundary_event.correction_id is null
@@ -998,6 +1035,7 @@ begin
   correction_batch_id := gen_random_uuid();
 
   insert into public.clock_event_corrections (
+    id,
     batch_id,
     correction_role,
     staff_id,
@@ -1011,6 +1049,7 @@ begin
     created_by
   )
   select
+    (action.item ->> 'id')::uuid,
     correction_batch_id,
     case when action.ordinal = 1 then 'primary' else 'consequential' end,
     target_staff_id,
@@ -1064,11 +1103,11 @@ begin
       ce.event_timestamp,
       lead(ce.event_type) over (
         partition by ce.recorded_date
-        order by ce.event_timestamp, ce.event_id
+        order by ce.event_timestamp, ce.event_order_key, ce.event_id
       ) as next_event_type,
       lead(ce.event_timestamp) over (
         partition by ce.recorded_date
-        order by ce.event_timestamp, ce.event_id
+        order by ce.event_timestamp, ce.event_order_key, ce.event_id
       ) as next_event_timestamp
     from public.get_effective_clock_events(range_start, range_end, target_staff_id) ce
   )
@@ -1135,11 +1174,11 @@ begin
       ce.event_timestamp,
       lead(ce.event_type) over (
         partition by ce.staff_id, ce.recorded_date
-        order by ce.event_timestamp, ce.event_id
+        order by ce.event_timestamp, ce.event_order_key, ce.event_id
       ) as next_event_type,
       lead(ce.event_timestamp) over (
         partition by ce.staff_id, ce.recorded_date
-        order by ce.event_timestamp, ce.event_id
+        order by ce.event_timestamp, ce.event_order_key, ce.event_id
       ) as next_event_timestamp
     from public.get_effective_clock_events(range_start, range_end, null) ce
     join active_staff staff on staff.id = ce.staff_id
@@ -1313,7 +1352,10 @@ as $$
     ),
     target_staff_id
   ) effective
-  order by effective.event_timestamp desc, effective.event_id desc
+  order by
+    effective.event_timestamp desc,
+    effective.event_order_key desc,
+    effective.event_id desc
   limit 1;
 $$;
 

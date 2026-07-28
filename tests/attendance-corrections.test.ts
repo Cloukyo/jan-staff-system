@@ -114,6 +114,68 @@ describe("resolveEffectiveEvents", () => {
     });
   });
 
+  it("keeps an original lineage in the same equal-instant position after replacement", () => {
+    const result = resolveEffectiveEvents([
+      original("10000000-0000-0000-0000-000000000000", "clock_in", "08:00"),
+      original("20000000-0000-0000-0000-000000000000", "clock_out", "08:00"),
+    ], [
+      correction("f0000000-0000-0000-0000-000000000000", "replace", {
+        originalEventId: "10000000-0000-0000-0000-000000000000",
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+      }),
+    ]);
+
+    expect(result.effective.map((event) => event.id)).toEqual([
+      "f0000000-0000-0000-0000-000000000000",
+      "20000000-0000-0000-0000-000000000000",
+    ]);
+  });
+
+  it("keeps a manager-added lineage in the same equal-instant position after replacement", () => {
+    const result = resolveEffectiveEvents([
+      original("20000000-0000-0000-0000-000000000000", "clock_out", "08:00"),
+    ], [
+      correction("10000000-0000-0000-0000-000000000000", "add", {
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+        createdAt: `${date}T10:00:00+01:00`,
+      }),
+      correction("f0000000-0000-0000-0000-000000000000", "replace", {
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+        supersedesCorrectionId: "10000000-0000-0000-0000-000000000000",
+        createdAt: `${date}T11:00:00+01:00`,
+      }),
+    ]);
+
+    expect(result.effective.map((event) => event.id)).toEqual([
+      "f0000000-0000-0000-0000-000000000000",
+      "20000000-0000-0000-0000-000000000000",
+    ]);
+  });
+
+  it("orders equal UUIDs deterministically across original and correction lineages", () => {
+    const sharedId = "10000000-0000-0000-0000-000000000000";
+    const result = resolveEffectiveEvents([
+      original(sharedId, "clock_out", "08:00"),
+    ], [
+      correction(sharedId, "add", {
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+      }),
+    ]);
+
+    expect(result.effective.map((event) => event.eventType)).toEqual([
+      "clock_in",
+      "clock_out",
+    ]);
+    expect(result.effective.map((event) => event.orderKey)).toEqual([
+      `${sharedId}:correction`,
+      `${sharedId}:original`,
+    ]);
+  });
+
   it("excludes an original without deleting it", () => {
     const result = resolveEffectiveEvents([original("in", "clock_in", "08:00")], [
       correction("exclude-in", "exclude", { originalEventId: "in" }),
@@ -414,6 +476,7 @@ describe("attendance correction control contracts", () => {
       selectedEventType: "clock_in",
       localDateTime: "2026-07-28T10:00",
       staffId: "staff-1",
+      proposedCorrectionId: "30000000-0000-4000-8000-000000000000",
     })).toEqual([
       {
         targetEventId: "event-2",
@@ -439,11 +502,129 @@ describe("attendance correction control contracts", () => {
       selectedEventType: "clock_in",
       localDateTime: "2026-07-28T08:00",
       staffId: "staff-1",
+      proposedCorrectionId: "00000001-0000-4000-8000-000000000000",
     })).toEqual([{
       targetEventId: "10000000-0000-0000-0000-000000000000",
       eventType: "clock_out",
       eventTimestamp: "2026-07-28T07:00:00.000Z",
     }]);
+  });
+
+  it("uses the final proposed correction ID when previewing an equal-instant addition", () => {
+    const input = {
+      events: [{
+        id: "10000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_in" as const,
+        eventTimestamp: "2026-07-28T07:00:00.000Z",
+        recordedDate: date,
+        source: "kiosk" as const,
+        originalEventId: null,
+        correctionId: null,
+      }],
+      selectedEventId: null,
+      selectedEventType: "clock_in" as const,
+      localDateTime: "2026-07-28T08:00",
+      staffId: "staff-1",
+      proposedCorrectionId: "f0000000-0000-0000-0000-000000000000",
+    };
+
+    expect(previewManualCorrectionChanges(input)).toEqual([]);
+  });
+
+  it("previews equal-instant consequential alternation from the final proposed position", () => {
+    const eventTimestamp = "2026-07-28T07:00:00.000Z";
+    const events = [
+      {
+        id: "10000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_out" as const,
+        eventTimestamp,
+        recordedDate: date,
+        source: "kiosk" as const,
+        originalEventId: null,
+        correctionId: null,
+      },
+      {
+        id: "20000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_in" as const,
+        eventTimestamp,
+        recordedDate: date,
+        source: "kiosk" as const,
+        originalEventId: null,
+        correctionId: null,
+      },
+      {
+        id: "30000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_out" as const,
+        eventTimestamp,
+        recordedDate: date,
+        source: "kiosk" as const,
+        originalEventId: null,
+        correctionId: null,
+      },
+    ];
+
+    expect(previewManualCorrectionChanges({
+      events,
+      selectedEventId: null,
+      selectedEventType: "clock_in",
+      localDateTime: "2026-07-28T08:00",
+      staffId: "staff-1",
+      proposedCorrectionId: "15000000-0000-4000-8000-000000000000",
+    })).toEqual([
+      {
+        targetEventId: "20000000-0000-0000-0000-000000000000",
+        eventType: "clock_out",
+        eventTimestamp,
+      },
+      {
+        targetEventId: "30000000-0000-0000-0000-000000000000",
+        eventType: "clock_in",
+        eventTimestamp,
+      },
+    ]);
+  });
+
+  it("retains the selected lineage position when previewing an equal-instant replacement", () => {
+    const eventTimestamp = "2026-07-28T07:00:00.000Z";
+    expect(previewManualCorrectionChanges({
+      events: [
+        {
+          id: "10000000-0000-0000-0000-000000000000",
+          staffId: "staff-1",
+          eventType: "clock_in",
+          eventTimestamp,
+          recordedDate: date,
+          source: "kiosk",
+          originalEventId: null,
+          correctionId: null,
+        },
+        {
+          id: "20000000-0000-0000-0000-000000000000",
+          staffId: "staff-1",
+          eventType: "clock_in",
+          eventTimestamp,
+          recordedDate: date,
+          source: "kiosk",
+          originalEventId: null,
+          correctionId: null,
+        },
+      ],
+      selectedEventId: "10000000-0000-0000-0000-000000000000",
+      selectedEventType: "clock_in",
+      localDateTime: "2026-07-28T08:00",
+      staffId: "staff-1",
+      proposedCorrectionId: "f0000000-0000-4000-8000-000000000000",
+    })).toEqual([
+      {
+        targetEventId: "20000000-0000-0000-0000-000000000000",
+        eventType: "clock_out",
+        eventTimestamp,
+      },
+    ]);
   });
 
   it("leaves the added-event preview empty while its date and time are incomplete", () => {
@@ -586,13 +767,13 @@ describe("attendance correction control contracts", () => {
 });
 
 describe("append-only attendance correction migration", () => {
-  it("creates an immutable correction table with manager insert and select policies", () => {
+  it("creates an immutable correction table with manager reads and RPC-only writes", () => {
     const sql = migrationSql();
 
     expect(sql).toContain("create table public.clock_event_corrections");
     expect(sql).toContain("supersedes_correction_id");
-    expect(sql).toContain("Managers can add clock event corrections");
     expect(sql).toContain("Managers can read clock event corrections");
+    expect(sql).not.toContain("Managers can add clock event corrections");
     expect(sql).toMatch(/staff_id text not null references public\.staff_profiles\(id\)/i);
     expect(sql).toMatch(/original_event_id uuid references public\.clock_events\(id\)/i);
     expect(sql).toMatch(/supersedes_correction_id uuid references public\.clock_event_corrections\(id\)/i);
@@ -603,6 +784,8 @@ describe("append-only attendance correction migration", () => {
     expect(sql).not.toMatch(/clock_event_corrections for (update|delete)/i);
     expect(sql).toContain('drop policy if exists "Managers can add clock corrections"');
     expect(sql).toContain("revoke insert on public.clock_events from authenticated");
+    expect(sql).toMatch(/grant select on public\.clock_event_corrections to authenticated/i);
+    expect(sql).not.toMatch(/grant select,\s*insert on public\.clock_event_corrections to authenticated/i);
   });
 
   it("requires replacement and exclusion targets while keeping additions independent", () => {
@@ -624,8 +807,8 @@ describe("append-only attendance correction migration", () => {
     expect(effectiveEvents).toMatch(/order by[\s\S]*created_at desc[\s\S]*(?:correction_id|correction\.id) desc/i);
     expect(effectiveEvents).toMatch(/correction_kind not in \('replace', 'exclude'\)|correction_kind = 'add'/i);
     expect(effectiveEvents).toContain("'manager_correction'");
-    expect(effectiveEvents).toMatch(/order by event_timestamp, event_id/i);
-    expect(effectiveEvents).toMatch(/returns table \([\s\S]*original_event_id uuid[\s\S]*correction_id uuid[\s\S]*staff_id text[\s\S]*event_type text[\s\S]*event_timestamp timestamptz[\s\S]*recorded_date date[\s\S]*source text/i);
+    expect(effectiveEvents).toMatch(/order by event_timestamp, event_order_key/i);
+    expect(effectiveEvents).toMatch(/returns table \([\s\S]*event_order_key text[\s\S]*original_event_id uuid[\s\S]*correction_id uuid[\s\S]*staff_id text[\s\S]*event_type text[\s\S]*event_timestamp timestamptz[\s\S]*recorded_date date[\s\S]*source text/i);
   });
 
   it("repairs only planned boundaries and preserves intermediate timestamps unless event types must alternate", () => {
@@ -695,8 +878,8 @@ describe("append-only attendance correction migration", () => {
     expect(managerHours).toContain("public.get_effective_clock_events");
     expect(staffHours).not.toContain("from public.clock_events");
     expect(managerHours).not.toContain("from public.clock_events");
-    expect(staffHours).toMatch(/order by ce\.event_timestamp, ce\.event_id/i);
-    expect(managerHours).toMatch(/order by ce\.event_timestamp, ce\.event_id/i);
+    expect(staffHours).toMatch(/order by ce\.event_timestamp, ce\.event_order_key, ce\.event_id/i);
+    expect(managerHours).toMatch(/order by ce\.event_timestamp, ce\.event_order_key, ce\.event_id/i);
     expect(managerHours).toMatch(/from public\.staff_profiles profile/i);
     expect(managerHours).toMatch(/trim\(profile\.display_name\)/i);
   });

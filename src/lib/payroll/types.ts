@@ -48,6 +48,7 @@ export type StaffDirectoryRow = {
 
 export type ProductionClockEvent = {
   id: string;
+  orderKey?: string;
   staffId: string;
   eventType: "clock_in" | "clock_out";
   eventTimestamp: string;

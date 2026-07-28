@@ -96,4 +96,28 @@ describe("staff self-service", () => {
       { id: "in", eventType: "clock_in", eventTimestamp: "2026-06-13T08:00:00+01:00", sourceLabel: "Manager correction", status: "active" },
     ]);
   });
+
+  it("uses effective lineage ordering when self-service events share an instant", () => {
+    const events = [
+      {
+        id: "f0000000-0000-0000-0000-000000000000",
+        orderKey: "10000000-0000-0000-0000-000000000000",
+        eventType: "clock_in" as const,
+        eventTimestamp: "2026-06-13T08:00:00+01:00",
+        managerCorrection: true,
+      },
+      {
+        id: "20000000-0000-0000-0000-000000000000",
+        orderKey: "20000000-0000-0000-0000-000000000000",
+        eventType: "clock_out" as const,
+        eventTimestamp: "2026-06-13T08:00:00+01:00",
+        managerCorrection: false,
+      },
+    ];
+
+    const day = summariseAttendanceDay("2026-06-13", events);
+
+    expect(day.totalMinutes).toBe(0);
+    expect(day.missingClockOut).toBe(false);
+  });
 });

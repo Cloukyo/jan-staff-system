@@ -10,6 +10,7 @@ export type CorrectionActionInput = {
   staffId: string;
   attendanceDate: string;
   targetEventId?: string;
+  correctionId: string;
   eventType: "clock_in" | "clock_out";
   localDateTime: string;
   reason: string;
@@ -34,6 +35,7 @@ export type CorrectionActionResult = {
 export type BoundAttendanceCorrectionContext = {
   staffId: string;
   attendanceDate: string;
+  correctionId: string;
   returnTo: string;
   eventRevision: string;
 };
@@ -48,6 +50,10 @@ function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function validUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -56,6 +62,7 @@ function isCorrectionActionInput(value: unknown): value is CorrectionActionInput
   return isRecord(value)
     && typeof value.staffId === "string"
     && typeof value.attendanceDate === "string"
+    && typeof value.correctionId === "string"
     && typeof value.eventType === "string"
     && typeof value.localDateTime === "string"
     && typeof value.reason === "string"
@@ -102,6 +109,7 @@ async function saveClockEventCorrection(input: CorrectionActionInput): Promise<C
   if (
     !input.staffId
     || !validDate(input.attendanceDate)
+    || !validUuid(input.correctionId)
     || !["clock_in", "clock_out"].includes(input.eventType)
     || !input.expectedRevision
     || reason.length < 5
@@ -124,6 +132,7 @@ async function saveClockEventCorrection(input: CorrectionActionInput): Promise<C
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     target_event_id: input.targetEventId?.trim() || null,
+    primary_correction_id: input.correctionId,
     requested_event_type: input.eventType,
     requested_event_timestamp: localDateTime.timestamp.toISOString(),
     reason,
@@ -151,6 +160,7 @@ export async function saveBoundClockEventCorrectionAction(
     staffId: context.staffId,
     attendanceDate: context.attendanceDate,
     targetEventId: String(formData.get("targetEventId") ?? "") || undefined,
+    correctionId: context.correctionId,
     eventType: String(formData.get("eventType") ?? "") as AttendanceEventType,
     localDateTime: String(formData.get("localDateTime") ?? ""),
     reason: String(formData.get("reason") ?? ""),

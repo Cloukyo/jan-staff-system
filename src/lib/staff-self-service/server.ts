@@ -44,6 +44,7 @@ export type StaffRotaWeek = {
 
 export type StaffAttendanceEvent = {
   id: string;
+  orderKey?: string;
   eventType: "clock_in" | "clock_out";
   eventTimestamp: string;
   managerCorrection: boolean;
@@ -164,11 +165,14 @@ export function summariseAttendanceDay(
   corrections: StaffAttendanceCorrection[] = [],
 ): StaffAttendanceDay {
   const ordered = [...events].sort(
-    (left, right) => Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp) || left.id.localeCompare(right.id),
+    (left, right) => Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp)
+      || (left.orderKey ?? left.id).localeCompare(right.orderKey ?? right.id)
+      || left.id.localeCompare(right.id),
   );
   const analysis = analyseAttendanceDay({
     events: ordered.map((event) => ({
       id: event.id,
+      orderKey: event.orderKey,
       staffId: "self",
       eventType: event.eventType,
       eventTimestamp: event.eventTimestamp,
@@ -255,6 +259,7 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
           .filter((event) => event.recordedDate === date)
           .map((event) => ({
             id: event.id,
+            orderKey: event.orderKey,
             eventType: event.eventType,
             eventTimestamp: event.eventTimestamp,
             managerCorrection: event.source !== "kiosk",

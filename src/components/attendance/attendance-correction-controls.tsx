@@ -4,7 +4,11 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, inputClassName } from "@/components/ui/primitives";
 import type { CorrectionActionResult } from "@/lib/attendance/correction-actions";
-import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
+import {
+  compareEffectiveEvents,
+  type AttendanceEventType,
+  type EffectiveClockEvent,
+} from "@/lib/attendance/effective-events";
 import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
 import { formatTimeUk, londonLocalDateTimeToUtc } from "@/lib/dates/format";
@@ -54,10 +58,7 @@ function plannedTimestamp(date: string, time: string): string {
 }
 
 function orderedEvents(events: EffectiveClockEvent[]): EffectiveClockEvent[] {
-  return [...events].sort((left, right) => (
-    Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp)
-    || left.id.localeCompare(right.id)
-  ));
+  return [...events].sort(compareEffectiveEvents);
 }
 
 export { buildAttendanceDayReturnTo };
@@ -68,12 +69,14 @@ export function previewManualCorrectionChanges({
   selectedEventType,
   localDateTime,
   staffId,
+  proposedCorrectionId,
 }: {
   events: EffectiveClockEvent[];
   selectedEventId: string | null;
   selectedEventType: AttendanceEventType;
   localDateTime?: string;
   staffId?: string;
+  proposedCorrectionId?: string;
 }): TypeChangePreview[] {
   if (!selectedEventId && (!localDateTime || !staffId)) return [];
   let eventTimestamp: string;
@@ -92,6 +95,7 @@ export function previewManualCorrectionChanges({
     recordedDate: localDateTime?.slice(0, 10) ?? events.find((event) => event.id === selectedEventId || event.originalEventId === selectedEventId)?.recordedDate ?? "",
     eventType: selectedEventType,
     eventTimestamp,
+    proposedCorrectionId,
   }).map((change) => ({
     targetEventId: change.targetEventId,
     eventType: change.eventType,
@@ -195,12 +199,13 @@ function ConsequentialPreview({ changes }: { changes: TypeChangePreview[] }) {
   );
 }
 
-function FixEventForm({ day, targetEventId, eventType: currentEventType, eventTimestamp, source, returnTo, action }: {
+function FixEventForm({ day, targetEventId, eventType: currentEventType, eventTimestamp, source, correctionId, returnTo, action }: {
   day: StaffHoursDay;
   targetEventId: string;
   eventType: AttendanceEventType;
   eventTimestamp: string;
   source: EffectiveClockEvent["source"];
+  correctionId: string;
   returnTo: string;
   action: CorrectionFormAction;
 }) {
@@ -214,7 +219,8 @@ function FixEventForm({ day, targetEventId, eventType: currentEventType, eventTi
     selectedEventType: eventType,
     localDateTime,
     staffId: day.staffId,
-  }), [day.effectiveEvents, day.staffId, eventType, localDateTime, targetEventId]);
+    proposedCorrectionId: correctionId,
+  }), [correctionId, day.effectiveEvents, day.staffId, eventType, localDateTime, targetEventId]);
   useEffect(() => {
     if (state.ok) {
       router.replace(returnTo);
@@ -235,13 +241,13 @@ function FixEventForm({ day, targetEventId, eventType: currentEventType, eventTi
         <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
       </div>
       <ConsequentialPreview changes={changes} />
-      <Button className="mt-3" type="submit" disabled={pending}>{pending ? "Saving..." : "Save event fix"}</Button>
+      <Button className="mt-3" type="submit" disabled={pending || !correctionId}>{pending ? "Saving..." : "Save event fix"}</Button>
       <ActionFeedback state={state} />
     </form>
   );
 }
 
-export function MissingEventCorrectionForm({ day, returnTo, action }: { day: StaffHoursDay; returnTo: string; action: CorrectionFormAction }) {
+export function MissingEventCorrectionForm({ day, correctionId, returnTo, action }: { day: StaffHoursDay; correctionId: string; returnTo: string; action: CorrectionFormAction }) {
   const router = useRouter();
   const [eventType, setEventType] = useState(day.suggestedMissingType);
   const [localDateTime, setLocalDateTime] = useState(`${day.date}T${day.plannedPeriods[0]?.startTime ?? "09:00"}`);
@@ -252,7 +258,8 @@ export function MissingEventCorrectionForm({ day, returnTo, action }: { day: Sta
     selectedEventType: eventType,
     localDateTime,
     staffId: day.staffId,
-  }), [day.effectiveEvents, day.staffId, eventType, localDateTime]);
+    proposedCorrectionId: correctionId,
+  }), [correctionId, day.effectiveEvents, day.staffId, eventType, localDateTime]);
   useEffect(() => {
     if (state.ok) {
       router.replace(returnTo);
@@ -268,7 +275,7 @@ export function MissingEventCorrectionForm({ day, returnTo, action }: { day: Sta
         <Field label="Reason for correction"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
       </div>
       <ConsequentialPreview changes={changes} />
-      <Button className="mt-3" type="submit" disabled={pending}>{pending ? "Saving..." : "Add missing event"}</Button>
+      <Button className="mt-3" type="submit" disabled={pending || !correctionId}>{pending ? "Saving..." : "Add missing event"}</Button>
       <ActionFeedback state={state} />
     </form>
   );
@@ -298,8 +305,9 @@ function PlannedHoursForm({ preview, returnTo, action }: { preview: PlannedHours
   );
 }
 
-export function AttendanceCorrectionControls({ day, returnTo, manualAction, plannedHoursAction }: {
+export function AttendanceCorrectionControls({ day, correctionId, returnTo, manualAction, plannedHoursAction }: {
   day: StaffHoursDay;
+  correctionId: string;
   returnTo: string;
   manualAction: CorrectionFormAction;
   plannedHoursAction: CorrectionFormAction;
@@ -310,8 +318,8 @@ export function AttendanceCorrectionControls({ day, returnTo, manualAction, plan
       <h4 className="text-sm font-black text-purple-950">Correct this day</h4>
       <p className="mt-1 text-sm text-slate-700">Original clock events stay unchanged. Corrections are saved separately.</p>
       <div className="mt-3 grid gap-2">
-        {day.effectiveEvents.map((event) => <details key={event.id} className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Fix {formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}</summary><FixEventForm day={day} targetEventId={event.id} eventType={event.eventType} eventTimestamp={event.eventTimestamp} source={event.source} returnTo={returnTo} action={manualAction} /></details>)}
-        <details className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Add missing event</summary><MissingEventCorrectionForm day={day} returnTo={returnTo} action={manualAction} /></details>
+        {day.effectiveEvents.map((event) => <details key={event.id} className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Fix {formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}</summary><FixEventForm day={day} targetEventId={event.id} eventType={event.eventType} eventTimestamp={event.eventTimestamp} source={event.source} correctionId={correctionId} returnTo={returnTo} action={manualAction} /></details>)}
+        <details className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Add missing event</summary><MissingEventCorrectionForm day={day} correctionId={correctionId} returnTo={returnTo} action={manualAction} /></details>
         {plannedPreview ? <details className="border-b border-purple-100 pb-2"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Use planned hours</summary><PlannedHoursForm preview={plannedPreview} returnTo={returnTo} action={plannedHoursAction} /></details> : null}
       </div>
     </section>

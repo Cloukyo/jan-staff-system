@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 
 export const MANAGER_ACCOUNT_ID = "00000000-0000-0000-0000-000000000001";
@@ -573,6 +574,7 @@ export async function saveManualCorrection(
     staffId: string;
     date: string;
     targetEventId?: string | null;
+    primaryCorrectionId?: string;
     eventType: "clock_in" | "clock_out";
     timestamp: string;
     reason?: string;
@@ -586,15 +588,17 @@ export async function saveManualCorrection(
        $1,
        $2::date,
        $3::uuid,
-       $4,
-       $5::timestamptz,
-       $6,
-       $7
+       $4::uuid,
+       $5,
+       $6::timestamptz,
+       $7,
+       $8
      )::text as batch_id`,
     [
       input.staffId,
       input.date,
       input.targetEventId ?? null,
+      input.primaryCorrectionId ?? randomUUID(),
       input.eventType,
       input.timestamp,
       input.reason ?? "Manager confirmed attendance",
@@ -617,7 +621,7 @@ export async function effectiveEvents(db: PGlite, staffId: string, date: string)
        event_timestamp::text,
        source
      from public.get_effective_clock_events($1::date, $1::date, $2)
-     order by event_timestamp, event_id`,
+     order by event_timestamp, event_order_key, event_id`,
     [date, staffId],
   );
   return result.rows;

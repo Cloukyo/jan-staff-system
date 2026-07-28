@@ -265,9 +265,10 @@ describe("attendance correction PostgreSQL migration", () => {
     expect(effective.map((event) => event.source)).toEqual(["legacy_manager", "kiosk"]);
   });
 
-  it("enforces correction RLS for manager and staff accounts", async () => {
+  it("blocks direct authenticated correction inserts but keeps the manager RPC authoritative", async () => {
     await resetRole(db);
     await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const managerRevision = await attendanceRevision(db, "staff-profile", "2026-08-12");
     await setAuthenticatedRole(db);
     await expect(
       db.query(
@@ -279,10 +280,25 @@ describe("attendance correction PostgreSQL migration", () => {
            gen_random_uuid(), 'primary', 'staff-profile', 'add',
            'clock_in', '2026-08-12T09:00:00+01:00', '2026-08-12',
            'Manager correction', $1::uuid
-         )`,
+        )`,
         [MANAGER_ACCOUNT_ID],
       ),
-    ).resolves.toBeDefined();
+    ).rejects.toThrow(/permission denied/i);
+
+    const managerRpc = await db.query<{ batch_id: string }>(
+      `select public.save_manual_clock_event_correction(
+         'staff-profile',
+         '2026-08-12',
+         null,
+         '10000000-0000-0000-0000-000000000012',
+         'clock_in',
+         '2026-08-12T09:00:00+01:00',
+         'Manager correction through RPC',
+         $1
+       )::text as batch_id`,
+      [managerRevision],
+    );
+    expect(managerRpc.rows[0].batch_id).toMatch(/^[0-9a-f-]{36}$/i);
 
     await resetRole(db);
     await setCurrentAccount(db, STAFF_ACCOUNT_ID);
@@ -301,11 +317,176 @@ describe("attendance correction PostgreSQL migration", () => {
            gen_random_uuid(), 'primary', 'staff-profile', 'add',
            'clock_out', '2026-08-12T17:00:00+01:00', '2026-08-12',
            'Staff correction', $1::uuid
-         )`,
+        )`,
         [STAFF_ACCOUNT_ID],
       ),
-    ).rejects.toThrow(/row-level security|policy/i);
+    ).rejects.toThrow(/permission denied/i);
     await resetRole(db);
+  });
+
+  it("keeps replacement ordering and kiosk latest status stable at the same instant", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('equal-instant-order', 'Equal instant order')`,
+    );
+    await db.query(
+      `insert into public.clock_events (
+         id, staff_id, event_type, event_timestamp
+       )
+       values
+         (
+           '10000000-0000-0000-0000-000000000000',
+           'equal-instant-order',
+           'clock_in',
+           '2026-08-23T09:00:00+01:00'
+         ),
+         (
+           '20000000-0000-0000-0000-000000000000',
+           'equal-instant-order',
+           'clock_out',
+           '2026-08-23T09:00:00+01:00'
+         )`,
+    );
+
+    await saveManualCorrection(db, {
+      staffId: "equal-instant-order",
+      date: "2026-08-23",
+      targetEventId: "10000000-0000-0000-0000-000000000000",
+      primaryCorrectionId: "f0000000-0000-0000-0000-000000000000",
+      eventType: "clock_in",
+      timestamp: "2026-08-23T09:00:00+01:00",
+    });
+
+    const effective = await db.query<{
+      event_id: string;
+      event_order_key: string;
+      event_type: string;
+    }>(
+      `select event_id::text, event_order_key::text, event_type
+       from public.get_effective_clock_events(
+         '2026-08-23',
+         '2026-08-23',
+         'equal-instant-order'
+       )
+       order by event_timestamp, event_order_key`,
+    );
+    const latest = await db.query<{ event_type: string }>(
+      `select event_type
+       from public.get_latest_effective_clock_event(
+         'equal-instant-order',
+         '2026-08-23',
+         1
+       )`,
+    );
+
+    expect(effective.rows).toEqual([
+      {
+        event_id: "f0000000-0000-0000-0000-000000000000",
+        event_order_key: "10000000-0000-0000-0000-000000000000:original",
+        event_type: "clock_in",
+      },
+      {
+        event_id: "20000000-0000-0000-0000-000000000000",
+        event_order_key: "20000000-0000-0000-0000-000000000000:original",
+        event_type: "clock_out",
+      },
+    ]);
+    expect(latest.rows[0].event_type).toBe("clock_out");
+  });
+
+  it("persists equal-instant add consequences in the same order as the preview", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('equal-instant-add', 'Equal instant add')`,
+    );
+    await db.query(
+      `insert into public.clock_events (
+         id, staff_id, event_type, event_timestamp
+       )
+       values
+         (
+           '10000000-0000-0000-0000-000000000001',
+           'equal-instant-add',
+           'clock_out',
+           '2026-08-24T09:00:00+01:00'
+         ),
+         (
+           '20000000-0000-0000-0000-000000000001',
+           'equal-instant-add',
+           'clock_in',
+           '2026-08-24T09:00:00+01:00'
+         ),
+         (
+           '30000000-0000-0000-0000-000000000001',
+           'equal-instant-add',
+           'clock_out',
+           '2026-08-24T09:00:00+01:00'
+         )`,
+    );
+
+    const batchId = await saveManualCorrection(db, {
+      staffId: "equal-instant-add",
+      date: "2026-08-24",
+      primaryCorrectionId: "15000000-0000-4000-8000-000000000001",
+      eventType: "clock_in",
+      timestamp: "2026-08-24T09:00:00+01:00",
+    });
+    const corrections = await db.query<{
+      correction_role: string;
+      original_event_id: string | null;
+      event_type: string;
+    }>(
+      `select
+         correction_role,
+         original_event_id::text,
+         event_type
+       from public.clock_event_corrections
+       where batch_id = $1::uuid
+       order by
+         case when correction_role = 'primary' then 0 else 1 end,
+         original_event_id nulls first`,
+      [batchId],
+    );
+    const effective = await db.query<{
+      event_order_key: string;
+      event_type: string;
+    }>(
+      `select event_order_key, event_type
+       from public.get_effective_clock_events(
+         '2026-08-24',
+         '2026-08-24',
+         'equal-instant-add'
+       )
+       order by event_timestamp, event_order_key, event_id`,
+    );
+
+    expect(corrections.rows).toEqual([
+      {
+        correction_role: "primary",
+        original_event_id: null,
+        event_type: "clock_in",
+      },
+      {
+        correction_role: "consequential",
+        original_event_id: "20000000-0000-0000-0000-000000000001",
+        event_type: "clock_out",
+      },
+      {
+        correction_role: "consequential",
+        original_event_id: "30000000-0000-0000-0000-000000000001",
+        event_type: "clock_in",
+      },
+    ]);
+    expect(effective.rows.map((row) => row.event_type)).toEqual([
+      "clock_out",
+      "clock_in",
+      "clock_out",
+      "clock_in",
+    ]);
   });
 
   it("saves one correction chain batch and resolves its active leaf", async () => {
@@ -840,6 +1021,7 @@ describe("attendance correction PostgreSQL migration", () => {
          'staff-profile',
          '2026-08-22',
          null,
+         '10000000-0000-0000-0000-000000000022',
          'clock_in',
          '2026-08-22T09:00:00+01:00',
          'Staff cannot correct attendance',

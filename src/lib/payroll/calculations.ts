@@ -23,6 +23,7 @@ export function calculateClockTotals(events: ProductionClockEvent[], maximumShif
   const ordered = [...events].sort((a, b) => (
     a.recordedDate.localeCompare(b.recordedDate)
     || Date.parse(a.eventTimestamp) - Date.parse(b.eventTimestamp)
+    || (a.orderKey ?? a.id).localeCompare(b.orderKey ?? b.id)
     || a.id.localeCompare(b.id)
   ));
   const warnings: string[] = [];

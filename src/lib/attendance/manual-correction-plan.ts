@@ -1,4 +1,8 @@
-import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
+import {
+  effectiveEventOrderKey,
+  type AttendanceEventType,
+  type EffectiveClockEvent,
+} from "@/lib/attendance/effective-events";
 import {
   planAlternatingEventTypes,
   type PlannedEventTypeCorrection,
@@ -11,6 +15,7 @@ export type ManualCorrectionPlanInput = {
   recordedDate: string;
   eventType: AttendanceEventType;
   eventTimestamp: string;
+  proposedCorrectionId?: string;
 };
 
 export function planManualCorrectionConsequences(
@@ -22,15 +27,18 @@ export function planManualCorrectionConsequences(
       || event.originalEventId === input.selectedEventId
     ))
     : null;
-  const primary: EffectiveClockEvent = selected
+  const primary: EffectiveClockEvent | null = selected
     ? {
         ...selected,
+        id: input.proposedCorrectionId ?? selected.id,
+        orderKey: effectiveEventOrderKey(selected),
         eventType: input.eventType,
         eventTimestamp: input.eventTimestamp,
         recordedDate: input.recordedDate,
       }
-    : {
-        id: "00000000-0000-0000-0000-000000000000",
+    : input.proposedCorrectionId ? {
+        id: input.proposedCorrectionId,
+        orderKey: `${input.proposedCorrectionId}:correction`,
         staffId: input.staffId,
         eventType: input.eventType,
         eventTimestamp: input.eventTimestamp,
@@ -38,7 +46,8 @@ export function planManualCorrectionConsequences(
         source: "manager_correction",
         originalEventId: null,
         correctionId: null,
-      };
+      } : null;
+  if (!primary) return [];
   const events = selected
     ? input.events.map((event) => event.id === selected.id ? primary : event)
     : [...input.events, primary];

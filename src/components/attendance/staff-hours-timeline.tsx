@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import Link from "next/link";
 import { AttendanceCorrectionControls } from "@/components/attendance/attendance-correction-controls";
@@ -56,10 +57,12 @@ function EventLane({ label, children }: { label: string; children: React.ReactNo
 
 export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; from: string; to: string }) {
   const correctionCount = day.audit.corrections.length;
+  const correctionId = randomUUID();
   const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
   const context = {
     staffId: day.staffId,
     attendanceDate: day.date,
+    correctionId,
     returnTo,
     eventRevision: day.eventRevision,
   };
@@ -88,7 +91,7 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
       </div>
 
       <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately.` : ""}</p>
-      <AttendanceCorrectionControls day={day} returnTo={returnTo} manualAction={manualAction} plannedHoursAction={plannedHoursAction} />
+      <AttendanceCorrectionControls day={day} correctionId={correctionId} returnTo={returnTo} manualAction={manualAction} plannedHoursAction={plannedHoursAction} />
 
       <div className="mt-4 overflow-x-auto md:hidden">
         <table className="w-full min-w-[34rem] text-left text-sm">

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { AttendanceScreen } from "@/components/attendance/attendance-screen";
 import { AttendanceReview } from "@/components/attendance/attendance-review";
 import { AttendancePageNav } from "@/components/attendance/attendance-page-nav";
@@ -46,6 +47,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const staffHoursList = view === "hours" && !staffIdProvided ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
   const staffHoursWeek = view === "hours" && staffIdProvided && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
   const missingEvent = view === "add-event" ? await loadMissingEventPage(staffId, date) : null;
+  const missingEventCorrectionId = randomUUID();
   const missingEventReturnTo = missingEvent?.day
     ? `/attendance?${new URLSearchParams({
         view: "add-event",
@@ -57,6 +59,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     ? saveBoundClockEventCorrectionAction.bind(null, {
         staffId: missingEvent.day.staffId,
         attendanceDate: missingEvent.date,
+        correctionId: missingEventCorrectionId,
         returnTo: missingEventReturnTo,
         eventRevision: missingEvent.day.eventRevision,
       })
@@ -105,6 +108,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           <AttendanceCorrectionForm
             data={missingEvent}
             action={missingEventAction}
+            correctionId={missingEventCorrectionId}
             returnTo={missingEventReturnTo}
           />
         ) : null}

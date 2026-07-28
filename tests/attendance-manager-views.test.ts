@@ -7,6 +7,7 @@ import { parseAttendanceManagerView, parseAttendancePageSearchParams } from "@/l
 import { attendanceDayHref } from "@/lib/attendance/day-route";
 import { parseStaffHoursWeekId, toStaffHoursWeek, type StaffHoursRange } from "@/lib/attendance/staff-hours";
 import type { AttendanceReviewRow } from "@/lib/attendance/review-server";
+import * as kioskServer from "@/lib/kiosk/server";
 import type { ManagerClockEvent, ManagerKioskRow } from "@/lib/kiosk/server";
 
 function reviewRow(
@@ -357,5 +358,105 @@ describe("manager attendance views", () => {
     expect(
       filterAndPaginateAttendanceHistory([], events, "", 99).page,
     ).toBe(3);
+  });
+
+  it("loads every history page before resolving correction ancestry", async () => {
+    const loadManagerClockHistorySources = (
+      kioskServer as unknown as {
+        loadManagerClockHistorySources?: (
+          loadOriginalPage: (from: number, to: number) => Promise<{
+            data: Array<Record<string, unknown>>;
+            error: null;
+          }>,
+          loadCorrectionPage: (from: number, to: number) => Promise<{
+            data: Array<Record<string, unknown>>;
+            error: null;
+          }>,
+          pageSize?: number,
+        ) => Promise<{
+          originalRows: Array<Record<string, unknown>>;
+          correctionRows: Array<Record<string, unknown>>;
+        }>;
+      }
+    ).loadManagerClockHistorySources;
+    expect(typeof loadManagerClockHistorySources).toBe("function");
+
+    const originalRows = Array.from({ length: 251 }, (_, index) => ({
+      id: `original-${index}`,
+      staff_id: "staff-1",
+      event_type: index % 2 === 0 ? "clock_in" : "clock_out",
+      event_timestamp: `2026-07-28T${String(8 + (index % 10)).padStart(2, "0")}:00:00.000Z`,
+      recorded_date: "2026-07-28",
+      event_source: "kiosk",
+      manager_correction: false,
+      correction_reason: null,
+      created_at: `2026-07-28T${String(8 + (index % 10)).padStart(2, "0")}:00:00.000Z`,
+    }));
+    const correctionRows = [
+      {
+        id: "leaf-correction",
+        staff_id: "staff-1",
+        correction_kind: "replace",
+        original_event_id: null,
+        supersedes_correction_id: "root-correction",
+        event_type: "clock_in",
+        event_timestamp: "2026-07-28T08:30:00.000Z",
+        recorded_date: "2026-07-28",
+        reason: "Final corrected time",
+        created_by: "manager-1",
+        created_at: "2026-07-28T11:00:00.000Z",
+      },
+      ...Array.from({ length: 249 }, (_, index) => ({
+        id: `filler-correction-${index}`,
+        staff_id: "staff-1",
+        correction_kind: "add",
+        original_event_id: null,
+        supersedes_correction_id: null,
+        event_type: index % 2 === 0 ? "clock_in" : "clock_out",
+        event_timestamp: `2026-07-28T${String(9 + (index % 8)).padStart(2, "0")}:30:00.000Z`,
+        recorded_date: "2026-07-28",
+        reason: "Complete paged history",
+        created_by: "manager-1",
+        created_at: `2026-07-28T10:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      })),
+      {
+        id: "root-correction",
+        staff_id: "staff-1",
+        correction_kind: "replace",
+        original_event_id: "original-0",
+        supersedes_correction_id: null,
+        event_type: "clock_out",
+        event_timestamp: "2026-07-28T08:15:00.000Z",
+        recorded_date: "2026-07-28",
+        reason: "Initial corrected time",
+        created_by: "manager-1",
+        created_at: "2026-07-28T09:00:00.000Z",
+      },
+    ];
+    const originalPageCalls: Array<[number, number]> = [];
+    const correctionPageCalls: Array<[number, number]> = [];
+    const loaded = await loadManagerClockHistorySources!(
+      async (from, to) => {
+        originalPageCalls.push([from, to]);
+        return { data: originalRows.slice(from, to + 1), error: null };
+      },
+      async (from, to) => {
+        correctionPageCalls.push([from, to]);
+        return { data: correctionRows.slice(from, to + 1), error: null };
+      },
+      250,
+    );
+    const history = kioskServer.buildManagerClockHistory(
+      loaded.originalRows as never[],
+      loaded.correctionRows as never[],
+      new Map([["manager-1", "Manager Account"]]),
+    );
+
+    expect(originalPageCalls).toEqual([[0, 249], [250, 499]]);
+    expect(correctionPageCalls).toEqual([[0, 249], [250, 499]]);
+    expect(history).toHaveLength(502);
+    expect(history.find((row) => row.id === "original-0")?.auditStatus).toBe("replaced");
+    expect(history.find((row) => row.id === "root-correction")?.auditStatus).toBe("superseded");
+    expect(history.find((row) => row.id === "leaf-correction")?.auditStatus).toBe("active");
   });
 });

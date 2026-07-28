@@ -11,6 +11,10 @@ import {
 } from "@/lib/attendance/effective-events";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
+import {
+  loadAllPostgrestPages,
+  type PostgrestPage,
+} from "@/lib/repositories/postgrest-pagination";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
 
 type KioskRosterRow = {
@@ -152,6 +156,27 @@ type ManagerClockCorrectionSourceRow = {
   created_at: string;
 };
 
+export async function loadManagerClockHistorySources(
+  loadOriginalPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<PostgrestPage<ManagerClockEventSourceRow>>,
+  loadCorrectionPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<PostgrestPage<ManagerClockCorrectionSourceRow>>,
+  pageSize = 1_000,
+): Promise<{
+  originalRows: ManagerClockEventSourceRow[];
+  correctionRows: ManagerClockCorrectionSourceRow[];
+}> {
+  const [originalRows, correctionRows] = await Promise.all([
+    loadAllPostgrestPages(loadOriginalPage, pageSize),
+    loadAllPostgrestPages(loadCorrectionPage, pageSize),
+  ]);
+  return { originalRows, correctionRows };
+}
+
 type ManagerEffectiveStatusRow = {
   staff_id: string;
   current_status: KioskRosterEntry["currentStatus"];
@@ -245,22 +270,32 @@ export function buildManagerClockHistory(
 
 export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[]; events: ManagerClockEvent[] }> {
   const supabase = await createSupabaseServerClient();
-  const [profiles, settings, events, corrections, accounts, effectiveStatuses] = await Promise.all([
+  const [profiles, settings, history, accounts, effectiveStatuses] = await Promise.all([
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),
-    supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason,created_at").order("event_timestamp", { ascending: false }).limit(250),
-    supabase.from("clock_event_corrections").select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at").order("created_at", { ascending: false }).limit(250),
+    loadManagerClockHistorySources(
+      (from, to) => supabase.from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason,created_at")
+        .order("event_timestamp", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+      (from, to) => supabase.from("clock_event_corrections")
+        .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+    ),
     supabase.from("staff_accounts").select("id,full_name").eq("role", "manager"),
     supabase.rpc("get_manager_kiosk_statuses", {
       reference_date: isoDateInLondon(),
     }),
   ]);
-  if (profiles.error || settings.error || events.error || corrections.error || accounts.error || effectiveStatuses.error) {
+  if (profiles.error || settings.error || accounts.error || effectiveStatuses.error) {
     throw new Error("Production attendance could not be loaded.");
   }
   const settingMap = new Map((settings.data ?? []).map((row) => [row.staff_id, row]));
-  const eventRows = (events.data ?? []) as ManagerClockEventSourceRow[];
-  const correctionRows = (corrections.data ?? []) as ManagerClockCorrectionSourceRow[];
+  const eventRows = history.originalRows;
+  const correctionRows = history.correctionRows;
   const accountNames = new Map(
     (accounts.data ?? []).map((row) => [String(row.id), String(row.full_name)]),
   );

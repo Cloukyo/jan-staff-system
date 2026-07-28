@@ -25,6 +25,7 @@ export type AttendanceCorrection = {
 
 export type EffectiveClockEvent = {
   id: string;
+  orderKey?: string;
   staffId: string;
   eventType: AttendanceEventType;
   eventTimestamp: string;
@@ -54,18 +55,32 @@ export type ResolvedAttendanceEvents = {
   };
 };
 
-function orderEvents(left: EffectiveClockEvent, right: EffectiveClockEvent): number {
-  return Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp) || left.id.localeCompare(right.id);
+export function effectiveEventOrderKey(event: EffectiveClockEvent): string {
+  return event.orderKey ?? event.originalEventId ?? event.id;
+}
+
+export function compareEffectiveEvents(
+  left: EffectiveClockEvent,
+  right: EffectiveClockEvent,
+): number {
+  return Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp)
+    || effectiveEventOrderKey(left).localeCompare(effectiveEventOrderKey(right))
+    || left.id.localeCompare(right.id);
 }
 
 function compareCorrectionCreationOrder(left: AttendanceCorrection, right: AttendanceCorrection): number {
   return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id);
 }
 
-function correctionEvent(correction: AttendanceCorrection, originalEventId: string | null): EffectiveClockEvent | null {
+function correctionEvent(
+  correction: AttendanceCorrection,
+  originalEventId: string | null,
+  orderKey: string,
+): EffectiveClockEvent | null {
   if (correction.kind === "exclude" || !correction.eventType || !correction.eventTimestamp) return null;
   return {
     id: correction.id,
+    orderKey,
     staffId: correction.staffId,
     eventType: correction.eventType,
     eventTimestamp: correction.eventTimestamp,
@@ -144,16 +159,24 @@ export function resolveEffectiveEvents(
     .filter((item) => item.status === "active")
     .map(({ event }) => ({
       ...event,
+      orderKey: `${event.id}:original`,
       originalEventId: null,
       correctionId: null,
     }));
   const effectiveCorrections = active.flatMap((correction) => {
-    const event = correctionEvent(correction, originalForCorrection(correction));
+    const originalEventId = originalForCorrection(correction);
+    const event = correctionEvent(
+      correction,
+      originalEventId,
+      originalEventId
+        ? `${originalEventId}:original`
+        : `${rootForCorrection(correction).id}:correction`,
+    );
     return event ? [event] : [];
   });
 
   return {
-    effective: [...effectiveOriginals, ...effectiveCorrections].sort(orderEvents),
+    effective: [...effectiveOriginals, ...effectiveCorrections].sort(compareEffectiveEvents),
     audit: {
       originals: originalAudit,
       corrections: corrections.map((correction) => ({

@@ -200,10 +200,12 @@ export function AttendanceHistory({ staff, events }: { staff: ManagerKioskRow[];
 export function AttendanceCorrectionForm({
   data,
   action,
+  correctionId,
   returnTo,
 }: {
   data: MissingEventPage;
   action: CorrectionFormAction | null;
+  correctionId: string;
   returnTo: string;
 }) {
   return (
@@ -233,7 +235,7 @@ export function AttendanceCorrectionForm({
               ? data.day.effectiveEvents.map((event) => `${formatTimeUk(event.eventTimestamp)} ${event.eventType === "clock_in" ? "clock in" : "clock out"}`).join(", ")
               : "No clock events"}
           </p>
-          <MissingEventCorrectionForm day={data.day} returnTo={returnTo} action={action} />
+          <MissingEventCorrectionForm day={data.day} correctionId={correctionId} returnTo={returnTo} action={action} />
         </div>
       ) : (
         <p className="mt-5 text-sm text-slate-600">Choose a staff member and date to review the day.</p>

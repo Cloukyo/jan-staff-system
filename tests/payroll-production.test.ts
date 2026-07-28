@@ -132,6 +132,35 @@ describe("production payroll preparation", () => {
     expect(result.warnings).toContain("Manager correction");
   });
 
+  it("uses the immutable lineage key when effective events share an instant", () => {
+    const events = [
+      {
+        id: "f0000000-0000-0000-0000-000000000000",
+        orderKey: "10000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_in" as const,
+        eventTimestamp: "2026-06-01T08:00:00Z",
+        recordedDate: "2026-06-01",
+        managerCorrection: true,
+      },
+      {
+        id: "20000000-0000-0000-0000-000000000000",
+        orderKey: "20000000-0000-0000-0000-000000000000",
+        staffId: "staff-1",
+        eventType: "clock_out" as const,
+        eventTimestamp: "2026-06-01T08:00:00Z",
+        recordedDate: "2026-06-01",
+        managerCorrection: false,
+      },
+    ];
+
+    const result = calculateClockTotals(events);
+
+    expect(result.recordedMinutes).toBe(0);
+    expect(result.warnings).not.toContain("Clock-out without clock-in");
+    expect(result.warnings).not.toContain("Missing clock-out");
+  });
+
   it("uses the latest duplicate clock-in as the payable start", () => {
     const result = calculateClockTotals([
       { id: "in-08", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },

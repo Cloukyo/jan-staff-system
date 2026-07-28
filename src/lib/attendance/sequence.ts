@@ -1,4 +1,8 @@
-import type { AttendanceEventType, EffectiveClockEvent } from "@/lib/attendance/effective-events";
+import {
+  compareEffectiveEvents,
+  type AttendanceEventType,
+  type EffectiveClockEvent,
+} from "@/lib/attendance/effective-events";
 
 export type AttendanceWarning =
   | "missing_clock_in"
@@ -43,10 +47,6 @@ export type AlternatingEventPlanInput = {
   selectedEventType: AttendanceEventType;
 };
 
-function orderEvents(left: EffectiveClockEvent, right: EffectiveClockEvent): number {
-  return Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp) || left.id.localeCompare(right.id);
-}
-
 function opposite(type: AttendanceEventType): AttendanceEventType {
   return type === "clock_in" ? "clock_out" : "clock_in";
 }
@@ -56,7 +56,7 @@ function minutesBetween(start: string, end: string): number {
 }
 
 export function analyseAttendanceDay(input: AttendanceDayAnalysisInput): AttendanceDayAnalysis {
-  const events = [...input.events].sort(orderEvents);
+  const events = [...input.events].sort(compareEffectiveEvents);
   const warnings: AttendanceWarning[] = [];
   const addWarning = (warning: AttendanceWarning) => {
     if (!warnings.includes(warning)) warnings.push(warning);
@@ -119,7 +119,7 @@ export function analyseAttendanceDay(input: AttendanceDayAnalysisInput): Attenda
 }
 
 export function planAlternatingEventTypes(input: AlternatingEventPlanInput): PlannedEventTypeCorrection[] {
-  const ordered = [...input.events].sort(orderEvents);
+  const ordered = [...input.events].sort(compareEffectiveEvents);
   const selectedIndex = ordered.findIndex((event) => event.id === input.selectedEventId);
   if (selectedIndex === -1) return [];
 

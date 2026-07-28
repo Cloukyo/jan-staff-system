@@ -40,6 +40,7 @@ export function buildProductionAttendanceData(
   return {
     effectiveEvents: resolved.effective.map((event) => ({
       id: event.id,
+      orderKey: event.orderKey,
       staffId: event.staffId,
       eventType: event.eventType,
       eventTimestamp: event.eventTimestamp,
