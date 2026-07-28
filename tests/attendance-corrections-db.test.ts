@@ -380,6 +380,145 @@ describe("attendance correction PostgreSQL migration", () => {
     ]);
   });
 
+  it.each([
+    { kind: "replace" as const, staffId: "kiosk-replaced" },
+    { kind: "exclude" as const, staffId: "kiosk-excluded" },
+  ])("uses an effective $kind of the latest event for anonymous kiosk status and next action", async ({
+    kind,
+    staffId,
+  }) => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ($1, $2)`,
+      [staffId, staffId],
+    );
+    await db.query(
+      `insert into public.staff_kiosk_settings (
+         staff_id, kiosk_enabled, pin_hash, pin_reset_required
+       )
+       values ($1, true, '4827', false)`,
+      [staffId],
+    );
+    await seedClockEvent(db, {
+      staffId,
+      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      eventType: "clock_out",
+    });
+    const latestId = await seedClockEvent(db, {
+      staffId,
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      eventType: "clock_in",
+    });
+    const latest = await db.query<{ recorded_date: string; event_timestamp: string }>(
+      `select recorded_date::text, event_timestamp::text
+       from public.clock_events
+       where id = $1::uuid`,
+      [latestId],
+    );
+    await db.query(
+      `insert into public.clock_event_corrections (
+         batch_id, correction_role, staff_id, correction_kind,
+         original_event_id, event_type, event_timestamp, recorded_date,
+         reason, created_by
+       )
+       values (
+         gen_random_uuid(), 'primary', $1, $2, $3::uuid,
+         case when $2 = 'replace' then 'clock_out' else null end,
+         case when $2 = 'replace' then $4::timestamptz else null end,
+         $5::date, 'Correct latest kiosk state', $6::uuid
+       )`,
+      [
+        staffId,
+        kind,
+        latestId,
+        latest.rows[0].event_timestamp,
+        latest.rows[0].recorded_date,
+        MANAGER_ACCOUNT_ID,
+      ],
+    );
+
+    await setAuthenticatedRole(db);
+    await db.exec("set role anon");
+    await expect(db.query("select * from public.get_kiosk_roster()"))
+      .rejects.toThrow(/permission denied/i);
+    const roster = await db.query<{ current_status: string }>(
+      `select current_status
+       from public.get_device_kiosk_roster('device-token')
+       where staff_id = $1`,
+      [staffId],
+    );
+    const verification = await db.query<{ current_status: string }>(
+      `select current_status
+       from public.verify_device_kiosk_pin('device-token', $1, '4827')`,
+      [staffId],
+    );
+    const clockIn = await db.query<{ ok: boolean; code: string; current_status: string }>(
+      `select ok, code, current_status
+       from public.record_device_kiosk_clock_event(
+         'device-token', $1, '4827', 'clock_in'
+       )`,
+      [staffId],
+    );
+
+    expect(roster.rows[0].current_status).toBe("clocked_out");
+    expect(verification.rows[0].current_status).toBe("clocked_out");
+    expect(clockIn.rows[0]).toMatchObject({
+      ok: true,
+      code: "recorded",
+      current_status: "clocked_in",
+    });
+    await resetRole(db);
+  });
+
+  it("bounds latest effective status to the requested 366-day lookback", async () => {
+    await resetRole(db);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('old-kiosk-event', 'Old kiosk event')`,
+    );
+    await db.query(
+      `insert into public.clock_events (staff_id, event_type, event_timestamp)
+       values ('old-kiosk-event', 'clock_in', '2025-01-01T09:00:00Z')`,
+    );
+
+    const latest = await db.query(
+      `select *
+       from public.get_latest_effective_clock_event(
+         'old-kiosk-event',
+         '2026-07-28'::date,
+         366
+       )`,
+    );
+    expect(latest.rows).toEqual([]);
+  });
+
+  it("pairs SQL totals from the latest duplicate clock-in", async () => {
+    await resetRole(db);
+    await db.query(
+      `insert into public.staff_profiles (id, full_name)
+       values ('sql-duplicate-in', 'SQL duplicate in')`,
+    );
+    for (const [time, eventType] of [
+      ["08:00", "clock_in"],
+      ["09:00", "clock_in"],
+      ["17:00", "clock_out"],
+    ] as const) {
+      await seedClockEvent(db, {
+        staffId: "sql-duplicate-in",
+        timestamp: `2026-08-14T${time}:00+01:00`,
+        eventType,
+      });
+    }
+
+    const result = await db.query<{ completed_minutes: number }>(
+      `select completed_minutes
+       from public.get_staff_weekly_hours('sql-duplicate-in', '2026-08-14')`,
+    );
+    expect(result.rows[0].completed_minutes).toBe(480);
+  });
+
   it("retains a shared lock and one materialized event snapshot contract", () => {
     expect(migration).toContain("public.lock_attendance_staff_writes");
     expect(migration).toMatch(/before insert on public\.clock_events/i);
@@ -390,5 +529,7 @@ describe("attendance correction PostgreSQL migration", () => {
     expect(migration).toMatch(/jsonb_array_length\(effective_events\)/i);
     expect(migration).toMatch(/jsonb_to_recordset\(effective_events\)/i);
     expect(migration).toMatch(/constraint trigger clock_event_correction_batch_primary/i);
+    expect(migration).toMatch(/record_kiosk_clock_event[\s\S]*perform public\.lock_attendance_staff_writes/i);
+    expect(migration).toContain("get_latest_effective_clock_event");
   });
 });

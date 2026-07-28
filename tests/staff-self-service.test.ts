@@ -23,6 +23,21 @@ describe("staff self-service", () => {
     expect(server).not.toContain('supabase.from("staff_profiles")');
   });
 
+  it("selects only resolver fields from the service-role correction query", () => {
+    const start = server.indexOf('admin.from("clock_event_corrections")');
+    const end = server.indexOf(".order(", start);
+    const correctionQuery = server.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(correctionQuery).toContain("original_event_id");
+    expect(correctionQuery).toContain("supersedes_correction_id");
+    expect(correctionQuery).toContain('.eq("staff_id", account.staffId)');
+    expect(correctionQuery).toContain('.gte("recorded_date", range.from)');
+    expect(correctionQuery).toContain('.lte("recorded_date", range.to)');
+    expect(correctionQuery).not.toMatch(/\breason\b|created_by/);
+    expect(correctionQuery).not.toMatch(/insert|update|delete|upsert/i);
+  });
+
   it("keeps self-service pages read-only", () => {
     const rota = source("src/components/staff-self-service/my-rota.tsx");
     const attendance = source("src/components/staff-self-service/my-attendance.tsx");

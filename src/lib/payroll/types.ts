@@ -55,6 +55,32 @@ export type ProductionClockEvent = {
   managerCorrection: boolean;
 };
 
+export type ProductionClockCorrectionRecord = {
+  id: string;
+  batchId: string;
+  correctionRole: "primary" | "consequential";
+  staffId: string;
+  kind: "add" | "replace" | "exclude";
+  originalEventId: string | null;
+  supersedesCorrectionId: string | null;
+  eventType: ProductionClockEvent["eventType"] | null;
+  eventTimestamp: string | null;
+  recordedDate: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+  sourceLabel: "Manager correction";
+  status: "active" | "superseded";
+};
+
+export type ProductionAttendanceData = {
+  effectiveEvents: ProductionClockEvent[];
+  audit: {
+    originalEvents: ProductionClockEvent[];
+    correctionRecords: ProductionClockCorrectionRecord[];
+  };
+};
+
 export type PayrollAttendanceReview = {
   staffId: string;
   reviewDate: string;
@@ -93,6 +119,7 @@ export type PayrollDailyRow = {
   originalClockOuts: string[];
   managerClockIns: string[];
   managerClockOuts: string[];
+  correctionRecords: ProductionClockCorrectionRecord[];
   rawWorkedMinutes: number;
   workedMinutes: number;
   reviewStatus: PayrollAttendanceReview["status"] | "not_reviewed";

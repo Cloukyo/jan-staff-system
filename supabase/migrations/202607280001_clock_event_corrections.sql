@@ -923,3 +923,494 @@ $$;
 revoke all on function public.get_manager_hours_preview(date, date)
 from public, anon, authenticated;
 grant execute on function public.get_manager_hours_preview(date, date) to authenticated;
+
+create or replace function public.get_latest_effective_clock_event(
+  target_staff_id text,
+  reference_date date default null,
+  lookback_days integer default 366
+)
+returns table (
+  event_id uuid,
+  event_type text,
+  event_timestamp timestamptz,
+  recorded_date date
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    effective.event_id,
+    effective.event_type,
+    effective.event_timestamp,
+    effective.recorded_date
+  from public.get_effective_clock_events(
+    coalesce(
+      reference_date,
+      (now() at time zone 'Europe/London')::date
+    ) - (
+      least(greatest(coalesce(lookback_days, 366), 1), 366) - 1
+    ),
+    coalesce(
+      reference_date,
+      (now() at time zone 'Europe/London')::date
+    ),
+    target_staff_id
+  ) effective
+  order by effective.event_timestamp desc, effective.event_id desc
+  limit 1;
+$$;
+
+revoke all on function public.get_latest_effective_clock_event(text, date, integer)
+from public, anon, authenticated;
+
+create or replace function public.get_manager_kiosk_statuses(
+  reference_date date default null
+)
+returns table (
+  staff_id text,
+  current_status text
+)
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  manager_account public.staff_accounts;
+begin
+  manager_account := public.current_staff_account();
+  if manager_account.id is null or manager_account.role <> 'manager' then
+    raise exception 'Manager access required';
+  end if;
+
+  return query
+  select
+    profile.id,
+    case
+      when latest.event_type = 'clock_in' then 'clocked_in'
+      else 'clocked_out'
+    end
+  from public.staff_profiles profile
+  left join lateral public.get_latest_effective_clock_event(
+    profile.id,
+    reference_date,
+    366
+  ) latest on true
+  where profile.active = true
+  order by profile.full_name, profile.id;
+end;
+$$;
+
+revoke all on function public.get_manager_kiosk_statuses(date)
+from public, anon, authenticated;
+grant execute on function public.get_manager_kiosk_statuses(date) to authenticated;
+
+create or replace function public.get_kiosk_roster()
+returns table (
+  staff_id text,
+  display_name text,
+  full_name text,
+  employment_role text,
+  current_status text,
+  pin_ready boolean
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    profile.id,
+    coalesce(nullif(trim(profile.display_name), ''), profile.full_name),
+    profile.full_name,
+    profile.employment_role,
+    case
+      when latest.event_type = 'clock_in' then 'clocked_in'
+      else 'clocked_out'
+    end,
+    settings.pin_hash is not null
+  from public.staff_profiles profile
+  join public.staff_kiosk_settings settings
+    on settings.staff_id = profile.id
+  left join lateral public.get_latest_effective_clock_event(
+    profile.id,
+    null,
+    366
+  ) latest on true
+  where profile.active = true
+    and settings.kiosk_enabled = true
+  order by coalesce(nullif(trim(profile.display_name), ''), profile.full_name);
+$$;
+
+revoke all on function public.get_kiosk_roster()
+from public, anon, authenticated;
+
+create or replace function public.verify_kiosk_pin(
+  target_staff_id text,
+  candidate_pin text
+)
+returns table (
+  ok boolean,
+  code text,
+  current_status text,
+  work_week_start_date date,
+  work_week_end_date date,
+  completed_minutes integer,
+  open_shift_in_progress boolean
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  settings public.staff_kiosk_settings%rowtype;
+  latest_type text;
+  failures integer;
+  hours_row record;
+begin
+  select kiosk_settings.*
+  into settings
+  from public.staff_kiosk_settings kiosk_settings
+  join public.staff_profiles profile
+    on profile.id = kiosk_settings.staff_id
+  where kiosk_settings.staff_id = target_staff_id
+    and profile.active = true
+  for update of kiosk_settings;
+
+  if not found or not settings.kiosk_enabled then
+    return query
+    select false, 'unavailable', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if settings.locked_until is not null and settings.locked_until > now() then
+    return query
+    select false, 'locked', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if settings.pin_hash is null then
+    return query
+    select false, 'reset_required', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if crypt(candidate_pin, settings.pin_hash) <> settings.pin_hash then
+    failures := settings.failed_attempt_count + 1;
+    update public.staff_kiosk_settings
+    set
+      failed_attempt_count = failures,
+      locked_until = case
+        when failures >= 4 then now() + interval '15 minutes'
+        else null
+      end
+    where staff_id = target_staff_id;
+
+    return query
+    select
+      false,
+      case
+        when failures >= 4 then 'locked'
+        when failures = 3 then 'invalid_pin_attempt_3'
+        when failures = 2 then 'invalid_pin_attempt_2'
+        else 'invalid_pin_attempt_1'
+      end,
+      null::text,
+      null::date,
+      null::date,
+      null::integer,
+      false;
+    return;
+  end if;
+
+  update public.staff_kiosk_settings
+  set failed_attempt_count = 0, locked_until = null
+  where staff_id = target_staff_id;
+
+  select latest.event_type
+  into latest_type
+  from public.get_latest_effective_clock_event(target_staff_id, null, 366) latest;
+
+  select *
+  into hours_row
+  from public.get_staff_weekly_hours(target_staff_id);
+
+  return query
+  select
+    true,
+    case when settings.pin_reset_required then 'change_required' else 'ok' end,
+    case when latest_type = 'clock_in' then 'clocked_in' else 'clocked_out' end,
+    hours_row.work_week_start_date,
+    hours_row.work_week_end_date,
+    hours_row.completed_minutes,
+    hours_row.open_shift_in_progress;
+end;
+$$;
+
+revoke all on function public.verify_kiosk_pin(text, text)
+from public, anon, authenticated;
+
+create or replace function public.change_device_kiosk_pin(
+  device_token text,
+  target_staff_id text,
+  temporary_pin text,
+  new_pin text
+)
+returns table (
+  ok boolean,
+  code text,
+  current_status text,
+  work_week_start_date date,
+  work_week_end_date date,
+  completed_minutes integer,
+  open_shift_in_progress boolean
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  settings public.staff_kiosk_settings%rowtype;
+  latest_type text;
+  failures integer;
+  hours_row record;
+begin
+  perform public.require_kiosk_device(device_token);
+
+  select kiosk_settings.*
+  into settings
+  from public.staff_kiosk_settings kiosk_settings
+  join public.staff_profiles profile
+    on profile.id = kiosk_settings.staff_id
+  where kiosk_settings.staff_id = target_staff_id
+    and profile.active = true
+  for update of kiosk_settings;
+
+  if not found or not settings.kiosk_enabled then
+    return query
+    select false, 'unavailable', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if settings.locked_until is not null and settings.locked_until > now() then
+    return query
+    select false, 'locked', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if settings.pin_hash is null or not settings.pin_reset_required then
+    return query
+    select false, 'change_not_required', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if crypt(temporary_pin, settings.pin_hash) <> settings.pin_hash then
+    failures := settings.failed_attempt_count + 1;
+    update public.staff_kiosk_settings
+    set
+      failed_attempt_count = failures,
+      locked_until = case
+        when failures >= 4 then now() + interval '15 minutes'
+        else null
+      end
+    where staff_id = target_staff_id;
+
+    return query
+    select
+      false,
+      case
+        when failures >= 4 then 'locked'
+        when failures = 3 then 'invalid_pin_attempt_3'
+        when failures = 2 then 'invalid_pin_attempt_2'
+        else 'invalid_pin_attempt_1'
+      end,
+      null::text,
+      null::date,
+      null::date,
+      null::integer,
+      false;
+    return;
+  end if;
+  if not public.kiosk_pin_is_acceptable(new_pin) then
+    return query
+    select false, 'weak_pin', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+  if crypt(new_pin, settings.pin_hash) = settings.pin_hash then
+    return query
+    select false, 'same_pin', null::text, null::date, null::date, null::integer, false;
+    return;
+  end if;
+
+  update public.staff_kiosk_settings
+  set
+    pin_hash = crypt(new_pin, gen_salt('bf', 12)),
+    pin_updated_at = now(),
+    pin_updated_by = null,
+    pin_reset_required = false,
+    failed_attempt_count = 0,
+    locked_until = null
+  where staff_id = target_staff_id;
+
+  select latest.event_type
+  into latest_type
+  from public.get_latest_effective_clock_event(target_staff_id, null, 366) latest;
+
+  select *
+  into hours_row
+  from public.get_staff_weekly_hours(target_staff_id);
+
+  return query
+  select
+    true,
+    'pin_changed',
+    case when latest_type = 'clock_in' then 'clocked_in' else 'clocked_out' end,
+    hours_row.work_week_start_date,
+    hours_row.work_week_end_date,
+    hours_row.completed_minutes,
+    hours_row.open_shift_in_progress;
+end;
+$$;
+
+revoke all on function public.change_device_kiosk_pin(text, text, text, text)
+from public, anon, authenticated;
+grant execute on function public.change_device_kiosk_pin(text, text, text, text)
+to anon, authenticated;
+
+create or replace function public.record_kiosk_clock_event(
+  target_staff_id text,
+  candidate_pin text,
+  requested_event_type text,
+  device_identifier text default null
+)
+returns table (
+  ok boolean,
+  code text,
+  current_status text,
+  recorded_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  settings public.staff_kiosk_settings%rowtype;
+  latest_type text;
+  latest_at timestamptz;
+  created_event_at timestamptz;
+  failures integer;
+begin
+  if requested_event_type not in ('clock_in', 'clock_out') then
+    return query select false, 'invalid_event', null::text, null::timestamptz;
+    return;
+  end if;
+
+  select kiosk_settings.*
+  into settings
+  from public.staff_kiosk_settings kiosk_settings
+  join public.staff_profiles profile
+    on profile.id = kiosk_settings.staff_id
+  where kiosk_settings.staff_id = target_staff_id
+    and profile.active = true
+  for update of kiosk_settings;
+
+  if not found or not settings.kiosk_enabled then
+    return query select false, 'unavailable', null::text, null::timestamptz;
+    return;
+  end if;
+  if settings.locked_until is not null and settings.locked_until > now() then
+    return query select false, 'locked', null::text, null::timestamptz;
+    return;
+  end if;
+  if settings.pin_hash is null or settings.pin_reset_required then
+    return query select false, 'reset_required', null::text, null::timestamptz;
+    return;
+  end if;
+  if crypt(candidate_pin, settings.pin_hash) <> settings.pin_hash then
+    failures := settings.failed_attempt_count + 1;
+    update public.staff_kiosk_settings
+    set
+      failed_attempt_count = failures,
+      locked_until = case
+        when failures >= 4 then now() + interval '15 minutes'
+        else null
+      end
+    where staff_id = target_staff_id;
+
+    return query
+    select
+      false,
+      case
+        when failures >= 4 then 'locked'
+        when failures = 3 then 'invalid_pin_attempt_3'
+        when failures = 2 then 'invalid_pin_attempt_2'
+        else 'invalid_pin_attempt_1'
+      end,
+      null::text,
+      null::timestamptz;
+    return;
+  end if;
+
+  update public.staff_kiosk_settings
+  set failed_attempt_count = 0, locked_until = null
+  where staff_id = target_staff_id;
+
+  perform public.lock_attendance_staff_writes(target_staff_id);
+
+  select latest.event_type, latest.event_timestamp
+  into latest_type, latest_at
+  from public.get_latest_effective_clock_event(target_staff_id, null, 366) latest;
+
+  if requested_event_type = 'clock_in' and latest_type = 'clock_in' then
+    return query select false, 'already_clocked_in', 'clocked_in', null::timestamptz;
+    return;
+  end if;
+  if requested_event_type = 'clock_out'
+    and coalesce(latest_type, 'clock_out') = 'clock_out' then
+    return query select false, 'not_clocked_in', 'clocked_out', null::timestamptz;
+    return;
+  end if;
+  if latest_at is not null and latest_at > now() - interval '5 seconds' then
+    return query
+    select
+      false,
+      'too_soon',
+      case when latest_type = 'clock_in' then 'clocked_in' else 'clocked_out' end,
+      null::timestamptz;
+    return;
+  end if;
+
+  insert into public.clock_events (
+    staff_id,
+    event_type,
+    kiosk_device_id
+  )
+  values (
+    target_staff_id,
+    requested_event_type,
+    nullif(left(trim(device_identifier), 100), '')
+  )
+  returning event_timestamp into created_event_at;
+
+  return query
+  select
+    true,
+    'recorded',
+    case
+      when requested_event_type = 'clock_in' then 'clocked_in'
+      else 'clocked_out'
+    end,
+    created_event_at;
+end;
+$$;
+
+revoke all on function public.record_kiosk_clock_event(text, text, text, text)
+from public, anon, authenticated;
+
+revoke all on function public.get_device_kiosk_roster(text)
+from public, anon, authenticated;
+revoke all on function public.verify_device_kiosk_pin(text, text, text)
+from public, anon, authenticated;
+revoke all on function public.record_device_kiosk_clock_event(text, text, text, text)
+from public, anon, authenticated;
+
+grant execute on function public.get_device_kiosk_roster(text) to anon, authenticated;
+grant execute on function public.verify_device_kiosk_pin(text, text, text) to anon, authenticated;
+grant execute on function public.record_device_kiosk_clock_event(text, text, text, text)
+to anon, authenticated;

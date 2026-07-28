@@ -212,6 +212,23 @@ describe("payroll Excel export", () => {
       originalClockOuts: ["2026-07-01T16:00:00+01:00"],
       managerClockIns: ["2026-07-01T08:15:00+01:00"],
       managerClockOuts: ["2026-07-01T16:00:00+01:00"],
+      correctionRecords: [{
+        id: "arrival-fix",
+        batchId: "batch-1",
+        correctionRole: "primary",
+        staffId: "staff-1",
+        kind: "replace",
+        originalEventId: "original-in",
+        supersedesCorrectionId: null,
+        eventType: "clock_in",
+        eventTimestamp: "2026-07-01T08:15:00+01:00",
+        recordedDate: "2026-07-01",
+        reason: "Manager corrected arrival",
+        createdBy: "manager",
+        createdAt: "2026-07-02T09:00:00Z",
+        sourceLabel: "Manager correction",
+        status: "active",
+      }],
       rawWorkedMinutes: 480,
       workedMinutes: 465,
       reviewStatus: "corrected",
@@ -230,6 +247,7 @@ describe("payroll Excel export", () => {
       originalClockOuts: [],
       managerClockIns: [],
       managerClockOuts: [],
+      correctionRecords: [],
       rawWorkedMinutes: 0,
       workedMinutes: 0,
       reviewStatus: "not_reviewed",
@@ -277,6 +295,7 @@ describe("payroll Excel export", () => {
         originalClockOuts: ["2026-07-06T16:00:00+01:00"],
         managerClockIns: [],
         managerClockOuts: [],
+        correctionRecords: [],
         rawWorkedMinutes: 420,
         workedMinutes: 420,
         reviewStatus: "approved",
@@ -356,7 +375,7 @@ describe("payroll Excel export", () => {
     expect(week1.getCell("C3").value).toBe("Planned hours");
     expect(week1.getCell("C4").value).toBe("Clocked hours");
     expect(week1.getCell("I3").value).toEqual({ formula: "SUM(D3:H3)", result: 15.5 });
-    expect(week1.getCell("I4").value).toEqual({ formula: "SUM(D4:H4)", result: 8 });
+    expect(week1.getCell("I4").value).toEqual({ formula: "SUM(D4:H4)", result: 7.75 });
     expect(week1.getCell("I3").numFmt).toBe("0.00");
     expect(week1.getCell("J2").value).toBe("Hourly pay");
     expect(week1.getCell("K2").value).toBe("Estimated pay");
@@ -368,7 +387,7 @@ describe("payroll Excel export", () => {
     });
     expect(week1.getCell("K4").value).toEqual({
       formula: 'IF(J3="","",I4*J3)',
-      result: 96,
+      result: 93,
     });
     expect(week1.getCell("J3").numFmt).toBe('"£"#,##0.00');
     expect(week1.getCell("K3").numFmt).toBe('"£"#,##0.00');
@@ -453,12 +472,12 @@ describe("payroll Excel export", () => {
     expect(week1.getCell("A3").value).toBe("Staff Member");
     expect(week1.getCell("H3").value).toEqual({
       formula: "SUM(C3:G3)",
-      result: 8,
+      result: 7.75,
     });
     expect(week1.getCell("I3").value).toBe(12);
     expect(week1.getCell("J3").value).toEqual({
       formula: 'IF(I3="","",H3*I3)',
-      result: 96,
+      result: 93,
     });
     expect(week1.getRow(2).values).not.toContain("Hours type");
     expect(week1.views[0]).toMatchObject({ state: "frozen", xSplit: 2, ySplit: 2 });
@@ -509,6 +528,8 @@ describe("payroll Excel export", () => {
     await workbook.xlsx.load(buffer as never);
 
     const daily = workbook.getWorksheet("Daily Clocking")!;
+    const weekly = workbook.getWorksheet("Week 1")!;
+    expect(weekly.getCell("D4").value).toBe(7.75);
     expect(daily.getCell("C2").value).toBeInstanceOf(Date);
     expect((daily.getCell("C2").value as Date).toISOString()).toBe("2026-07-01T12:00:00.000Z");
     expect(daily.getCell("C2").numFmt).toBe("dd/mm/yyyy");
@@ -516,12 +537,13 @@ describe("payroll Excel export", () => {
     expect(daily.getCell("I2").value).toBe("16:00");
     expect(daily.getCell("J2").value).toBe("08:15");
     expect(daily.getCell("K2").value).toBe("16:00");
-    expect(daily.getCell("L2").value).toBe(8);
-    expect(daily.getCell("M2").value).toBe(7.75);
-    expect(daily.getCell("N2").value).toBe("corrected");
-    expect(daily.getCell("O2").value).toBe("Manager corrected arrival");
+    expect(daily.getCell("L2").value).toContain("arrival-fix | active | replace | clock_in | 08:15");
+    expect(daily.getCell("M2").value).toBe(8);
+    expect(daily.getCell("N2").value).toBe(7.75);
+    expect(daily.getCell("O2").value).toBe("corrected");
+    expect(daily.getCell("P2").value).toBe("Manager corrected arrival");
     expect(daily.getCell("C3").value).toBeInstanceOf(Date);
     expect(daily.getCell("H3").value).toBeNull();
-    expect(daily.getCell("M3").value).toBe(0);
+    expect(daily.getCell("N3").value).toBe(0);
   });
 });

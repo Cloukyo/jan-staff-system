@@ -2,8 +2,6 @@ import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
 import {
   resolveEffectiveEvents,
-  type AttendanceCorrectionKind,
-  type AttendanceEventType,
 } from "@/lib/attendance/effective-events";
 import {
   toAttendanceCorrection,
@@ -18,6 +16,7 @@ import type {
   PayArrangement,
   PayrollAttendanceReview,
   PayrollRotaShift,
+  ProductionAttendanceData,
   ProductionClockEvent,
   ProductionStaffRow,
   StaffDirectoryRow,
@@ -26,32 +25,6 @@ import type {
 export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
 }
-
-export type ProductionClockCorrectionRecord = {
-  id: string;
-  batchId: string;
-  correctionRole: "primary" | "consequential";
-  staffId: string;
-  kind: AttendanceCorrectionKind;
-  originalEventId: string | null;
-  supersedesCorrectionId: string | null;
-  eventType: AttendanceEventType | null;
-  eventTimestamp: string | null;
-  recordedDate: string;
-  reason: string;
-  createdBy: string;
-  createdAt: string;
-  sourceLabel: "Manager correction";
-  status: "active" | "superseded";
-};
-
-export type ProductionAttendanceData = {
-  effectiveEvents: ProductionClockEvent[];
-  audit: {
-    originalEvents: ProductionClockEvent[];
-    correctionRecords: ProductionClockCorrectionRecord[];
-  };
-};
 
 export function buildProductionAttendanceData(
   originalRows: ClockEventSourceRow[],

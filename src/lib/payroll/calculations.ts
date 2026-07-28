@@ -27,7 +27,7 @@ export function calculateClockTotals(events: ProductionClockEvent[], maximumShif
   for (const event of ordered) {
     if (event.managerCorrection) warnings.push("Manager correction");
     if (event.eventType === "clock_in") {
-      if (open) warnings.push("Overlapping sessions");
+      if (open) warnings.push("Duplicate clock-in");
       open = event;
       continue;
     }

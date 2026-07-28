@@ -15,6 +15,8 @@ import {
 } from "@/lib/attendance/sequence";
 import { isoDateInLondon } from "@/lib/dates/format";
 
+export const STAFF_HOURS_MAX_RANGE_DAYS = 366;
+
 export type StaffHoursProfileSourceRow = {
   id: string;
   display_name: string;
@@ -41,10 +43,8 @@ export type ClockEventSourceRow = {
   correction_reason: string | null;
 };
 
-export type ClockCorrectionSourceRow = {
+export type ClockCorrectionResolverSourceRow = {
   id: string;
-  batch_id: string;
-  correction_role: "primary" | "consequential";
   staff_id: string;
   correction_kind: AttendanceCorrectionKind;
   original_event_id: string | null;
@@ -52,9 +52,14 @@ export type ClockCorrectionSourceRow = {
   event_type: AttendanceEventType | null;
   event_timestamp: string | null;
   recorded_date: string;
+  created_at: string;
+};
+
+export type ClockCorrectionSourceRow = ClockCorrectionResolverSourceRow & {
+  batch_id: string;
+  correction_role: "primary" | "consequential";
   reason: string;
   created_by: string;
-  created_at: string;
 };
 
 export type StaffHoursReviewStatus =
@@ -200,6 +205,11 @@ function previousIsoDate(value: string): string {
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
 }
 
+function addIsoDateDays(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
 function clockSource(row: ClockEventSourceRow): OriginalClockEvent["source"] {
   return row.event_source === "manager" || row.manager_correction ? "legacy_manager" : "kiosk";
 }
@@ -225,8 +235,30 @@ export function normaliseStaffHoursRange(
   to: string | undefined,
   currentWeek: { start: string; end: string },
 ): { from: string; to: string } {
-  if (validIsoDate(from) && validIsoDate(to) && from <= to) return { from, to };
+  if (validIsoDate(from) && validIsoDate(to) && from <= to) {
+    const maximumEnd = addIsoDateDays(from, STAFF_HOURS_MAX_RANGE_DAYS - 1);
+    return { from, to: to < maximumEnd ? to : maximumEnd };
+  }
   return { from: currentWeek.start, to: currentWeek.end };
+}
+
+type PageResult<T> = {
+  data: T[] | null;
+  error: unknown;
+};
+
+export async function loadAllPages<T>(
+  loadPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
+  pageSize = 1_000,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const page = await loadPage(from, from + pageSize - 1);
+    if (page.error) throw page.error;
+    const pageRows = page.data ?? [];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) return rows;
+  }
 }
 
 export function toOriginalClockEvent(row: ClockEventSourceRow): OriginalClockEvent {
@@ -240,7 +272,7 @@ export function toOriginalClockEvent(row: ClockEventSourceRow): OriginalClockEve
   };
 }
 
-export function toAttendanceCorrection(row: ClockCorrectionSourceRow): AttendanceCorrection {
+export function toAttendanceCorrection(row: ClockCorrectionResolverSourceRow): AttendanceCorrection {
   return {
     id: row.id,
     staffId: row.staff_id,
@@ -419,75 +451,85 @@ async function loadStaffHoursRange(
   };
   const range = normaliseStaffHoursRange(fromValue, toValue, currentWeek);
 
-  let profilesQuery = supabase.from("staff_profiles")
-    .select("id,display_name,full_name")
-    .eq("active", true)
-    .order("full_name");
-  let shiftsQuery = supabase.from("rota_shifts")
-    .select("id,staff_id,shift_date,start_time,end_time,break_minutes,rota_weeks!inner(status)")
-    .gte("shift_date", range.from)
-    .lte("shift_date", range.to)
-    .is("archived_at", null)
-    .neq("status", "cancelled")
-    .eq("rota_weeks.status", "published")
-    .order("shift_date")
-    .order("start_time");
-  let originalsQuery = supabase.from("clock_events")
-    .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
-    .gte("recorded_date", range.from)
-    .lte("recorded_date", range.to)
-    .order("event_timestamp");
-  let correctionsQuery = supabase.from("clock_event_corrections")
-    .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
-    .gte("recorded_date", range.from)
-    .lte("recorded_date", range.to)
-    .order("created_at");
-  let reviewsQuery = supabase.from("attendance_day_reviews")
-    .select("staff_id,review_date,status,reason,reviewed_at")
-    .gte("review_date", range.from)
-    .lte("review_date", range.to);
-
-  if (staffId) {
-    profilesQuery = profilesQuery.eq("id", staffId);
-    shiftsQuery = shiftsQuery.eq("staff_id", staffId);
-    originalsQuery = originalsQuery.eq("staff_id", staffId);
-    correctionsQuery = correctionsQuery.eq("staff_id", staffId);
-    reviewsQuery = reviewsQuery.eq("staff_id", staffId);
-  }
-
   const [profiles, shifts, originals, corrections, reviews, totals] = await Promise.all([
-    profilesQuery,
-    shiftsQuery,
-    originalsQuery,
-    correctionsQuery,
-    reviewsQuery,
-    supabase.rpc("get_manager_hours_preview", {
-      range_start: range.from,
-      range_end: range.to,
+    loadAllPages<StaffHoursProfileSourceRow>((from, to) => {
+      let query = supabase.from("staff_profiles")
+        .select("id,display_name,full_name")
+        .eq("active", true)
+        .order("full_name")
+        .order("id")
+        .range(from, to);
+      if (staffId) query = query.eq("id", staffId);
+      return query;
     }),
+    loadAllPages<StaffHoursShiftSourceRow>((from, to) => {
+      let query = supabase.from("rota_shifts")
+        .select("id,staff_id,shift_date,start_time,end_time,break_minutes,rota_weeks!inner(status)")
+        .gte("shift_date", range.from)
+        .lte("shift_date", range.to)
+        .is("archived_at", null)
+        .neq("status", "cancelled")
+        .eq("rota_weeks.status", "published")
+        .order("shift_date")
+        .order("start_time")
+        .order("id")
+        .range(from, to);
+      if (staffId) query = query.eq("staff_id", staffId);
+      return query as unknown as PromiseLike<PageResult<StaffHoursShiftSourceRow>>;
+    }),
+    loadAllPages<ClockEventSourceRow>((from, to) => {
+      let query = supabase.from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+        .gte("recorded_date", range.from)
+        .lte("recorded_date", range.to)
+        .order("event_timestamp")
+        .order("id")
+        .range(from, to);
+      if (staffId) query = query.eq("staff_id", staffId);
+      return query;
+    }),
+    loadAllPages<ClockCorrectionSourceRow>((from, to) => {
+      let query = supabase.from("clock_event_corrections")
+        .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+        .gte("recorded_date", range.from)
+        .lte("recorded_date", range.to)
+        .order("created_at")
+        .order("id")
+        .range(from, to);
+      if (staffId) query = query.eq("staff_id", staffId);
+      return query;
+    }),
+    loadAllPages<StaffHoursReviewSourceRow>((from, to) => {
+      let query = supabase.from("attendance_day_reviews")
+        .select("staff_id,review_date,status,reason,reviewed_at")
+        .gte("review_date", range.from)
+        .lte("review_date", range.to)
+        .order("review_date")
+        .order("staff_id")
+        .range(from, to);
+      if (staffId) query = query.eq("staff_id", staffId);
+      return query;
+    }),
+    loadAllPages<StaffHoursTotalSourceRow>((from, to) => supabase.rpc(
+      "get_manager_hours_preview",
+      {
+        range_start: range.from,
+        range_end: range.to,
+      },
+    ).order("staff_id").range(from, to)),
   ]);
-  if (
-    profiles.error
-    || shifts.error
-    || originals.error
-    || corrections.error
-    || reviews.error
-    || totals.error
-  ) {
-    throw new Error("Staff hours could not be loaded.");
-  }
-  if (staffId && !(profiles.data ?? []).length) throw new Error("Staff member could not be found.");
+  if (staffId && !profiles.length) throw new Error("Staff member could not be found.");
 
   return buildStaffHoursRange({
     ...range,
     currentWeekStart: currentWeek.start,
     currentWeekEnd: currentWeek.end,
-    profiles: (profiles.data ?? []) as StaffHoursProfileSourceRow[],
-    shifts: (shifts.data ?? []) as unknown as StaffHoursShiftSourceRow[],
-    originals: (originals.data ?? []) as ClockEventSourceRow[],
-    corrections: (corrections.data ?? []) as ClockCorrectionSourceRow[],
-    reviews: (reviews.data ?? []) as StaffHoursReviewSourceRow[],
-    totals: (totals.data ?? []) as StaffHoursTotalSourceRow[],
+    profiles,
+    shifts,
+    originals,
+    corrections,
+    reviews,
+    totals,
   });
 }
 

@@ -290,7 +290,7 @@ describe("analyseAttendanceDay", () => {
       plannedShift: null,
     });
 
-    expect(result.completedMinutes).toBe(450);
+    expect(result.completedMinutes).toBe(420);
     expect(result.warnings).toEqual([
       "missing_clock_in",
       "clock_out_before_clock_in",
@@ -300,6 +300,20 @@ describe("analyseAttendanceDay", () => {
       "no_planned_shift",
     ]);
     expect(result.suggestedMissingType).toBe("clock_in");
+  });
+
+  it("replaces the open start when a duplicate clock-in is followed by clock-out", () => {
+    const result = analyseAttendanceDay({
+      events: resolveEffectiveEvents([
+        original("in-08", "clock_in", "08:00"),
+        original("in-09", "clock_in", "09:00"),
+        original("out-17", "clock_out", "17:00"),
+      ], []).effective,
+      plannedShift: { start: "08:00", end: "17:00" },
+    });
+
+    expect(result.completedMinutes).toBe(480);
+    expect(result.warnings).toContain("duplicate_clock_in");
   });
 });
 

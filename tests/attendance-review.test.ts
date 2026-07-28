@@ -9,6 +9,7 @@ import {
 import { parseAttendanceManagerView } from "@/lib/attendance/manager-view";
 import {
   buildStaffHoursRange,
+  loadAllPages,
   normaliseStaffHoursRange,
   previousLondonDate,
 } from "@/lib/attendance/staff-hours";
@@ -39,6 +40,32 @@ describe("production attendance review", () => {
       from: "2026-07-27",
       to: "2026-07-31",
     });
+    expect(normaliseStaffHoursRange("2026-01-01", "2027-12-31", {
+      start: "2026-07-26",
+      end: "2026-08-01",
+    })).toEqual({
+      from: "2026-01-01",
+      to: "2027-01-01",
+    });
+  });
+
+  it("loads every PostgREST page within a bounded staff-hours range", async () => {
+    const rows = Array.from({ length: 2_105 }, (_, index) => index);
+    const requestedPages: Array<[number, number]> = [];
+    const loaded = await loadAllPages(async (from, to) => {
+      requestedPages.push([from, to]);
+      return {
+        data: rows.slice(from, to + 1),
+        error: null,
+      };
+    });
+
+    expect(loaded).toEqual(rows);
+    expect(requestedPages).toEqual([
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ]);
   });
 
   it("builds issue-first staff hours while preserving split rota and audit records", () => {
@@ -97,11 +124,39 @@ describe("production attendance review", () => {
 
   it("maps manager kiosk status from effective open shifts", () => {
     const statuses = mapEffectiveManagerStatuses([
-      { staff_id: "open", open_shift_count: 1 },
-      { staff_id: "closed", open_shift_count: 0 },
+      { staff_id: "open", current_status: "clocked_in" },
+      { staff_id: "closed", current_status: "clocked_out" },
     ]);
     expect(statuses.get("open")).toBe("clocked_in");
     expect(statuses.get("closed")).toBe("clocked_out");
+  });
+
+  it("uses latest duplicate clock-in as the staff-hours open start", () => {
+    const range = buildStaffHoursRange({
+      from: "2026-07-28",
+      to: "2026-07-28",
+      currentWeekStart: "2026-07-27",
+      currentWeekEnd: "2026-08-02",
+      profiles: [{ id: "staff", display_name: "Staff", full_name: "Staff Member" }],
+      shifts: [{
+        id: "shift",
+        staff_id: "staff",
+        shift_date: "2026-07-28",
+        start_time: "08:00:00",
+        end_time: "17:00:00",
+        break_minutes: 0,
+      }],
+      originals: [
+        { id: "in-08", staff_id: "staff", event_type: "clock_in", event_timestamp: "2026-07-28T08:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "in-09", staff_id: "staff", event_type: "clock_in", event_timestamp: "2026-07-28T09:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+        { id: "out-17", staff_id: "staff", event_type: "clock_out", event_timestamp: "2026-07-28T17:00:00+01:00", recorded_date: "2026-07-28", event_source: "kiosk", manager_correction: false, correction_reason: null },
+      ],
+      corrections: [],
+      reviews: [],
+    });
+
+    expect(range.days[0].completedMinutes).toBe(480);
+    expect(range.days[0].warnings).toContain("duplicate_clock_in");
   });
 
   it("defaults unknown attendance views to needs attention", () => {

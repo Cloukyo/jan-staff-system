@@ -77,6 +77,8 @@ export function analyseAttendanceDay(input: AttendanceDayAnalysisInput): Attenda
         }
       } else {
         addWarning("duplicate_clock_in");
+        openShift = event;
+        sawClockIn = true;
       }
       addWarning("events_wrong_order");
       continue;

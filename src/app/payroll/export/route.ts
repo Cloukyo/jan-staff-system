@@ -12,7 +12,7 @@ import {
 import {
   loadPayrollAttendanceReviews,
   loadPayrollRotaShifts,
-  loadProductionClockEvents,
+  loadProductionAttendanceData,
   loadProductionStaffRows,
 } from "@/lib/payroll/server";
 
@@ -31,9 +31,9 @@ export async function GET(request: Request) {
   const includeZero = params.get("zero") !== "0";
   const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
   const hoursMode = parsePayrollExportHoursMode(params);
-  const [staff, events, reviews, readiness, shifts] = await Promise.all([
+  const [staff, attendance, reviews, readiness, shifts] = await Promise.all([
     loadProductionStaffRows(),
-    loadProductionClockEvents(periodStart, periodEnd),
+    loadProductionAttendanceData(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
     loadPayrollRotaShifts(periodStart, periodEnd),
@@ -51,11 +51,17 @@ export async function GET(request: Request) {
   const includedStaff = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager));
   const allRows = includedStaff
-    .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews));
+    .map((person) => createPayrollPreparationRow(
+      person,
+      attendance.effectiveEvents,
+      periodStart,
+      periodEnd,
+      reviews,
+    ));
   const allDetail = createPayrollExportDetail({
     staff: includedStaff,
     shifts,
-    events,
+    attendance,
     reviews,
     periodStart,
     periodEnd,

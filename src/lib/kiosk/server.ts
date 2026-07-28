@@ -114,7 +114,7 @@ export type ManagerClockEvent = {
 
 type ManagerEffectiveStatusRow = {
   staff_id: string;
-  open_shift_count: number | null;
+  current_status: KioskRosterEntry["currentStatus"];
 };
 
 export function mapEffectiveManagerStatuses(
@@ -122,7 +122,7 @@ export function mapEffectiveManagerStatuses(
 ): Map<string, KioskRosterEntry["currentStatus"]> {
   return new Map(rows.map((row) => [
     row.staff_id,
-    (row.open_shift_count ?? 0) > 0 ? "clocked_in" as const : "clocked_out" as const,
+    row.current_status,
   ]));
 }
 
@@ -132,9 +132,8 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),
     supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason").order("event_timestamp", { ascending: false }).limit(250),
-    supabase.rpc("get_manager_hours_preview", {
-      range_start: "1970-01-01",
-      range_end: isoDateInLondon(),
+    supabase.rpc("get_manager_kiosk_statuses", {
+      reference_date: isoDateInLondon(),
     }),
   ]);
   if (profiles.error || settings.error || events.error || effectiveStatuses.error) {

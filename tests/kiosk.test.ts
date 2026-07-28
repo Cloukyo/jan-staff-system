@@ -39,6 +39,7 @@ describe("production kiosk migration safeguards", () => {
   const noLockoutMigration = readFileSync(resolve("supabase/migrations/20260618232128_remove_kiosk_pin_lockout.sql"), "utf8");
   const pgcryptoFix = readFileSync(resolve("supabase/migrations/202606110003_kiosk_pgcrypto_search_path.sql"), "utf8");
   const columnSecurity = readFileSync(resolve("supabase/migrations/202606110004_kiosk_pin_hash_column_security.sql"), "utf8");
+  const correctionMigration = readFileSync(resolve("supabase/migrations/202607280001_clock_event_corrections.sql"), "utf8");
 
   it("keeps PIN hashes private and verifies them inside security-definer functions", () => {
     expect(migration).toContain("pin_hash text");
@@ -76,6 +77,16 @@ describe("production kiosk migration safeguards", () => {
     expect(migration).toContain("event_source = 'manager'");
     expect(migration).toContain("manager_correction = true");
     expect(migration).not.toMatch(/create policy [\\s\\S]* clock_events for update/i);
+  });
+
+  it("resolves bounded effective status inside public kiosk RPCs", () => {
+    expect(correctionMigration).toContain("get_latest_effective_clock_event");
+    expect(correctionMigration).toMatch(/get_kiosk_roster[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/verify_kiosk_pin[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/record_kiosk_clock_event[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/record_kiosk_clock_event[\s\S]*lock_attendance_staff_writes/i);
+    expect(correctionMigration).toContain("grant execute on function public.get_device_kiosk_roster(text) to anon, authenticated");
+    expect(correctionMigration).not.toMatch(/grant execute on function public\.get_kiosk_roster\(\) to anon/i);
   });
 });
 
@@ -122,6 +133,11 @@ describe("device-specific kiosk access", () => {
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*hourly_rate/i);
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*annual_salary/i);
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*dbs_/i);
+  });
+
+  it("uses the bounded manager effective-status RPC instead of a historic scan", () => {
+    expect(kioskServer).toContain('rpc("get_manager_kiosk_statuses"');
+    expect(kioskServer).not.toContain('range_start: "1970-01-01"');
   });
 });
 

@@ -4,7 +4,7 @@ import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
 import {
   toAttendanceCorrection,
   toOriginalClockEvent,
-  type ClockCorrectionSourceRow,
+  type ClockCorrectionResolverSourceRow,
   type ClockEventSourceRow,
 } from "@/lib/attendance/staff-hours";
 import { analyseAttendanceDay } from "@/lib/attendance/sequence";
@@ -194,7 +194,7 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
       .lte("recorded_date", range.to)
       .order("event_timestamp"),
     admin.from("clock_event_corrections")
-      .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+      .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,created_at")
       .eq("staff_id", account.staffId)
       .gte("recorded_date", range.from)
       .lte("recorded_date", range.to)
@@ -203,7 +203,7 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
   if (originals.error || corrections.error) throw new Error("Your attendance could not be loaded.");
 
   const originalRows = (originals.data ?? []) as ClockEventSourceRow[];
-  const correctionRows = (corrections.data ?? []) as ClockCorrectionSourceRow[];
+  const correctionRows = (corrections.data ?? []) as ClockCorrectionResolverSourceRow[];
   const resolved = resolveEffectiveEvents(
     originalRows.map(toOriginalClockEvent),
     correctionRows.map(toAttendanceCorrection),

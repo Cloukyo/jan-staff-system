@@ -132,6 +132,17 @@ describe("production payroll preparation", () => {
     expect(result.warnings).toContain("Manager correction");
   });
 
+  it("uses the latest duplicate clock-in as the payable start", () => {
+    const result = calculateClockTotals([
+      { id: "in-08", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "in-09", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T09:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "out-17", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-01T17:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
+    ]);
+
+    expect(result.recordedMinutes).toBe(480);
+    expect(result.warnings).toContain("Duplicate clock-in");
+  });
+
   it("calculates hourly pay but keeps salaried attendance informational", () => {
     const events = [
       { id: "1", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
