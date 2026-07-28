@@ -2,6 +2,35 @@ import { addDays, format, parseISO, startOfWeek } from "date-fns";
 
 export const TIME_ZONE = "Europe/London";
 
+const londonDateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+  timeZone: TIME_ZONE,
+});
+
+function londonDateTimeParts(instant: number) {
+  return Object.fromEntries(
+    londonDateTimeFormatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
+  );
+}
+
+function londonOffsetAt(instant: number) {
+  const values = londonDateTimeParts(instant);
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  ) - instant;
+}
+
 export function isoDateInLondon(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     year: "numeric",
@@ -15,23 +44,32 @@ export function isoDateInLondon(date = new Date()): string {
 
 export function londonDateStartUtc(date: string): Date {
   const intended = Date.parse(`${date}T00:00:00.000Z`);
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    timeZone: TIME_ZONE,
-  });
-  const offsetAt = (instant: number) => {
-    const values = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
-    return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), Number(values.second)) - instant;
-  };
-  let result = intended - offsetAt(intended);
-  result = intended - offsetAt(result);
+  let result = intended - londonOffsetAt(intended);
+  result = intended - londonOffsetAt(result);
   return new Date(result);
+}
+
+export function londonLocalDateTimeToUtc(value: string): { recordedDate: string; timestamp: Date } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) throw new RangeError("Invalid local date and time.");
+
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const intended = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
+  let result = intended - londonOffsetAt(intended);
+  result = intended - londonOffsetAt(result);
+  const timestamp = new Date(result);
+
+  return {
+    recordedDate: isoDateInLondon(timestamp),
+    timestamp,
+  };
 }
 
 export function formatDateUk(date: string | Date): string {

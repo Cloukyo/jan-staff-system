@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { londonLocalDateTimeToUtc } from "@/lib/dates/format";
 import { createPublicKioskClient } from "@/lib/kiosk/server";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
@@ -157,18 +158,19 @@ export async function addClockCorrectionAction(_state: KioskActionResult, formDa
   if (!staffId || !["clock_in", "clock_out"].includes(eventType) || !eventTimestamp || reason.length < 5) {
     return { ok: false, code: "invalid_correction", message: "Choose an event, time and a clear correction reason." };
   }
+  const londonDateTime = londonLocalDateTimeToUtc(eventTimestamp);
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("save_clock_event_correction_chain", {
     plan: {
       reason,
       primary: {
         staff_id: staffId,
-        recorded_date: eventTimestamp.slice(0, 10),
+        recorded_date: londonDateTime.recordedDate,
         correction_kind: "add",
         original_event_id: null,
         supersedes_correction_id: null,
         event_type: eventType,
-        event_timestamp: new Date(eventTimestamp).toISOString(),
+        event_timestamp: londonDateTime.timestamp.toISOString(),
       },
       consequential: [],
     },

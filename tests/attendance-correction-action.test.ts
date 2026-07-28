@@ -50,8 +50,8 @@ describe("addClockCorrectionAction", () => {
     mocks.createSupabaseServerClient.mockResolvedValue({ rpc: mocks.rpc });
   });
 
-  it("saves an add primary correction through the restricted correction-chain RPC", async () => {
-    const eventTimestamp = "2026-07-28T09:15";
+  it("saves a late-evening BST correction as the matching London date and UTC instant", async () => {
+    const eventTimestamp = "2026-07-28T23:30";
 
     const result = await addClockCorrectionAction(
       { ok: false, code: "", message: "" },
@@ -69,7 +69,7 @@ describe("addClockCorrectionAction", () => {
           original_event_id: null,
           supersedes_correction_id: null,
           event_type: "clock_in",
-          event_timestamp: new Date(eventTimestamp).toISOString(),
+          event_timestamp: "2026-07-28T22:30:00.000Z",
         },
         consequential: [],
       },
@@ -80,6 +80,29 @@ describe("addClockCorrectionAction", () => {
       ok: true,
       code: "saved",
       message: "The correction was added without changing the original clock events.",
+    });
+  });
+
+  it("saves a winter GMT correction as the matching London date and UTC instant", async () => {
+    await addClockCorrectionAction(
+      { ok: false, code: "", message: "" },
+      correctionForm({ eventTimestamp: "2026-01-28T23:30" }),
+    );
+
+    expect(mocks.rpc).toHaveBeenCalledWith("save_clock_event_correction_chain", {
+      plan: {
+        reason: "Forgot to clock in",
+        primary: {
+          staff_id: "staff-1",
+          recorded_date: "2026-01-28",
+          correction_kind: "add",
+          original_event_id: null,
+          supersedes_correction_id: null,
+          event_type: "clock_in",
+          event_timestamp: "2026-01-28T23:30:00.000Z",
+        },
+        consequential: [],
+      },
     });
   });
 
