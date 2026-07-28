@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   resolveEffectiveEvents,
@@ -7,6 +9,20 @@ import {
 import { analyseAttendanceDay, planAlternatingEventTypes } from "@/lib/attendance/sequence";
 
 const date = "2026-07-28";
+const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
+
+function migrationSql() {
+  return readFileSync(resolve(migrationPath), "utf8");
+}
+
+function sqlFunction(sql: string, name: string) {
+  const match = sql.match(new RegExp(
+    `create or replace function public\\.${name}\\b[\\s\\S]*?\\n\\$\\$;`,
+    "i",
+  ));
+  expect(match, `Expected SQL function public.${name}`).not.toBeNull();
+  return match?.[0] ?? "";
+}
 
 function original(
   id: string,
@@ -321,5 +337,97 @@ describe("planAlternatingEventTypes", () => {
         recordedDate: date,
       },
     ]);
+  });
+});
+
+describe("append-only attendance correction migration", () => {
+  it("creates an immutable correction table with manager insert and select policies", () => {
+    const sql = migrationSql();
+
+    expect(sql).toContain("create table public.clock_event_corrections");
+    expect(sql).toContain("supersedes_correction_id");
+    expect(sql).toContain("Managers can add clock event corrections");
+    expect(sql).toContain("Managers can read clock event corrections");
+    expect(sql).toMatch(/staff_id text not null references public\.staff_profiles\(id\)/i);
+    expect(sql).toMatch(/original_event_id uuid references public\.clock_events\(id\)/i);
+    expect(sql).toMatch(/supersedes_correction_id uuid references public\.clock_event_corrections\(id\)/i);
+    expect(sql).toMatch(/created_by uuid not null references public\.staff_accounts\(id\)/i);
+    expect(sql).toMatch(/length\(trim\(reason\)\) >= 5/i);
+    expect(sql).toMatch(/correction_kind in \('add', 'replace', 'exclude'\)/i);
+    expect(sql).not.toMatch(/update public\.clock_events|delete from public\.clock_events/i);
+    expect(sql).not.toMatch(/clock_event_corrections for (update|delete)/i);
+  });
+
+  it("requires replacement and exclusion targets while keeping additions independent", () => {
+    const sql = migrationSql();
+
+    expect(sql).toMatch(/correction_kind = 'add'[\s\S]*original_event_id is null/i);
+    expect(sql).toMatch(/correction_kind in \('replace', 'exclude'\)[\s\S]*original_event_id is not null[\s\S]*supersedes_correction_id is null/i);
+    expect(sql).toMatch(/correction_kind in \('replace', 'exclude'\)[\s\S]*original_event_id is null[\s\S]*supersedes_correction_id is not null/i);
+    expect(sql).toMatch(/correction_kind = 'exclude'[\s\S]*event_type is null[\s\S]*event_timestamp is null/i);
+    expect(sql).toMatch(/correction_kind in \('add', 'replace'\)[\s\S]*event_type is not null[\s\S]*event_timestamp is not null/i);
+  });
+
+  it("resolves one deterministic active leaf per lineage and orders effective events deterministically", () => {
+    const sql = migrationSql();
+    const effectiveEvents = sqlFunction(sql, "get_effective_clock_events");
+
+    expect(effectiveEvents).toMatch(/not exists[\s\S]*supersedes_correction_id\s*=\s*[a-z_.]*id/i);
+    expect(effectiveEvents).toMatch(/partition by[\s\S]*original_event_id[\s\S]*root_correction_id/i);
+    expect(effectiveEvents).toMatch(/order by[\s\S]*created_at desc[\s\S]*(?:correction_id|correction\.id) desc/i);
+    expect(effectiveEvents).toMatch(/correction_kind not in \('replace', 'exclude'\)|correction_kind = 'add'/i);
+    expect(effectiveEvents).toContain("'manager_correction'");
+    expect(effectiveEvents).toMatch(/order by event_timestamp, event_id/i);
+    expect(effectiveEvents).toMatch(/returns table \([\s\S]*original_event_id uuid[\s\S]*correction_id uuid[\s\S]*staff_id text[\s\S]*event_type text[\s\S]*event_timestamp timestamptz[\s\S]*recorded_date date[\s\S]*source text/i);
+  });
+
+  it("repairs only planned boundaries and preserves intermediate timestamps unless event types must alternate", () => {
+    const sql = migrationSql();
+    const plannedHours = sqlFunction(sql, "use_planned_hours");
+
+    expect(sql).toContain("public.use_planned_hours");
+    expect(plannedHours).toContain("security definer");
+    expect(plannedHours).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(plannedHours).toMatch(/rw\.status = 'published'/i);
+    expect(plannedHours).toMatch(/rs\.status <> 'cancelled'/i);
+    expect(plannedHours).toMatch(/for update of rs/i);
+    expect(plannedHours).toMatch(/min\(rs\.start_time\)/i);
+    expect(plannedHours).toMatch(/max\(rs\.end_time\)/i);
+    expect(plannedHours).toContain("at time zone 'Europe/London'");
+    expect(plannedHours).toMatch(/event_position = 1[\s\S]*planned_start_at/i);
+    expect(plannedHours).toMatch(/event_position = (?:effective_event\.)?event_count[\s\S]*planned_finish_at/i);
+    expect(plannedHours).toMatch(/event_position > 1[\s\S]*event_position < (?:effective_event\.)?event_count[\s\S]*event_timestamp/i);
+    expect(plannedHours).toMatch(/event_position(?:::integer)? % 2[\s\S]*clock_in[\s\S]*clock_out/i);
+    expect(plannedHours).toMatch(/event_type <> \(case[\s\S]*end\) then/i);
+    expect(plannedHours).toMatch(/event_count(?:::integer)? % 2 = 1[\s\S]*'add'[\s\S]*'clock_out'[\s\S]*planned_finish_at/i);
+    expect(plannedHours).toMatch(/return batch_id|return correction_batch_id/i);
+  });
+
+  it("validates and saves one correction chain as a manager-owned batch", () => {
+    const sql = migrationSql();
+    const saveChain = sqlFunction(sql, "save_clock_event_correction_chain");
+
+    expect(saveChain).toContain("security definer");
+    expect(saveChain).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(saveChain).toMatch(/jsonb_array_elements/i);
+    expect(saveChain).toMatch(/count\(distinct staff_id\)[\s\S]*count\(distinct recorded_date\)/i);
+    expect(saveChain).toMatch(/insert into public\.clock_event_corrections/i);
+    expect(saveChain).toMatch(/batch_id/i);
+    expect(saveChain).toMatch(/primary[\s\S]*consequential/i);
+  });
+
+  it("calculates staff and manager hours from effective events", () => {
+    const sql = migrationSql();
+    const staffHours = sqlFunction(sql, "get_staff_weekly_hours");
+    const managerHours = sqlFunction(sql, "get_manager_hours_preview");
+
+    expect(staffHours).toContain("public.get_effective_clock_events");
+    expect(managerHours).toContain("public.get_effective_clock_events");
+    expect(staffHours).not.toContain("from public.clock_events");
+    expect(managerHours).not.toContain("from public.clock_events");
+    expect(staffHours).toMatch(/order by ce\.event_timestamp, ce\.event_id/i);
+    expect(managerHours).toMatch(/order by ce\.event_timestamp, ce\.event_id/i);
+    expect(managerHours).toMatch(/from public\.staff_profiles profile/i);
+    expect(managerHours).toMatch(/trim\(profile\.display_name\)/i);
   });
 });
