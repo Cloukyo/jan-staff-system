@@ -54,12 +54,14 @@
 **Interfaces:**
 - Produces: `resolveEffectiveEvents(events, corrections): ResolvedAttendanceEvents`
 - Produces: `analyseAttendanceDay(input): AttendanceDayAnalysis`
+- Produces: `planAlternatingEventTypes(input): PlannedEventTypeCorrection[]`
 - Consumes: no database or React APIs.
 
 - [ ] **Step 1: Write failing correction-resolution tests**
 
 Cover unchanged originals, replacement, add, exclude, superseded correction,
-legacy manager events and deterministic timestamp/ID ordering:
+legacy manager events, same-day alternating type plans, date boundaries and
+deterministic timestamp/ID ordering:
 
 ```ts
 expect(resolveEffectiveEvents([clockOut("original", "08:01")], [
@@ -111,12 +113,18 @@ type AttendanceWarning =
   | "no_planned_shift";
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **Step 5: Implement the consequential type planner**
+
+Starting from the manager-selected event, walk only later effective events on
+the same `recordedDate`. Alternate the expected type and return replacements
+only for mismatches. Preserve every timestamp and never include another date.
+
+- [ ] **Step 6: Run focused tests**
 
 Run: `npm test -- tests/attendance-corrections.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/lib/attendance/effective-events.ts src/lib/attendance/sequence.ts tests/attendance-corrections.test.ts
@@ -133,6 +141,7 @@ git commit -m "Add effective attendance event analysis"
 - Consumes: correction kinds and semantics from Task 1.
 - Produces: table `clock_event_corrections`
 - Produces: function `get_effective_clock_events(date, date, text)`
+- Produces: function `save_clock_event_correction_chain(jsonb)`
 - Produces: function `use_planned_hours(text, date, text)`
 
 - [ ] **Step 1: Add failing migration contract tests**
@@ -177,21 +186,29 @@ The security-definer function must:
 4. use the earliest published start and latest published finish as boundaries;
 5. replace or add the first clock-in boundary;
 6. replace or add the final clock-out boundary;
-7. leave every intermediate event, including lunchtime events, untouched;
-8. use Europe/London conversion for local shift times;
-9. return the correction batch ID.
+7. preserve every intermediate timestamp, including lunchtime events;
+8. replace intermediate event types only when they conflict with the
+   alternating sequence;
+9. use Europe/London conversion for local shift times;
+10. return the correction batch ID.
 
-- [ ] **Step 6: Update manager and staff weekly-hours SQL functions**
+- [ ] **Step 6: Create transactional correction-chain RPC**
+
+Accept one validated correction plan as JSONB, require a manager, re-check that
+all targeted events belong to one staff member and one recorded date, then
+insert the primary and consequential replacements as one batch.
+
+- [ ] **Step 7: Update manager and staff weekly-hours SQL functions**
 
 Replace direct calculated reads from `clock_events` with
 `get_effective_clock_events`. Leave audit reads on the base tables.
 
-- [ ] **Step 7: Run focused and existing database-contract tests**
+- [ ] **Step 8: Run focused and existing database-contract tests**
 
 Run: `npm test -- tests/attendance-corrections.test.ts tests/attendance-review.test.ts tests/kiosk.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add supabase/migrations/202607280001_clock_event_corrections.sql tests/attendance-corrections.test.ts
@@ -238,7 +255,9 @@ type CorrectionActionInput = {
 
 Load the original event server-side when provided. Verify its staff ID before
 inserting a replace correction. Convert `datetime-local` input explicitly
-using Europe/London utilities rather than the server machine timezone.
+using Europe/London utilities rather than the server machine timezone. Build
+the same-day alternating correction plan and submit the complete batch to the
+transactional RPC.
 
 - [ ] **Step 4: Implement planned-hours action**
 
@@ -283,8 +302,8 @@ git commit -m "Add attendance correction actions"
 - [ ] **Step 1: Add failing loader and date tests**
 
 Test the London date transition, current configured work week, issue-first
-sorting, multiple rota periods, untouched lunchtime events and preservation of
-both audit and effective records.
+sorting, multiple rota periods, untouched lunchtime timestamps and preservation
+of both audit and effective records.
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
@@ -397,7 +416,8 @@ git commit -m "Add staff hours timeline views"
 
 Assert forms carry staff/date/original IDs, show the original value, use a
 dropdown for event type, use `datetime-local`, require a reason and do not post
-planned shift times.
+planned shift times. Assert the confirmation previews every consequential event
+type change and preserves its recorded time.
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
@@ -412,8 +432,8 @@ feedback, and include original versus corrected values before submission.
 - [ ] **Step 4: Implement Use planned hours confirmation**
 
 Show the earliest planned start and latest planned finish in UK time. State
-that lunchtime events are unchanged. The confirmation form posts only staff
-ID, date, reason and return URL.
+that lunchtime timestamps are unchanged and preview any required type changes.
+The confirmation form posts only staff ID, date, reason and return URL.
 
 - [ ] **Step 5: Update manager help**
 

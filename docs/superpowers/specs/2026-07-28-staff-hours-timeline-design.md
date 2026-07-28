@@ -105,15 +105,26 @@ Add missing event opens the same form with the staff member and date already
 selected. The event type uses a dropdown and the time field supports both
 typing and the platform time picker.
 
+After an event is added or replaced, the system walks forward through the
+remaining events for that staff member on the selected day. Starting from the
+manager's chosen event type, it expects an alternating clock-in, clock-out
+sequence. Any later event with the wrong type receives its own append-only
+replacement correction. Existing timestamps are not changed.
+
+The manager sees the complete list of consequential type changes before
+confirming. The correction and all consequential changes save as one
+transaction. No event on another date is affected.
+
 Use planned hours is available when the day has at least one published rota
 period. Before saving, it shows the planned start and finish and asks for
 confirmation. It adds or replaces only the first clock-in at the earliest
 planned start and the final clock-out at the latest planned finish.
 
-Intermediate events, including lunchtime clock-outs and clock-ins, remain
+Intermediate timestamps, including lunchtime clock-outs and clock-ins, remain
 untouched and continue to determine whether break time is excluded from worked
-hours. The action does not invent lunch times, deduct a planned break or replace
-the full day's event sequence.
+hours. Valid event types remain unchanged; reversed types receive append-only
+corrections. The action does not invent lunch times, deduct a planned break or
+replace the full day's event sequence.
 
 Use planned hours does not appear when there is no published rota. It never
 changes the rota itself.
@@ -235,8 +246,10 @@ The planned-hours database function identifies the first and final effective
 events for the selected staff day. It replaces a wrong first boundary event or
 adds the missing clock-in at the earliest planned start. It replaces a wrong
 final boundary event or adds the missing clock-out at the latest planned
-finish. All intermediate events remain effective. If saving fails, no partial
-boundary correction batch is retained.
+finish. Intermediate timestamps remain unchanged, while conflicting event
+types are corrected into an alternating sequence from the first boundary to
+the final boundary. If saving fails, no partial boundary correction batch is
+retained.
 
 User-facing failures explain what the manager can do next and do not expose
 database details.
@@ -261,6 +274,8 @@ Pure unit tests cover:
 - missing final clock-out;
 - clock-out before clock-in;
 - duplicate and reversed events;
+- consequential same-day event type correction;
+- no consequential correction outside the selected date;
 - multiple same-day rota periods;
 - preservation of valid lunchtime clock-out and clock-in events;
 - planned-hours correction of only the first and final day events;
