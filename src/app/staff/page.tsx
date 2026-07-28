@@ -1,6 +1,6 @@
 import { StaffScreen } from "@/components/staff/staff-screen";
 import { AddStaffForm } from "@/components/staff/add-staff-form";
-import { parseStaffDirectoryFilter, ProductionStaffScreen } from "@/components/staff/production-staff-screen";
+import { ProductionStaffScreen } from "@/components/staff/production-staff-screen";
 import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -9,6 +9,7 @@ import { requireAccount } from "@/lib/auth/permissions";
 import { staffIdsNeedingComplianceChecks } from "@/lib/calculations/compliance";
 import { loadProductionComplianceDataset } from "@/lib/compliance/repository";
 import { loadProductionStaffRows, toStaffDirectoryRows } from "@/lib/payroll/server";
+import { parseStaffDirectoryFilter } from "@/lib/staff/directory";
 
 export const dynamic = "force-dynamic";
 

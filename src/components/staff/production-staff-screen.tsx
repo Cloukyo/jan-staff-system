@@ -8,9 +8,8 @@ import {
   deactivateStaffProfileAction,
   reactivateStaffProfileAction,
 } from "@/lib/staff/actions";
+import type { StaffDirectoryFilter } from "@/lib/staff/directory";
 import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-
-export type StaffDirectoryFilter = "active" | "needs-setup" | "needs-checks" | "inactive";
 
 export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
   if (!person.active) return "No setup action needed";
@@ -24,13 +23,6 @@ export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
 
 function needsSetup(person: StaffDirectoryRow): boolean {
   return person.active && highestPrioritySetupWarning(person) !== "Setup complete";
-}
-
-export function parseStaffDirectoryFilter(value?: string): StaffDirectoryFilter {
-  if (value === "inactive" || value === "needs-setup" || value === "needs-checks") {
-    return value;
-  }
-  return "active";
 }
 
 export function filterStaffDirectoryRows(
