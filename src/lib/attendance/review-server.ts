@@ -1,6 +1,7 @@
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
+import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import {
   loadAttendanceDay,
   toAttendanceCorrection,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/attendance/staff-hours";
 import { analyseAttendanceDay, type AttendanceWarning } from "@/lib/attendance/sequence";
 import { isoDateInLondon } from "@/lib/dates/format";
+import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 
 export type AttendanceReviewStatus = "unreviewed" | "approved" | "corrected" | "ignored" | "needs_staff_clarification";
 
@@ -90,10 +92,6 @@ function eventTimeMinutes(value: string | null): number | null {
   }).formatToParts(new Date(value));
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return Number(values.hour) * 60 + Number(values.minute);
-}
-
-function validIsoDate(value: string | undefined): value is string {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
 function warningLabel(warning: AttendanceWarning): string {
@@ -276,44 +274,83 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
 
 export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number }> {
   await requireAccount(["manager"]);
+  requireAttendanceDateRange(from, to);
   const supabase = await createSupabaseServerClient();
-  const [reviews, requests, originals, corrections] = await Promise.all([
-    supabase.from("attendance_day_reviews").select("staff_id,review_date,status").gte("review_date", from).lte("review_date", to),
-    supabase.from("attendance_correction_requests").select("id").eq("status", "pending").gte("attendance_date", from).lte("attendance_date", to),
-    supabase.from("clock_events")
-      .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
-      .gte("recorded_date", from)
-      .lte("recorded_date", to),
-    supabase.from("clock_event_corrections")
-      .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
-      .gte("recorded_date", from)
-      .lte("recorded_date", to),
-  ]);
-  if (reviews.error || requests.error || originals.error || corrections.error) {
+  let rows: [
+    Array<{ staff_id: string; review_date: string; status: string }>,
+    Array<{ id: string }>,
+    ClockEventSourceRow[],
+    ClockCorrectionSourceRow[],
+  ];
+  try {
+    rows = await Promise.all([
+      loadAllPostgrestPages((pageFrom, pageTo) => supabase
+        .from("attendance_day_reviews")
+        .select("staff_id,review_date,status")
+        .gte("review_date", from)
+        .lte("review_date", to)
+        .order("review_date")
+        .order("staff_id")
+        .range(pageFrom, pageTo)),
+      loadAllPostgrestPages((pageFrom, pageTo) => supabase
+        .from("attendance_correction_requests")
+        .select("id")
+        .eq("status", "pending")
+        .gte("attendance_date", from)
+        .lte("attendance_date", to)
+        .order("attendance_date")
+        .order("id")
+        .range(pageFrom, pageTo)),
+      loadAllPostgrestPages<ClockEventSourceRow>((pageFrom, pageTo) => supabase
+        .from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+        .gte("recorded_date", from)
+        .lte("recorded_date", to)
+        .order("event_timestamp")
+        .order("id")
+        .range(pageFrom, pageTo)),
+      loadAllPostgrestPages<ClockCorrectionSourceRow>((pageFrom, pageTo) => supabase
+        .from("clock_event_corrections")
+        .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+        .gte("recorded_date", from)
+        .lte("recorded_date", to)
+        .order("created_at")
+        .order("id")
+        .range(pageFrom, pageTo)),
+    ]);
+  } catch {
     throw new Error("Attendance review readiness could not be loaded.");
   }
-  const reviewed = new Set((reviews.data ?? []).map((row) => `${row.staff_id}:${row.review_date}`));
+  const [reviews, requests, originals, corrections] = rows;
+  const reviewed = new Set(reviews.map((row) => `${row.staff_id}:${row.review_date}`));
   const resolved = resolveEffectiveEvents(
-    ((originals.data ?? []) as ClockEventSourceRow[]).map(toOriginalClockEvent),
-    ((corrections.data ?? []) as ClockCorrectionSourceRow[]).map(toAttendanceCorrection),
+    originals.map(toOriginalClockEvent),
+    corrections.map(toAttendanceCorrection),
   );
   const workedDays = new Set(resolved.effective.map((event) => `${event.staffId}:${event.recordedDate}`));
   return {
     unresolved: [...workedDays].filter((key) => !reviewed.has(key)).length,
-    pendingRequests: requests.data?.length ?? 0,
+    pendingRequests: requests.length,
   };
 }
 
 export async function loadManagerHoursPreview(from?: string, to?: string): Promise<ManagerHoursPreview> {
   await requireAccount(["manager"]);
+  const requestedRange = from !== undefined || to !== undefined
+    ? requireAttendanceDateRange(from ?? "", to ?? "")
+    : null;
   const supabase = await createSupabaseServerClient();
   const today = isoDateInLondon();
   const { data: weekRange, error: weekError } = await supabase.rpc("get_current_work_week_range", { reference_date: today });
   const weekRow = Array.isArray(weekRange) ? weekRange[0] : null;
   if (weekError || !weekRow?.start_date || !weekRow?.end_date) throw new Error("Current work week range could not be loaded.");
 
-  const rangeStart = validIsoDate(from) ? from : String(weekRow.start_date);
-  const rangeEnd = validIsoDate(to) ? to : String(weekRow.end_date);
+  const range = requestedRange ?? requireAttendanceDateRange(
+    String(weekRow.start_date),
+    String(weekRow.end_date),
+  );
+  const rangeStart = range.from;
+  const rangeEnd = range.to;
   const { data, error } = await supabase.rpc("get_manager_hours_preview", {
     range_start: rangeStart,
     range_end: rangeEnd,

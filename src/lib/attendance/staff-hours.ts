@@ -13,9 +13,12 @@ import {
   type AttendanceSession,
   type AttendanceWarning,
 } from "@/lib/attendance/sequence";
+import { ATTENDANCE_RANGE_MAX_DAYS } from "@/lib/attendance/date-range";
 import { isoDateInLondon } from "@/lib/dates/format";
+import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 
-export const STAFF_HOURS_MAX_RANGE_DAYS = 366;
+export const STAFF_HOURS_MAX_RANGE_DAYS = ATTENDANCE_RANGE_MAX_DAYS;
+export { loadAllPostgrestPages as loadAllPages };
 
 export type StaffHoursProfileSourceRow = {
   id: string;
@@ -242,25 +245,6 @@ export function normaliseStaffHoursRange(
   return { from: currentWeek.start, to: currentWeek.end };
 }
 
-type PageResult<T> = {
-  data: T[] | null;
-  error: unknown;
-};
-
-export async function loadAllPages<T>(
-  loadPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
-  pageSize = 1_000,
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const page = await loadPage(from, from + pageSize - 1);
-    if (page.error) throw page.error;
-    const pageRows = page.data ?? [];
-    rows.push(...pageRows);
-    if (pageRows.length < pageSize) return rows;
-  }
-}
-
 export function toOriginalClockEvent(row: ClockEventSourceRow): OriginalClockEvent {
   return {
     id: row.id,
@@ -452,7 +436,7 @@ async function loadStaffHoursRange(
   const range = normaliseStaffHoursRange(fromValue, toValue, currentWeek);
 
   const [profiles, shifts, originals, corrections, reviews, totals] = await Promise.all([
-    loadAllPages<StaffHoursProfileSourceRow>((from, to) => {
+    loadAllPostgrestPages<StaffHoursProfileSourceRow>((from, to) => {
       let query = supabase.from("staff_profiles")
         .select("id,display_name,full_name")
         .eq("active", true)
@@ -462,7 +446,7 @@ async function loadStaffHoursRange(
       if (staffId) query = query.eq("id", staffId);
       return query;
     }),
-    loadAllPages<StaffHoursShiftSourceRow>((from, to) => {
+    loadAllPostgrestPages<StaffHoursShiftSourceRow>((from, to) => {
       let query = supabase.from("rota_shifts")
         .select("id,staff_id,shift_date,start_time,end_time,break_minutes,rota_weeks!inner(status)")
         .gte("shift_date", range.from)
@@ -475,9 +459,9 @@ async function loadStaffHoursRange(
         .order("id")
         .range(from, to);
       if (staffId) query = query.eq("staff_id", staffId);
-      return query as unknown as PromiseLike<PageResult<StaffHoursShiftSourceRow>>;
+      return query;
     }),
-    loadAllPages<ClockEventSourceRow>((from, to) => {
+    loadAllPostgrestPages<ClockEventSourceRow>((from, to) => {
       let query = supabase.from("clock_events")
         .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
         .gte("recorded_date", range.from)
@@ -488,7 +472,7 @@ async function loadStaffHoursRange(
       if (staffId) query = query.eq("staff_id", staffId);
       return query;
     }),
-    loadAllPages<ClockCorrectionSourceRow>((from, to) => {
+    loadAllPostgrestPages<ClockCorrectionSourceRow>((from, to) => {
       let query = supabase.from("clock_event_corrections")
         .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
         .gte("recorded_date", range.from)
@@ -499,7 +483,7 @@ async function loadStaffHoursRange(
       if (staffId) query = query.eq("staff_id", staffId);
       return query;
     }),
-    loadAllPages<StaffHoursReviewSourceRow>((from, to) => {
+    loadAllPostgrestPages<StaffHoursReviewSourceRow>((from, to) => {
       let query = supabase.from("attendance_day_reviews")
         .select("staff_id,review_date,status,reason,reviewed_at")
         .gte("review_date", range.from)
@@ -510,7 +494,7 @@ async function loadStaffHoursRange(
       if (staffId) query = query.eq("staff_id", staffId);
       return query;
     }),
-    loadAllPages<StaffHoursTotalSourceRow>((from, to) => supabase.rpc(
+    loadAllPostgrestPages<StaffHoursTotalSourceRow>((from, to) => supabase.rpc(
       "get_manager_hours_preview",
       {
         range_start: range.from,

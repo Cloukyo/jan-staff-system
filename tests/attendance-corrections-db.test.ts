@@ -519,6 +519,16 @@ describe("attendance correction PostgreSQL migration", () => {
     expect(result.rows[0].completed_minutes).toBe(480);
   });
 
+  it("rejects manager hours RPC ranges above 366 inclusive days", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+
+    await expect(db.query(
+      `select *
+       from public.get_manager_hours_preview('2026-01-01', '2027-01-02')`,
+    )).rejects.toThrow(/up to 366 days/i);
+  });
+
   it("retains a shared lock and one materialized event snapshot contract", () => {
     expect(migration).toContain("public.lock_attendance_staff_writes");
     expect(migration).toMatch(/before insert on public\.clock_events/i);

@@ -3,6 +3,7 @@ import { getAppMode } from "@/lib/app-mode";
 import {
   resolveEffectiveEvents,
 } from "@/lib/attendance/effective-events";
+import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import {
   toAttendanceCorrection,
   toOriginalClockEvent,
@@ -12,6 +13,7 @@ import {
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDateInLondon, londonDateStartUtc } from "@/lib/dates/format";
 import { isPayDetailsReady } from "@/lib/payroll/calculations";
+import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 import type {
   PayArrangement,
   PayrollAttendanceReview,
@@ -153,28 +155,35 @@ export async function loadProductionAttendanceData(
   periodStart: string,
   periodEnd: string,
 ): Promise<ProductionAttendanceData> {
+  requireAttendanceDateRange(periodStart, periodEnd);
   const supabase = await createSupabaseServerClient();
   const start = londonDateStartUtc(periodStart).toISOString();
   const dayAfterEnd = format(addDays(parseISO(periodEnd), 1), "yyyy-MM-dd");
   const end = londonDateStartUtc(dayAfterEnd).toISOString();
-  const [originals, corrections] = await Promise.all([
-    supabase.from("clock_events")
-      .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
-      .gte("event_timestamp", start).lt("event_timestamp", end)
-      .order("event_timestamp"),
-    supabase.from("clock_event_corrections")
-      .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
-      .gte("recorded_date", periodStart)
-      .lte("recorded_date", periodEnd)
-      .order("created_at"),
-  ]);
-  if (originals.error || corrections.error) {
+  let sourceRows: [ClockEventSourceRow[], ClockCorrectionSourceRow[]];
+  try {
+    sourceRows = await Promise.all([
+      loadAllPostgrestPages<ClockEventSourceRow>((from, to) => supabase
+        .from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+        .gte("event_timestamp", start)
+        .lt("event_timestamp", end)
+        .order("event_timestamp")
+        .order("id")
+        .range(from, to)),
+      loadAllPostgrestPages<ClockCorrectionSourceRow>((from, to) => supabase
+        .from("clock_event_corrections")
+        .select("id,batch_id,correction_role,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+        .gte("recorded_date", periodStart)
+        .lte("recorded_date", periodEnd)
+        .order("created_at")
+        .order("id")
+        .range(from, to)),
+    ]);
+  } catch {
     throw new Error("Production clock events could not be loaded.");
   }
-  return buildProductionAttendanceData(
-    (originals.data ?? []) as ClockEventSourceRow[],
-    (corrections.data ?? []) as ClockCorrectionSourceRow[],
-  );
+  return buildProductionAttendanceData(...sourceRows);
 }
 
 export async function loadProductionClockEvents(periodStart: string, periodEnd: string): Promise<ProductionClockEvent[]> {
@@ -183,13 +192,27 @@ export async function loadProductionClockEvents(periodStart: string, periodEnd: 
 }
 
 export async function loadPayrollAttendanceReviews(periodStart: string, periodEnd: string): Promise<PayrollAttendanceReview[]> {
+  requireAttendanceDateRange(periodStart, periodEnd);
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("attendance_day_reviews")
-    .select("staff_id,review_date,status,reason")
-    .gte("review_date", periodStart)
-    .lte("review_date", periodEnd);
-  if (error) throw new Error("Payroll attendance review records could not be loaded.");
-  return (data ?? []).map((row) => ({
+  let rows: Array<{
+    staff_id: string;
+    review_date: string;
+    status: PayrollAttendanceReview["status"];
+    reason: string | null;
+  }>;
+  try {
+    rows = await loadAllPostgrestPages((from, to) => supabase
+      .from("attendance_day_reviews")
+      .select("staff_id,review_date,status,reason")
+      .gte("review_date", periodStart)
+      .lte("review_date", periodEnd)
+      .order("review_date")
+      .order("staff_id")
+      .range(from, to));
+  } catch {
+    throw new Error("Payroll attendance review records could not be loaded.");
+  }
+  return rows.map((row) => ({
     staffId: row.staff_id,
     reviewDate: row.review_date,
     status: row.status,
@@ -201,29 +224,55 @@ export async function loadPayrollRotaShifts(
   periodStart: string,
   periodEnd: string,
 ): Promise<PayrollRotaShift[]> {
+  requireAttendanceDateRange(periodStart, periodEnd);
   const supabase = await createSupabaseServerClient();
-  const weeks = await supabase
-    .from("rota_weeks")
-    .select("id")
-    .neq("status", "archived")
-    .is("archived_at", null);
-  if (weeks.error) throw new Error("Production rota data could not be loaded.");
-  const weekIds = (weeks.data ?? []).map((week) => week.id);
+  const earliestWeekStart = format(addDays(parseISO(periodStart), -6), "yyyy-MM-dd");
+  let weekRows: Array<{ id: string }>;
+  try {
+    weekRows = await loadAllPostgrestPages((from, to) => supabase
+      .from("rota_weeks")
+      .select("id")
+      .neq("status", "archived")
+      .is("archived_at", null)
+      .gte("week_start_date", earliestWeekStart)
+      .lte("week_start_date", periodEnd)
+      .order("week_start_date")
+      .order("id")
+      .range(from, to));
+  } catch {
+    throw new Error("Production rota data could not be loaded.");
+  }
+  const weekIds = weekRows.map((week) => week.id);
   if (weekIds.length === 0) return [];
 
-  const shifts = await supabase
-    .from("rota_shifts")
-    .select("id,staff_id,shift_date,start_time,end_time,break_minutes,status,archived_at")
-    .in("rota_week_id", weekIds)
-    .gte("shift_date", periodStart)
-    .lte("shift_date", periodEnd)
-    .is("archived_at", null)
-    .neq("status", "cancelled")
-    .order("shift_date")
-    .order("start_time");
-  if (shifts.error) throw new Error("Production rota data could not be loaded.");
+  let shifts: Array<{
+    id: string;
+    staff_id: string;
+    shift_date: string;
+    start_time: string;
+    end_time: string;
+    break_minutes: number;
+    status: PayrollRotaShift["status"];
+    archived_at: string | null;
+  }>;
+  try {
+    shifts = await loadAllPostgrestPages((from, to) => supabase
+      .from("rota_shifts")
+      .select("id,staff_id,shift_date,start_time,end_time,break_minutes,status,archived_at")
+      .in("rota_week_id", weekIds)
+      .gte("shift_date", periodStart)
+      .lte("shift_date", periodEnd)
+      .is("archived_at", null)
+      .neq("status", "cancelled")
+      .order("shift_date")
+      .order("start_time")
+      .order("id")
+      .range(from, to));
+  } catch {
+    throw new Error("Production rota data could not be loaded.");
+  }
 
-  return (shifts.data ?? []).map((shift) => ({
+  return shifts.map((shift) => ({
     id: shift.id,
     staffId: shift.staff_id,
     shiftDate: shift.shift_date,

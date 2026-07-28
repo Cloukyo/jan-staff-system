@@ -5,6 +5,7 @@ import { ManagerHelpLink } from "@/components/help/manager-help-link";
 import { ManagerPageNav } from "@/components/layout/manager-page-nav";
 import { getAppMode } from "@/lib/app-mode";
 import { requireAccount } from "@/lib/auth/permissions";
+import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { loadPayrollAttendanceReviews, loadProductionClockEvents, loadProductionStaffRows } from "@/lib/payroll/server";
@@ -26,8 +27,12 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const [year, month] = today.split("-").map(Number);
   const defaultStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const defaultEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-  const periodStart = typeof params.from === "string" ? params.from : defaultStart;
-  const periodEnd = typeof params.to === "string" ? params.to : defaultEnd;
+  const range = requireAttendanceDateRange(
+    typeof params.from === "string" ? params.from : defaultStart,
+    typeof params.to === "string" ? params.to : defaultEnd,
+  );
+  const periodStart = range.from;
+  const periodEnd = range.to;
   const includeInactive = params.inactive === "1";
   const includeManagers = params.managers === "1";
   const includeZero = params.zero !== "0";

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAccount } from "@/lib/auth/permissions";
+import { validateAttendanceDateRange } from "@/lib/attendance/date-range";
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
@@ -21,11 +22,17 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   await requireAccount(["manager"]);
   const params = new URL(request.url).searchParams;
-  const periodStart = params.get("from") ?? "";
-  const periodEnd = params.get("to") ?? "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd) || periodStart > periodEnd) {
-    return NextResponse.json({ error: "Choose a valid payroll period." }, { status: 400 });
+  const validation = validateAttendanceDateRange(
+    params.get("from") ?? "",
+    params.get("to") ?? "",
+  );
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: "Choose a valid payroll period of up to 366 days." },
+      { status: 400 },
+    );
   }
+  const { from: periodStart, to: periodEnd } = validation.range;
   const includeInactive = params.get("inactive") === "1";
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";

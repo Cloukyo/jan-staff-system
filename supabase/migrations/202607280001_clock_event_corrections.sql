@@ -863,6 +863,9 @@ begin
   if range_start is null or range_end is null or range_start > range_end then
     raise exception 'Choose a valid date range';
   end if;
+  if (range_end - range_start) + 1 > 366 then
+    raise exception 'Choose a valid date range of up to 366 days';
+  end if;
 
   return query
   with active_staff as (

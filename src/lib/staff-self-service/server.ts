@@ -1,6 +1,7 @@
 import { addDays, differenceInMinutes, isValid, parseISO } from "date-fns";
 import { createClient } from "@supabase/supabase-js";
 import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
+import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import {
   toAttendanceCorrection,
   toOriginalClockEvent,
@@ -12,6 +13,7 @@ import { getSupabaseConfig } from "@/lib/auth/config";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
+import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 
 export type StaffRotaShift = {
   id: string;
@@ -180,30 +182,38 @@ export function summariseAttendanceDay(
 export async function loadStaffAttendance(fromValue?: string, toValue?: string): Promise<StaffAttendanceRange> {
   const account = await requireAccount(["staff"]);
   const range = normaliseDateRange(fromValue, toValue);
+  requireAttendanceDateRange(range.from, range.to);
   const supabase = await createSupabaseServerClient();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceRoleKey) throw new Error("Your attendance could not be loaded.");
   const admin = createClient(getSupabaseConfig().url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const [originals, corrections] = await Promise.all([
-    supabase.from("clock_events")
-      .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
-      .eq("staff_id", account.staffId)
-      .gte("recorded_date", range.from)
-      .lte("recorded_date", range.to)
-      .order("event_timestamp"),
-    admin.from("clock_event_corrections")
-      .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,created_at")
-      .eq("staff_id", account.staffId)
-      .gte("recorded_date", range.from)
-      .lte("recorded_date", range.to)
-      .order("created_at"),
-  ]);
-  if (originals.error || corrections.error) throw new Error("Your attendance could not be loaded.");
+  let rows: [ClockEventSourceRow[], ClockCorrectionResolverSourceRow[]];
+  try {
+    rows = await Promise.all([
+      loadAllPostgrestPages<ClockEventSourceRow>((from, to) => supabase.from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason")
+        .eq("staff_id", account.staffId)
+        .gte("recorded_date", range.from)
+        .lte("recorded_date", range.to)
+        .order("event_timestamp")
+        .order("id")
+        .range(from, to)),
+      loadAllPostgrestPages<ClockCorrectionResolverSourceRow>((from, to) => admin.from("clock_event_corrections")
+        .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,created_at")
+        .eq("staff_id", account.staffId)
+        .gte("recorded_date", range.from)
+        .lte("recorded_date", range.to)
+        .order("created_at")
+        .order("id")
+        .range(from, to)),
+    ]);
+  } catch {
+    throw new Error("Your attendance could not be loaded.");
+  }
 
-  const originalRows = (originals.data ?? []) as ClockEventSourceRow[];
-  const correctionRows = (corrections.data ?? []) as ClockCorrectionResolverSourceRow[];
+  const [originalRows, correctionRows] = rows;
   const resolved = resolveEffectiveEvents(
     originalRows.map(toOriginalClockEvent),
     correctionRows.map(toAttendanceCorrection),
