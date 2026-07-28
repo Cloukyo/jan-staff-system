@@ -20,6 +20,7 @@ export type AttendanceCorrection = {
   eventTimestamp: string | null;
   recordedDate: string;
   supersedesCorrectionId: string | null;
+  createdAt: string;
 };
 
 export type EffectiveClockEvent = {
@@ -54,14 +55,11 @@ export type ResolvedAttendanceEvents = {
 };
 
 function orderEvents(left: EffectiveClockEvent, right: EffectiveClockEvent): number {
-  return left.eventTimestamp.localeCompare(right.eventTimestamp) || left.id.localeCompare(right.id);
+  return Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp) || left.id.localeCompare(right.id);
 }
 
-function activeCorrections(corrections: AttendanceCorrection[]): AttendanceCorrection[] {
-  const supersededIds = new Set(
-    corrections.flatMap((correction) => correction.supersedesCorrectionId ? [correction.supersedesCorrectionId] : []),
-  );
-  return corrections.filter((correction) => !supersededIds.has(correction.id));
+function compareCorrectionCreationOrder(left: AttendanceCorrection, right: AttendanceCorrection): number {
+  return Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id);
 }
 
 function correctionEvent(correction: AttendanceCorrection, originalEventId: string | null): EffectiveClockEvent | null {
@@ -82,8 +80,10 @@ export function resolveEffectiveEvents(
   events: OriginalClockEvent[],
   corrections: AttendanceCorrection[],
 ): ResolvedAttendanceEvents {
-  const active = activeCorrections(corrections);
   const correctionById = new Map(corrections.map((correction) => [correction.id, correction]));
+  const supersededIds = new Set(
+    corrections.flatMap((correction) => correction.supersedesCorrectionId ? [correction.supersedesCorrectionId] : []),
+  );
   const originalForCorrection = (correction: AttendanceCorrection): string | null => {
     const visited = new Set<string>();
     let current: AttendanceCorrection | undefined = correction;
@@ -96,6 +96,30 @@ export function resolveEffectiveEvents(
     }
     return null;
   };
+  const rootForCorrection = (correction: AttendanceCorrection): AttendanceCorrection => {
+    const visited = new Set<string>();
+    let current = correction;
+    while (current.supersedesCorrectionId && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parent = correctionById.get(current.supersedesCorrectionId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  };
+  const chosenLeafByLineage = new Map<string, AttendanceCorrection>();
+  for (const correction of corrections.filter((item) => !supersededIds.has(item.id))) {
+    const originalEventId = originalForCorrection(correction);
+    const lineageKey = originalEventId
+      ? `original:${originalEventId}`
+      : `correction:${rootForCorrection(correction).id}`;
+    const chosen = chosenLeafByLineage.get(lineageKey);
+    if (!chosen || compareCorrectionCreationOrder(chosen, correction) < 0) {
+      chosenLeafByLineage.set(lineageKey, correction);
+    }
+  }
+  const active = [...chosenLeafByLineage.values()];
+  const activeIds = new Set(active.map((correction) => correction.id));
   const activeByOriginalId = new Map<string, AttendanceCorrection[]>();
   for (const correction of active) {
     const originalEventId = originalForCorrection(correction);
@@ -128,9 +152,6 @@ export function resolveEffectiveEvents(
     return event ? [event] : [];
   });
 
-  const supersededIds = new Set(
-    corrections.flatMap((correction) => correction.supersedesCorrectionId ? [correction.supersedesCorrectionId] : []),
-  );
   return {
     effective: [...effectiveOriginals, ...effectiveCorrections].sort(orderEvents),
     audit: {
@@ -138,7 +159,7 @@ export function resolveEffectiveEvents(
       corrections: corrections.map((correction) => ({
         correctionId: correction.id,
         correction,
-        status: supersededIds.has(correction.id) ? "superseded" as const : "active" as const,
+        status: activeIds.has(correction.id) ? "active" as const : "superseded" as const,
       })),
     },
   };

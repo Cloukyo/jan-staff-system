@@ -39,6 +39,7 @@ function correction(
     eventTimestamp: null,
     recordedDate: date,
     supersedesCorrectionId: null,
+    createdAt: `${date}T12:00:00+01:00`,
     ...overrides,
   };
 }
@@ -123,6 +124,67 @@ describe("resolveEffectiveEvents", () => {
     ]);
   });
 
+  it("uses the newest leaf when a correction chain forks", () => {
+    const result = resolveEffectiveEvents([original("in", "clock_in", "08:00")], [
+      correction("root", "replace", {
+        originalEventId: "in",
+        eventType: "clock_out",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+        createdAt: `${date}T10:00:00+01:00`,
+      }),
+      correction("z-exclude-newer", "exclude", {
+        supersedesCorrectionId: "root",
+        createdAt: `${date}T12:00:00+01:00`,
+      }),
+      correction("a-replace-older", "replace", {
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:05:00+01:00`,
+        supersedesCorrectionId: "root",
+        createdAt: `${date}T11:00:00+01:00`,
+      }),
+    ]);
+
+    expect(result.effective).toEqual([]);
+    expect(result.audit.originals[0]).toMatchObject({
+      status: "excluded",
+      correctionId: "z-exclude-newer",
+    });
+    expect(result.audit.corrections).toEqual([
+      expect.objectContaining({ correctionId: "root", status: "superseded" }),
+      expect.objectContaining({ correctionId: "z-exclude-newer", status: "active" }),
+      expect.objectContaining({ correctionId: "a-replace-older", status: "superseded" }),
+    ]);
+  });
+
+  it("uses correction ID as the final tie-breaker for equally new fork leaves", () => {
+    const result = resolveEffectiveEvents([original("in", "clock_in", "08:00")], [
+      correction("root", "replace", {
+        originalEventId: "in",
+        eventType: "clock_out",
+        eventTimestamp: `${date}T08:00:00+01:00`,
+        createdAt: `${date}T10:00:00+01:00`,
+      }),
+      correction("z-replace", "replace", {
+        eventType: "clock_in",
+        eventTimestamp: `${date}T08:05:00+01:00`,
+        supersedesCorrectionId: "root",
+        createdAt: `${date}T12:00:00+01:00`,
+      }),
+      correction("a-exclude", "exclude", {
+        supersedesCorrectionId: "root",
+        createdAt: `${date}T12:00:00+01:00`,
+      }),
+    ]);
+
+    expect(result.effective.map((event) => event.id)).toEqual(["z-replace"]);
+    expect(result.audit.originals[0]).toMatchObject({
+      status: "replaced",
+      correctionId: "z-replace",
+    });
+    expect(result.audit.corrections.find((item) => item.correctionId === "a-exclude")?.status).toBe("superseded");
+    expect(result.audit.corrections.find((item) => item.correctionId === "z-replace")?.status).toBe("active");
+  });
+
   it("retains legacy manager events as effective audit-safe originals", () => {
     const result = resolveEffectiveEvents([
       original("legacy", "clock_in", "08:00", { source: "legacy_manager" }),
@@ -130,6 +192,29 @@ describe("resolveEffectiveEvents", () => {
 
     expect(result.effective[0]).toMatchObject({ id: "legacy", source: "legacy_manager", correctionId: null });
     expect(result.audit.originals[0].status).toBe("active");
+  });
+
+  it("orders the BST clock-in before the later GMT clock-out by instant", () => {
+    const events = resolveEffectiveEvents([
+      original("gmt-out", "clock_out", "01:15", {
+        recordedDate: "2026-10-25",
+        eventTimestamp: "2026-10-25T01:15:00+00:00",
+      }),
+      original("bst-in", "clock_in", "01:30", {
+        recordedDate: "2026-10-25",
+        eventTimestamp: "2026-10-25T01:30:00+01:00",
+      }),
+    ], []).effective;
+
+    expect(events.map((event) => event.id)).toEqual(["bst-in", "gmt-out"]);
+    expect(analyseAttendanceDay({
+      events,
+      plannedShift: { start: "01:30", end: "01:15" },
+    })).toMatchObject({
+      completedMinutes: 45,
+      hasOpenShift: false,
+      warnings: [],
+    });
   });
 });
 

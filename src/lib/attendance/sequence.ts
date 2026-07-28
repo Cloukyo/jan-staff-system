@@ -44,7 +44,7 @@ export type AlternatingEventPlanInput = {
 };
 
 function orderEvents(left: EffectiveClockEvent, right: EffectiveClockEvent): number {
-  return left.eventTimestamp.localeCompare(right.eventTimestamp) || left.id.localeCompare(right.id);
+  return Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp) || left.id.localeCompare(right.id);
 }
 
 function opposite(type: AttendanceEventType): AttendanceEventType {
