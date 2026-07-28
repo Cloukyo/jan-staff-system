@@ -130,6 +130,16 @@ describe("manager attendance views", () => {
     });
     expect(narrowDesktopPlacements[0].row)
       .not.toBe(narrowDesktopPlacements[1].row);
+
+    const edgePlacements = layoutAttendanceTimelineEvents([
+      "2026-07-28T14:50:00.000Z",
+      "2026-07-28T22:31:00.000Z",
+    ], {
+      startMinutes: 0,
+      endMinutes: 1440,
+      ticks: [0, 240, 480, 720, 960, 1200, 1440],
+    });
+    expect(edgePlacements[0].row).not.toBe(edgePlacements[1].row);
   });
 
   it("keeps the expanded attendance view faithful to the approved responsive timeline", () => {

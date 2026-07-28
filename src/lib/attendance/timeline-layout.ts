@@ -73,7 +73,7 @@ export function timelinePositionPercent(
 export function layoutAttendanceTimelineEvents(
   timestamps: string[],
   window: AttendanceTimelineWindow,
-  minimumGapPercent = 32,
+  estimatedLabelWidthPercent = 32,
 ): AttendanceTimelineEventPlacement[] {
   const ordered = timestamps
     .map((timestamp, index) => ({
@@ -86,7 +86,7 @@ export function layoutAttendanceTimelineEvents(
   const placements: AttendanceTimelineEventPlacement[] = Array.from(
     { length: timestamps.length },
   );
-  const finalPositionByRow: number[] = [];
+  const finalLabelEndByRow: number[] = [];
   let previousVisualMinutes = Number.NEGATIVE_INFINITY;
 
   for (const event of ordered) {
@@ -95,11 +95,21 @@ export function layoutAttendanceTimelineEvents(
       : event.localMinutes;
     previousVisualMinutes = visualMinutes;
     const positionPercent = timelinePositionPercent(visualMinutes, window);
-    let row = finalPositionByRow.findIndex(
-      (lastPosition) => positionPercent - lastPosition >= minimumGapPercent,
+    const labelStart = positionPercent < 8
+      ? positionPercent
+      : positionPercent > 92
+        ? positionPercent - estimatedLabelWidthPercent
+        : positionPercent - (estimatedLabelWidthPercent / 2);
+    const labelEnd = positionPercent < 8
+      ? positionPercent + estimatedLabelWidthPercent
+      : positionPercent > 92
+        ? positionPercent
+        : positionPercent + (estimatedLabelWidthPercent / 2);
+    let row = finalLabelEndByRow.findIndex(
+      (previousLabelEnd) => labelStart - previousLabelEnd >= 2,
     );
-    if (row === -1) row = finalPositionByRow.length;
-    finalPositionByRow[row] = positionPercent;
+    if (row === -1) row = finalLabelEndByRow.length;
+    finalLabelEndByRow[row] = labelEnd;
     placements[event.index] = { positionPercent, row };
   }
 
