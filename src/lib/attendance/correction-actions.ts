@@ -26,6 +26,27 @@ export type PlannedHoursActionInput = {
   expectedRevision: string;
 };
 
+type RemoveClockEventActionInput = {
+  staffId: string;
+  attendanceDate: string;
+  targetEventId: string;
+  correctionId: string;
+  reason: string;
+  returnTo: string;
+  expectedRevision: string;
+  confirmed: boolean;
+};
+
+type ResetAttendanceToPlannedHoursActionInput = {
+  staffId: string;
+  attendanceDate: string;
+  correctionId: string;
+  reason: string;
+  returnTo: string;
+  expectedRevision: string;
+  confirmed: boolean;
+};
+
 export type CorrectionActionResult = {
   ok: boolean;
   code: string;
@@ -44,6 +65,18 @@ const invalidCorrection: CorrectionActionResult = {
   ok: false,
   code: "invalid_correction",
   message: "Choose an event, time and a clear correction reason.",
+};
+
+const invalidRemovalConfirmation: CorrectionActionResult = {
+  ok: false,
+  code: "invalid_correction",
+  message: "Confirm the removal and enter a clear reason.",
+};
+
+const invalidResetConfirmation: CorrectionActionResult = {
+  ok: false,
+  code: "invalid_correction",
+  message: "Confirm the reset and enter a clear reason.",
 };
 
 function validDate(value: string): boolean {
@@ -78,6 +111,29 @@ function isPlannedHoursActionInput(value: unknown): value is PlannedHoursActionI
     && typeof value.reason === "string"
     && typeof value.expectedRevision === "string"
     && (value.returnTo === undefined || typeof value.returnTo === "string");
+}
+
+function isRemoveClockEventActionInput(value: unknown): value is RemoveClockEventActionInput {
+  return isRecord(value)
+    && typeof value.staffId === "string"
+    && typeof value.attendanceDate === "string"
+    && typeof value.targetEventId === "string"
+    && typeof value.correctionId === "string"
+    && typeof value.reason === "string"
+    && typeof value.returnTo === "string"
+    && typeof value.expectedRevision === "string"
+    && typeof value.confirmed === "boolean";
+}
+
+function isResetAttendanceToPlannedHoursActionInput(value: unknown): value is ResetAttendanceToPlannedHoursActionInput {
+  return isRecord(value)
+    && typeof value.staffId === "string"
+    && typeof value.attendanceDate === "string"
+    && typeof value.correctionId === "string"
+    && typeof value.reason === "string"
+    && typeof value.returnTo === "string"
+    && typeof value.expectedRevision === "string"
+    && typeof value.confirmed === "boolean";
 }
 
 function revalidateAttendancePaths(returnTo?: string) {
@@ -201,5 +257,120 @@ export async function useBoundPlannedHoursAction(
     reason: String(formData.get("reason") ?? ""),
     returnTo: context.returnTo,
     expectedRevision: context.eventRevision,
+  });
+}
+
+async function removeClockEventFromHours(input: RemoveClockEventActionInput): Promise<CorrectionActionResult> {
+  await requireAccount(["manager"]);
+  if (!isRemoveClockEventActionInput(input) || !input.confirmed) return invalidRemovalConfirmation;
+  const reason = input.reason.trim();
+  if (
+    !input.staffId
+    || !validDate(input.attendanceDate)
+    || !validUuid(input.targetEventId)
+    || !validUuid(input.correctionId)
+    || !input.expectedRevision
+    || reason.length < 5
+  ) {
+    return invalidCorrection;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("remove_clock_event_from_hours", {
+    target_staff_id: input.staffId,
+    target_date: input.attendanceDate,
+    target_event_id: input.targetEventId,
+    reason,
+    expected_revision: input.expectedRevision,
+    operation_id: input.correctionId,
+  });
+  if (attendanceChanged(error)) return attendanceChangedResult();
+  if (error) {
+    return {
+      ok: false,
+      code: "remove_failed",
+      message: "The clock event could not be removed from attendance hours.",
+    };
+  }
+
+  revalidateAttendancePaths(input.returnTo);
+  return {
+    ok: true,
+    code: "removed",
+    message: "The clock event was removed from attendance hours.",
+  };
+}
+
+export async function removeBoundClockEventAction(
+  context: BoundAttendanceCorrectionContext,
+  _state: CorrectionActionResult,
+  formData: FormData,
+): Promise<CorrectionActionResult> {
+  return removeClockEventFromHours({
+    staffId: context.staffId,
+    attendanceDate: context.attendanceDate,
+    targetEventId: String(formData.get("targetEventId") ?? ""),
+    correctionId: context.correctionId,
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: context.returnTo,
+    expectedRevision: context.eventRevision,
+    confirmed: formData.get("confirmed") === "yes",
+  });
+}
+
+async function resetAttendanceToPlannedHours(
+  input: ResetAttendanceToPlannedHoursActionInput,
+): Promise<CorrectionActionResult> {
+  await requireAccount(["manager"]);
+  if (!isResetAttendanceToPlannedHoursActionInput(input) || !input.confirmed) return invalidResetConfirmation;
+  const reason = input.reason.trim();
+  if (
+    !input.staffId
+    || !validDate(input.attendanceDate)
+    || !validUuid(input.correctionId)
+    || !input.expectedRevision
+    || reason.length < 5
+  ) {
+    return invalidCorrection;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("reset_attendance_to_planned_hours", {
+    target_staff_id: input.staffId,
+    target_date: input.attendanceDate,
+    reason,
+    expected_revision: input.expectedRevision,
+    operation_id: input.correctionId,
+  });
+  if (attendanceChanged(error)) return attendanceChangedResult();
+  if (error) {
+    return {
+      ok: false,
+      code: "reset_failed",
+      message: "Attendance could not be reset to published planned hours.",
+    };
+  }
+
+  revalidateAttendancePaths(input.returnTo);
+  return {
+    ok: true,
+    code: "reset",
+    message: "Attendance was reset to published planned hours.",
+  };
+}
+
+export async function resetBoundAttendanceToPlannedHoursAction(
+  context: BoundAttendanceCorrectionContext,
+  _state: CorrectionActionResult,
+  formData: FormData,
+): Promise<CorrectionActionResult> {
+  return resetAttendanceToPlannedHours({
+    staffId: context.staffId,
+    attendanceDate: context.attendanceDate,
+    correctionId: context.correctionId,
+    reason: String(formData.get("reason") ?? ""),
+    returnTo: context.returnTo,
+    expectedRevision: context.eventRevision,
+    confirmed: formData.get("confirmed") === "yes",
   });
 }
