@@ -1,3 +1,41 @@
+create table public.attendance_operation_requests (
+  operation_id uuid primary key,
+  operation_kind text not null check (operation_kind in ('remove', 'reset')),
+  staff_id text not null references public.staff_profiles(id) on delete restrict,
+  recorded_date date not null,
+  target_event_id uuid,
+  reason text not null,
+  expected_revision text not null,
+  created_at timestamptz not null default now(),
+  constraint attendance_operation_request_target check (
+    (operation_kind = 'remove' and target_event_id is not null)
+    or (operation_kind = 'reset' and target_event_id is null)
+  )
+);
+
+alter table public.attendance_operation_requests enable row level security;
+revoke all on public.attendance_operation_requests from public, anon, authenticated;
+
+create or replace function public.lock_attendance_operation(target_operation_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if target_operation_id is null then
+    raise exception 'An attendance operation ID is required';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('attendance-operation:' || target_operation_id::text, 0)
+  );
+end;
+$$;
+
+revoke all on function public.lock_attendance_operation(uuid)
+from public, anon, authenticated;
+
 create or replace function public.remove_clock_event_from_hours(
   target_staff_id text,
   target_date date,
@@ -14,6 +52,7 @@ as $$
 declare
   manager_account public.staff_accounts;
   selected_event record;
+  existing_request public.attendance_operation_requests;
 begin
   manager_account := public.current_staff_account();
   if manager_account.id is null or manager_account.role <> 'manager' then
@@ -36,14 +75,33 @@ begin
     raise exception 'The staff member does not exist';
   end if;
 
+  perform public.lock_attendance_operation(operation_id);
   perform public.lock_attendance_staff_writes(target_staff_id);
+
+  select request.*
+  into existing_request
+  from public.attendance_operation_requests request
+  where request.operation_id = remove_clock_event_from_hours.operation_id;
+
+  if found then
+    if existing_request.operation_kind = 'remove'
+      and existing_request.staff_id = target_staff_id
+      and existing_request.recorded_date = target_date
+      and existing_request.target_event_id = target_event_id
+      and existing_request.reason = trim(reason)
+      and existing_request.expected_revision = expected_revision then
+      return operation_id;
+    end if;
+
+    raise exception 'Operation ID is already used for a different attendance operation';
+  end if;
 
   if exists (
     select 1
     from public.clock_event_corrections correction
     where correction.batch_id = operation_id
   ) then
-    return operation_id;
+    raise exception 'Operation ID is already used for a different attendance operation';
   end if;
 
   if public.get_attendance_event_revision(target_staff_id, target_date)
@@ -65,6 +123,25 @@ begin
   if not found then
     raise exception 'The effective clock event no longer exists';
   end if;
+
+  insert into public.attendance_operation_requests (
+    operation_id,
+    operation_kind,
+    staff_id,
+    recorded_date,
+    target_event_id,
+    reason,
+    expected_revision
+  )
+  values (
+    operation_id,
+    'remove',
+    target_staff_id,
+    target_date,
+    target_event_id,
+    trim(reason),
+    expected_revision
+  );
 
   insert into public.clock_event_corrections (
     id,
@@ -135,6 +212,7 @@ set search_path = public
 as $$
 declare
   manager_account public.staff_accounts;
+  existing_request public.attendance_operation_requests;
   planned_start time;
   planned_finish time;
   planned_start_at timestamptz;
@@ -163,14 +241,33 @@ begin
     raise exception 'The staff member does not exist';
   end if;
 
+  perform public.lock_attendance_operation(operation_id);
   perform public.lock_attendance_staff_writes(target_staff_id);
+
+  select request.*
+  into existing_request
+  from public.attendance_operation_requests request
+  where request.operation_id = reset_attendance_to_planned_hours.operation_id;
+
+  if found then
+    if existing_request.operation_kind = 'reset'
+      and existing_request.staff_id = target_staff_id
+      and existing_request.recorded_date = target_date
+      and existing_request.target_event_id is null
+      and existing_request.reason = trim(reason)
+      and existing_request.expected_revision = expected_revision then
+      return operation_id;
+    end if;
+
+    raise exception 'Operation ID is already used for a different attendance operation';
+  end if;
 
   if exists (
     select 1
     from public.clock_event_corrections correction
     where correction.batch_id = operation_id
   ) then
-    return operation_id;
+    raise exception 'Operation ID is already used for a different attendance operation';
   end if;
 
   if public.get_attendance_event_revision(target_staff_id, target_date)
@@ -248,6 +345,25 @@ begin
       'event_type', 'clock_out',
       'event_timestamp', planned_finish_at
     )
+  );
+
+  insert into public.attendance_operation_requests (
+    operation_id,
+    operation_kind,
+    staff_id,
+    recorded_date,
+    target_event_id,
+    reason,
+    expected_revision
+  )
+  values (
+    operation_id,
+    'reset',
+    target_staff_id,
+    target_date,
+    null,
+    trim(reason),
+    expected_revision
   );
 
   insert into public.clock_event_corrections (
