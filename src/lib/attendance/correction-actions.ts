@@ -45,6 +45,8 @@ type ResetAttendanceToPlannedHoursActionInput = {
   returnTo: string;
   expectedRevision: string;
   confirmed: boolean;
+  plannedStart: string;
+  plannedFinish: string;
 };
 
 export type CorrectionActionResult = {
@@ -59,6 +61,8 @@ export type BoundAttendanceCorrectionContext = {
   correctionId: string;
   returnTo: string;
   eventRevision: string;
+  plannedStart?: string;
+  plannedFinish?: string;
 };
 
 const invalidCorrection: CorrectionActionResult = {
@@ -85,6 +89,10 @@ function validDate(value: string): boolean {
 
 function validUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function validTime(value: string): boolean {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -133,7 +141,9 @@ function isResetAttendanceToPlannedHoursActionInput(value: unknown): value is Re
     && typeof value.reason === "string"
     && typeof value.returnTo === "string"
     && typeof value.expectedRevision === "string"
-    && typeof value.confirmed === "boolean";
+    && typeof value.confirmed === "boolean"
+    && typeof value.plannedStart === "string"
+    && typeof value.plannedFinish === "string";
 }
 
 function revalidateAttendancePaths(returnTo?: string) {
@@ -329,6 +339,8 @@ async function resetAttendanceToPlannedHours(
     || !validDate(input.attendanceDate)
     || !validUuid(input.correctionId)
     || !input.expectedRevision
+    || !validTime(input.plannedStart)
+    || !validTime(input.plannedFinish)
     || reason.length < 5
   ) {
     return invalidCorrection;
@@ -341,6 +353,8 @@ async function resetAttendanceToPlannedHours(
     reason,
     expected_revision: input.expectedRevision,
     operation_id: input.correctionId,
+    expected_planned_start: input.plannedStart,
+    expected_planned_finish: input.plannedFinish,
   });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) {
@@ -372,5 +386,7 @@ export async function resetBoundAttendanceToPlannedHoursAction(
     returnTo: context.returnTo,
     expectedRevision: context.eventRevision,
     confirmed: formData.get("confirmed") === "yes",
+    plannedStart: context.plannedStart ?? "",
+    plannedFinish: context.plannedFinish ?? "",
   });
 }

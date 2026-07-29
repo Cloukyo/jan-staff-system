@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import {
@@ -1331,6 +1332,122 @@ describe("attendance correction PostgreSQL migration", () => {
     expect(count.rows[0].count).toBe(0);
   });
 
+  it.each([
+    {
+      label: "start",
+      staffId: "reset-stale-planned-start",
+      date: "2026-09-14",
+      column: "start_time",
+      replacement: "08:30",
+    },
+    {
+      label: "finish",
+      staffId: "reset-stale-planned-finish",
+      date: "2026-09-15",
+      column: "end_time",
+      replacement: "17:30",
+    },
+  ])("rejects a stale planned $label with SQLSTATE 40001 before writing", async ({
+    staffId,
+    date,
+    column,
+    replacement,
+  }) => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const operationId = randomUUID();
+    await seedStaffShift(db, { staffId, date });
+    const revision = await attendanceRevision(db, staffId, date);
+    await db.query(
+      `update public.rota_shifts
+       set ${column} = $1::time
+       where staff_id = $2 and shift_date = $3::date`,
+      [replacement, staffId, date],
+    );
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      expectedPlannedStart: "09:00",
+      expectedPlannedFinish: "17:00",
+      operationId,
+    })).rejects.toMatchObject({ code: "40001" });
+    const writes = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(writes.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+  });
+
+  it.each([
+    { label: "spring-forward", date: "2026-03-29" },
+    { label: "autumn overlap", date: "2026-10-25" },
+  ])("rejects a $label reset boundary before writing", async ({ label, date }) => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = `reset-${label.replaceAll(" ", "-")}`;
+    const operationId = randomUUID();
+    await seedStaffShift(db, {
+      staffId,
+      date,
+      start: "01:30",
+      finish: "03:30",
+    });
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedPlannedStart: "01:30",
+      expectedPlannedFinish: "03:30",
+      operationId,
+    })).rejects.toThrow(/clock change/i);
+    const writes = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(writes.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+  });
+
+  it("accepts a unique 01:30 reset boundary on a normal London date", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-normal-boundary";
+    const date = "2026-02-15";
+    await seedStaffShift(db, {
+      staffId,
+      date,
+      start: "01:30",
+      finish: "03:30",
+    });
+
+    await resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedPlannedStart: "01:30",
+      expectedPlannedFinish: "03:30",
+    });
+
+    expect(await effectiveEvents(db, staffId, date)).toMatchObject([
+      { event_type: "clock_in", local_time: "01:30" },
+      { event_type: "clock_out", local_time: "03:30" },
+    ]);
+  });
+
   it("rejects reset requests from non-managers", async () => {
     await resetRole(db);
     await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
@@ -1358,14 +1475,105 @@ describe("attendance correction PostgreSQL migration", () => {
 
     const first = await resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision, operationId });
     const second = await resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision, operationId });
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+      expectedPlannedFinish: "16:30",
+    })).rejects.toThrow(/operation ID is already used for a different attendance operation/i);
     const count = await db.query<{ count: number }>(
       "select count(*)::integer as count from public.clock_event_corrections where batch_id = $1::uuid",
+      [operationId],
+    );
+    const request = await db.query<{ planned_start: string; planned_finish: string }>(
+      `select
+         to_char(expected_planned_start, 'HH24:MI') as planned_start,
+         to_char(expected_planned_finish, 'HH24:MI') as planned_finish
+       from public.attendance_operation_requests
+       where operation_id = $1::uuid`,
       [operationId],
     );
 
     expect(first).toBe(operationId);
     expect(second).toBe(operationId);
     expect(count.rows[0].count).toBe(3);
+    expect(request.rows[0]).toEqual({ planned_start: "09:00", planned_finish: "17:00" });
+  });
+
+  it("rolls back the request ledger when correction insertion fails and permits retry", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-atomic-retry";
+    const date = "2026-09-16";
+    const operationId = "20000000-0000-0000-0000-000000000016";
+    await seedStaffShift(db, { staffId, date });
+    await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-16T08:30:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, staffId, date);
+    await db.exec(`
+      create function public.fail_selected_reset_correction()
+      returns trigger
+      language plpgsql
+      set search_path = public
+      as $$
+      begin
+        if new.batch_id = '${operationId}'::uuid then
+          raise exception 'Injected correction insert failure';
+        end if;
+        return new;
+      end;
+      $$;
+
+      create trigger fail_selected_reset_correction
+      before insert on public.clock_event_corrections
+      for each row execute function public.fail_selected_reset_correction();
+    `);
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+    })).rejects.toThrow(/injected correction insert failure/i);
+    const failedWrites = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+    expect(failedWrites.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+
+    await db.exec(`
+      drop trigger fail_selected_reset_correction on public.clock_event_corrections;
+      drop function public.fail_selected_reset_correction();
+    `);
+    const retry = await resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+    });
+    const successfulWrites = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(retry).toBe(operationId);
+    expect(successfulWrites.rows[0]).toEqual({ request_count: 1, correction_count: 3 });
   });
 
   it.each([

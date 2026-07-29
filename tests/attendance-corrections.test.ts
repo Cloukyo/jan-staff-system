@@ -734,7 +734,7 @@ describe("attendance correction control contracts", () => {
     });
   });
 
-  it("previews a published spring-gap period without converting its local times to instants", () => {
+  it("makes reset unavailable for a nonexistent spring clock-change boundary", () => {
     expect(previewResetToPlannedHours({
       date: "2026-03-29",
       plannedPeriods: [
@@ -745,6 +745,37 @@ describe("attendance correction control contracts", () => {
       plannedStart: "01:30",
       plannedFinish: "03:30",
       effectiveEvents: [],
+      unusableBoundary: { kind: "start", time: "01:30" },
+    });
+  });
+
+  it("makes reset unavailable for an ambiguous autumn clock-change boundary", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-10-25",
+      plannedPeriods: [
+        { id: "autumn-overlap", startTime: "01:30", endTime: "03:30", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "01:30",
+      plannedFinish: "03:30",
+      effectiveEvents: [],
+      unusableBoundary: { kind: "start", time: "01:30" },
+    });
+  });
+
+  it("keeps reset available for unique planned boundaries on a normal date", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-07-28",
+      plannedPeriods: [
+        { id: "normal", startTime: "09:00", endTime: "17:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "09:00",
+      plannedFinish: "17:00",
+      effectiveEvents: [],
+      unusableBoundary: null,
     });
   });
 
@@ -777,6 +808,7 @@ describe("attendance correction control contracts", () => {
       plannedStart: "08:00",
       plannedFinish: "17:00",
       effectiveEvents: [earlyEvent, lateEvent],
+      unusableBoundary: null,
     });
   });
 
@@ -849,8 +881,10 @@ describe("append-only attendance correction migration", () => {
     expect(resetAttendance).toMatch(/operation_kind = 'reset'[\s\S]*return operation_id;[\s\S]*get_attendance_event_revision/i);
     expect(resetAttendance).toMatch(/rw\.status = 'published'/i);
     expect(resetAttendance).toMatch(/rs\.status <> 'cancelled'/i);
-    expect(resetAttendance).toMatch(/for update of rs, rw/i);
+    expect(resetAttendance).toMatch(/from public\.rota_weeks rw[\s\S]*for update[\s\S]*from public\.rota_shifts rs[\s\S]*for update/i);
     expect(resetAttendance).toMatch(/min\(rs\.start_time\)[\s\S]*max\(rs\.end_time\)/i);
+    expect(resetAttendance).toMatch(/planned_start is distinct from expected_planned_start/i);
+    expect(resetAttendance).toMatch(/planned_finish is distinct from expected_planned_finish/i);
     expect(resetAttendance).toContain("at time zone 'Europe/London'");
     expect(resetAttendance).toMatch(/effective_events jsonb[\s\S]*jsonb_agg/i);
     expect(resetAttendance).toMatch(/correction_kind[\s\S]*exclude/i);
@@ -868,6 +902,8 @@ describe("append-only attendance correction migration", () => {
 
     expect(sql).toMatch(/create table public\.attendance_operation_requests[\s\S]*operation_id uuid primary key/i);
     expect(sql).toMatch(/operation_kind text not null check \(operation_kind in \('remove', 'reset'\)\)/i);
+    expect(sql).toMatch(/expected_planned_start time/i);
+    expect(sql).toMatch(/expected_planned_finish time/i);
     expect(sql).toMatch(/create or replace function public\.lock_attendance_operation[\s\S]*pg_advisory_xact_lock[\s\S]*'attendance-operation:' \|\| target_operation_id/i);
     expect(sql).toMatch(/operation ID is already used for a different attendance operation/i);
   });

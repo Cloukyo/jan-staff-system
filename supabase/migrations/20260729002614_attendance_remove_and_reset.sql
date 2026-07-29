@@ -6,10 +6,22 @@ create table public.attendance_operation_requests (
   target_event_id uuid,
   reason text not null,
   expected_revision text not null,
+  expected_planned_start time,
+  expected_planned_finish time,
   created_at timestamptz not null default now(),
   constraint attendance_operation_request_target check (
-    (operation_kind = 'remove' and target_event_id is not null)
-    or (operation_kind = 'reset' and target_event_id is null)
+    (
+      operation_kind = 'remove'
+      and target_event_id is not null
+      and expected_planned_start is null
+      and expected_planned_finish is null
+    )
+    or (
+      operation_kind = 'reset'
+      and target_event_id is null
+      and expected_planned_start is not null
+      and expected_planned_finish is not null
+    )
   )
 );
 
@@ -203,7 +215,9 @@ create or replace function public.reset_attendance_to_planned_hours(
   target_date date,
   reason text,
   expected_revision text,
-  operation_id uuid
+  operation_id uuid,
+  expected_planned_start time,
+  expected_planned_finish time
 )
 returns uuid
 language plpgsql
@@ -213,10 +227,13 @@ as $$
 declare
   manager_account public.staff_accounts;
   existing_request public.attendance_operation_requests;
+  published_rota_week_id uuid;
   planned_start time;
   planned_finish time;
   planned_start_at timestamptz;
   planned_finish_at timestamptz;
+  planned_start_match_count integer;
+  planned_finish_match_count integer;
   effective_events jsonb;
   correction_actions jsonb;
 begin
@@ -227,7 +244,10 @@ begin
   if nullif(trim(target_staff_id), '') is null or target_date is null then
     raise exception 'Choose a staff member and date';
   end if;
-  if expected_revision is null or operation_id is null then
+  if expected_revision is null
+    or operation_id is null
+    or expected_planned_start is null
+    or expected_planned_finish is null then
     raise exception 'Reload attendance and review the reset again';
   end if;
   if reason is null or length(trim(reason)) < 5 then
@@ -255,7 +275,9 @@ begin
       and existing_request.recorded_date = target_date
       and existing_request.target_event_id is null
       and existing_request.reason = trim(reason)
-      and existing_request.expected_revision = expected_revision then
+      and existing_request.expected_revision = expected_revision
+      and existing_request.expected_planned_start = expected_planned_start
+      and existing_request.expected_planned_finish = expected_planned_finish then
       return operation_id;
     end if;
 
@@ -277,34 +299,78 @@ begin
       message = 'Attendance changed after this preview';
   end if;
 
+  select rw.id
+  into published_rota_week_id
+  from public.rota_weeks rw
+  where target_date between rw.week_start_date and rw.week_start_date + 6
+    and rw.status = 'published'
+  order by rw.week_start_date desc
+  limit 1
+  for update;
+
+  if published_rota_week_id is null then
+    raise exception 'No published rota shift exists for this staff date';
+  end if;
+
   perform 1
   from public.rota_shifts rs
-  join public.rota_weeks rw on rw.id = rs.rota_week_id
-  where rs.staff_id = target_staff_id
+  where rs.rota_week_id = published_rota_week_id
+    and rs.staff_id = target_staff_id
     and rs.shift_date = target_date
     and rs.archived_at is null
     and rs.status <> 'cancelled'
-    and rw.status = 'published'
-  for update of rs, rw;
+  for update;
 
   select min(rs.start_time), max(rs.end_time)
   into planned_start, planned_finish
   from public.rota_shifts rs
-  join public.rota_weeks rw on rw.id = rs.rota_week_id
-  where rs.staff_id = target_staff_id
+  where rs.rota_week_id = published_rota_week_id
+    and rs.staff_id = target_staff_id
     and rs.shift_date = target_date
     and rs.archived_at is null
-    and rs.status <> 'cancelled'
-    and rw.status = 'published';
+    and rs.status <> 'cancelled';
 
   if planned_start is null or planned_finish is null then
     raise exception 'No published rota shift exists for this staff date';
+  end if;
+
+  if planned_start is distinct from expected_planned_start
+    or planned_finish is distinct from expected_planned_finish then
+    raise exception using
+      errcode = '40001',
+      message = 'Published planned hours changed after this preview';
   end if;
 
   planned_start_at :=
     (target_date + planned_start)::timestamp at time zone 'Europe/London';
   planned_finish_at :=
     (target_date + planned_finish)::timestamp at time zone 'Europe/London';
+
+  select count(*)
+  into planned_start_match_count
+  from (
+    values
+      (planned_start_at - interval '1 hour'),
+      (planned_start_at),
+      (planned_start_at + interval '1 hour')
+  ) as candidates(candidate_at)
+  where candidate_at at time zone 'Europe/London'
+    = (target_date + planned_start)::timestamp;
+
+  select count(*)
+  into planned_finish_match_count
+  from (
+    values
+      (planned_finish_at - interval '1 hour'),
+      (planned_finish_at),
+      (planned_finish_at + interval '1 hour')
+  ) as candidates(candidate_at)
+  where candidate_at at time zone 'Europe/London'
+    = (target_date + planned_finish)::timestamp;
+
+  if planned_start_match_count <> 1 or planned_finish_match_count <> 1 then
+    raise exception 'A published rota boundary is affected by a UK clock change. Correct the published rota time before resetting attendance';
+  end if;
 
   select coalesce(
     jsonb_agg(
@@ -354,7 +420,9 @@ begin
     recorded_date,
     target_event_id,
     reason,
-    expected_revision
+    expected_revision,
+    expected_planned_start,
+    expected_planned_finish
   )
   values (
     operation_id,
@@ -363,7 +431,9 @@ begin
     target_date,
     null,
     trim(reason),
-    expected_revision
+    expected_revision,
+    expected_planned_start,
+    expected_planned_finish
   );
 
   insert into public.clock_event_corrections (
@@ -406,7 +476,9 @@ revoke all on function public.reset_attendance_to_planned_hours(
   date,
   text,
   text,
-  uuid
+  uuid,
+  time,
+  time
 )
 from public, anon, authenticated;
 grant execute on function public.reset_attendance_to_planned_hours(
@@ -414,6 +486,8 @@ grant execute on function public.reset_attendance_to_planned_hours(
   date,
   text,
   text,
-  uuid
+  uuid,
+  time,
+  time
 )
 to authenticated;

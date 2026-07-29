@@ -12,7 +12,12 @@ import {
 } from "@/lib/attendance/effective-events";
 import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
-import { formatTimeUk, londonLocalDateTimeToUtc } from "@/lib/dates/format";
+import {
+  getPlannedHoursBoundaries,
+  getUnusableResetBoundary,
+  type UnusableResetBoundary,
+} from "@/lib/attendance/planned-hours-boundaries";
+import { formatDateUk, formatTimeUk, londonLocalDateTimeToUtc } from "@/lib/dates/format";
 import type { StaffHoursDay } from "@/lib/attendance/staff-hours";
 
 const initialState: CorrectionActionResult = { ok: false, code: "idle", message: "" };
@@ -41,6 +46,7 @@ type ResetPlannedHoursPreview = {
   plannedStart: string;
   plannedFinish: string;
   effectiveEvents: EffectiveClockEvent[];
+  unusableBoundary: UnusableResetBoundary | null;
 };
 
 function eventLabel(eventType: AttendanceEventType): string {
@@ -115,13 +121,9 @@ export function previewPlannedHoursChanges({
   plannedPeriods,
   effectiveEvents: events,
 }: Pick<StaffHoursDay, "date" | "plannedPeriods" | "effectiveEvents">): PlannedHoursPreview | null {
-  if (!plannedPeriods.length) return null;
-  const plannedStart = plannedPeriods.reduce((earliest, period) => (
-    period.startTime < earliest ? period.startTime : earliest
-  ), plannedPeriods[0].startTime);
-  const plannedFinish = plannedPeriods.reduce((latest, period) => (
-    period.endTime > latest ? period.endTime : latest
-  ), plannedPeriods[0].endTime);
+  const boundaries = getPlannedHoursBoundaries(plannedPeriods);
+  if (!boundaries) return null;
+  const { plannedStart, plannedFinish } = boundaries;
   const startAt = plannedTimestamp(date, plannedStart);
   const finishAt = plannedTimestamp(date, plannedFinish);
   const startEpoch = Date.parse(startAt);
@@ -175,21 +177,19 @@ export function previewPlannedHoursChanges({
 }
 
 export function previewResetToPlannedHours({
+  date,
   plannedPeriods,
   effectiveEvents,
 }: Pick<StaffHoursDay, "date" | "plannedPeriods" | "effectiveEvents">): ResetPlannedHoursPreview | null {
-  if (!plannedPeriods.length) return null;
-  const plannedStart = plannedPeriods.reduce((earliest, period) => (
-    period.startTime < earliest ? period.startTime : earliest
-  ), plannedPeriods[0].startTime);
-  const plannedFinish = plannedPeriods.reduce((latest, period) => (
-    period.endTime > latest ? period.endTime : latest
-  ), plannedPeriods[0].endTime);
+  const boundaries = getPlannedHoursBoundaries(plannedPeriods);
+  if (!boundaries) return null;
+  const { plannedStart, plannedFinish } = boundaries;
 
   return {
     plannedStart,
     plannedFinish,
     effectiveEvents: orderedEvents(effectiveEvents),
+    unusableBoundary: getUnusableResetBoundary(date, boundaries),
   };
 }
 
@@ -321,6 +321,7 @@ function RemoveEventForm({
   action: CorrectionFormAction;
 }) {
   const router = useRouter();
+  const [reason, setReason] = useState("");
   const [state, formAction, pending] = useActionState(action, initialState);
   useEffect(() => {
     if (state.ok) {
@@ -339,7 +340,14 @@ function RemoveEventForm({
         Original records remain in attendance history. This only removes the event from effective attendance hours.
       </p>
       <Field label="Reason for removal">
-        <input className={`mt-3 ${inputClassName()}`} name="reason" minLength={5} required />
+        <input
+          className={`mt-3 ${inputClassName()}`}
+          name="reason"
+          minLength={5}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          required
+        />
       </Field>
       <label className="mt-3 flex min-h-14 cursor-pointer items-start gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-bold text-red-950">
         <input className="mt-0.5 h-6 w-6 shrink-0 accent-red-600" name="confirmed" type="checkbox" value="yes" required />
@@ -354,8 +362,14 @@ function RemoveEventForm({
   );
 }
 
-function ResetPlannedHoursForm({ preview, returnTo, action }: { preview: ResetPlannedHoursPreview; returnTo: string; action: CorrectionFormAction }) {
+function ResetPlannedHoursForm({ day, preview, returnTo, action }: {
+  day: Pick<StaffHoursDay, "date" | "fullName">;
+  preview: ResetPlannedHoursPreview;
+  returnTo: string;
+  action: CorrectionFormAction;
+}) {
   const router = useRouter();
+  const [reason, setReason] = useState("");
   const [state, formAction, pending] = useActionState(action, initialState);
   useEffect(() => {
     if (state.ok) {
@@ -395,11 +409,18 @@ function ResetPlannedHoursForm({ preview, returnTo, action }: { preview: ResetPl
         Original records remain in attendance history. The reset is stored as manager corrections.
       </p>
       <Field label="Reason for reset">
-        <input className={`mt-3 ${inputClassName()}`} name="reason" minLength={5} required />
+        <input
+          className={`mt-3 ${inputClassName()}`}
+          name="reason"
+          minLength={5}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          required
+        />
       </Field>
       <label className="mt-3 flex min-h-14 cursor-pointer items-start gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-bold text-red-950">
         <input className="mt-0.5 h-6 w-6 shrink-0 accent-red-600" name="confirmed" type="checkbox" value="yes" required />
-        <span>I confirm all effective events should be removed and replaced with the published start and finish.</span>
+        <span>I confirm that attendance for {day.fullName} on {formatDateUk(day.date)} should be reset to the published start and finish.</span>
       </label>
       <Button className="mt-3" type="submit" variant="danger" disabled={pending}>
         <RotateCcw className="h-5 w-5" aria-hidden />
@@ -424,7 +445,18 @@ export function AttendanceCorrectionControls({ day, correctionId, returnTo, manu
       <h4 className="text-sm font-black text-purple-950">Correct this day</h4>
       <p className="mt-1 text-sm text-slate-700">Original clock events stay unchanged. Corrections are saved separately.</p>
       <div className="mt-3 grid gap-2">
-        {resetPreview ? <details className="rounded-md border border-red-200 bg-white px-3"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-red-900">Reset to planned hours</summary><ResetPlannedHoursForm preview={resetPreview} returnTo={returnTo} action={resetAction} /></details> : null}
+        {resetPreview ? (
+          <details className="rounded-md border border-red-200 bg-white px-3">
+            <summary className="flex min-h-11 cursor-pointer items-center font-bold text-red-900">Reset to planned hours</summary>
+            {resetPreview.unusableBoundary ? (
+              <p className="mb-4 border-l-2 border-amber-500 pl-3 text-sm font-bold text-amber-950" role="alert">
+                Reset is unavailable because the published {resetPreview.unusableBoundary.kind} time {resetPreview.unusableBoundary.time} on {formatDateUk(day.date)} is affected by the UK clock change. Correct the published rota time before resetting attendance.
+              </p>
+            ) : (
+              <ResetPlannedHoursForm day={day} preview={resetPreview} returnTo={returnTo} action={resetAction} />
+            )}
+          </details>
+        ) : null}
         <details className="rounded-md border border-purple-200 bg-white px-3"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Add missing event</summary><MissingEventCorrectionForm day={day} correctionId={correctionId} returnTo={returnTo} action={manualAction} /></details>
         {day.effectiveEvents.map((event) => <details key={event.id} className="rounded-md border border-slate-200 bg-white px-3"><summary className="flex min-h-11 cursor-pointer items-center font-bold text-purple-900">Fix {formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}</summary><FixEventForm day={day} targetEventId={event.id} eventType={event.eventType} eventTimestamp={event.eventTimestamp} source={event.source} correctionId={correctionId} returnTo={returnTo} action={manualAction} /><RemoveEventForm targetEventId={event.id} eventType={event.eventType} eventTimestamp={event.eventTimestamp} returnTo={returnTo} action={removeAction} /></details>)}
       </div>

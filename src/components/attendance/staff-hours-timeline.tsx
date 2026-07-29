@@ -10,6 +10,7 @@ import {
   saveBoundClockEventCorrectionAction,
 } from "@/lib/attendance/correction-actions";
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
+import { getPlannedHoursBoundaries } from "@/lib/attendance/planned-hours-boundaries";
 import {
   buildAttendanceTimelineWindow,
   layoutAttendanceTimelineEvents,
@@ -242,12 +243,15 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
   const correctionCount = day.audit.corrections.length;
   const correctionId = randomUUID();
   const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
+  const plannedBoundaries = getPlannedHoursBoundaries(day.plannedPeriods);
   const context = {
     staffId: day.staffId,
     attendanceDate: day.date,
     correctionId,
     returnTo,
     eventRevision: day.eventRevision,
+    plannedStart: plannedBoundaries?.plannedStart,
+    plannedFinish: plannedBoundaries?.plannedFinish,
   };
   const manualAction = saveBoundClockEventCorrectionAction.bind(null, context);
   const removeAction = removeBoundClockEventAction.bind(null, context);

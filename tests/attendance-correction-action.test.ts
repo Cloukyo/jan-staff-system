@@ -38,6 +38,8 @@ function context(
     returnTo: "/attendance?view=hours&staffId=staff-1&day=2026-07-28",
     eventRevision: "events:event-1|corrections:correction-1",
     correctionId: "40000000-0000-4000-8000-000000000000",
+    plannedStart: "08:00",
+    plannedFinish: "17:00",
     ...overrides,
   };
 }
@@ -326,6 +328,8 @@ describe("bound manager attendance correction actions", () => {
     form.set("attendanceDate", "2026-07-29");
     form.set("eventRevision", "fabricated");
     form.set("operationId", "50000000-0000-4000-8000-000000000000");
+    form.set("plannedStart", "02:00");
+    form.set("plannedFinish", "03:00");
 
     const result = await resetBoundAttendanceToPlannedHoursAction(context(), initialState, form);
 
@@ -335,6 +339,8 @@ describe("bound manager attendance correction actions", () => {
       reason: "Return the day to the published rota",
       expected_revision: "events:event-1|corrections:correction-1",
       operation_id: "40000000-0000-4000-8000-000000000000",
+      expected_planned_start: "08:00",
+      expected_planned_finish: "17:00",
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/attendance");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/clock");
@@ -344,6 +350,23 @@ describe("bound manager attendance correction actions", () => {
       code: "reset",
       message: "Attendance was reset to published planned hours.",
     });
+  });
+
+  it("rejects missing or malformed bound reset boundaries before opening a database client", async () => {
+    const missingStart = await resetBoundAttendanceToPlannedHoursAction(
+      context({ plannedStart: undefined }),
+      initialState,
+      resetForm(),
+    );
+    const malformedFinish = await resetBoundAttendanceToPlannedHoursAction(
+      context({ plannedFinish: "5pm" }),
+      initialState,
+      resetForm(),
+    );
+
+    expect(missingStart.code).toBe("invalid_correction");
+    expect(malformedFinish.code).toBe("invalid_correction");
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
   });
 
   it("rejects missing or incorrect reset confirmation before opening a database client", async () => {
