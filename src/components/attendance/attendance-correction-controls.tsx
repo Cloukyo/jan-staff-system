@@ -40,8 +40,6 @@ type PlannedHoursPreview = {
 type ResetPlannedHoursPreview = {
   plannedStart: string;
   plannedFinish: string;
-  plannedStartTimestamp: string;
-  plannedFinishTimestamp: string;
   effectiveEvents: EffectiveClockEvent[];
 };
 
@@ -176,8 +174,7 @@ export function previewPlannedHoursChanges({
   return { plannedStart, plannedFinish, changes, additions, canApply };
 }
 
-function previewResetToPlannedHours({
-  date,
+export function previewResetToPlannedHours({
   plannedPeriods,
   effectiveEvents,
 }: Pick<StaffHoursDay, "date" | "plannedPeriods" | "effectiveEvents">): ResetPlannedHoursPreview | null {
@@ -192,8 +189,6 @@ function previewResetToPlannedHours({
   return {
     plannedStart,
     plannedFinish,
-    plannedStartTimestamp: plannedTimestamp(date, plannedStart),
-    plannedFinishTimestamp: plannedTimestamp(date, plannedFinish),
     effectiveEvents: orderedEvents(effectiveEvents),
   };
 }
@@ -389,8 +384,8 @@ function ResetPlannedHoursForm({ preview, returnTo, action }: { preview: ResetPl
       <div className="mt-3 border-l-2 border-green-500 pl-3 text-sm text-slate-800">
         <p className="font-bold text-green-900">Add from the published rota</p>
         <ul className="mt-1 grid gap-1">
-          <li>Add Clock in at {formatTimeUk(preview.plannedStartTimestamp)}.</li>
-          <li>Add Clock out at {formatTimeUk(preview.plannedFinishTimestamp)}.</li>
+          <li>Add Clock in at {preview.plannedStart}.</li>
+          <li>Add Clock out at {preview.plannedFinish}.</li>
         </ul>
       </div>
       <p className="mt-3 text-sm font-bold text-amber-900">

@@ -11,6 +11,7 @@ import {
   buildAttendanceDayReturnTo,
   previewManualCorrectionChanges,
   previewPlannedHoursChanges,
+  previewResetToPlannedHours,
 } from "@/components/attendance/attendance-correction-controls";
 import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 
@@ -730,6 +731,52 @@ describe("attendance correction control contracts", () => {
         { eventType: "clock_out", eventTimestamp: "2026-07-28T16:00:00.000Z" },
       ],
       canApply: true,
+    });
+  });
+
+  it("previews a published spring-gap period without converting its local times to instants", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-03-29",
+      plannedPeriods: [
+        { id: "spring-gap", startTime: "01:30", endTime: "03:30", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "01:30",
+      plannedFinish: "03:30",
+      effectiveEvents: [],
+    });
+  });
+
+  it("uses the earliest start and latest finish in a multi-period reset preview", () => {
+    const lateEvent = {
+      id: "late-event",
+      staffId: "staff-1",
+      eventType: "clock_out" as const,
+      eventTimestamp: "2026-07-28T17:15:00.000Z",
+      recordedDate: date,
+      source: "kiosk" as const,
+      originalEventId: null,
+      correctionId: null,
+    };
+    const earlyEvent = {
+      ...lateEvent,
+      id: "early-event",
+      eventType: "clock_in" as const,
+      eventTimestamp: "2026-07-28T07:15:00.000Z",
+    };
+
+    expect(previewResetToPlannedHours({
+      date,
+      plannedPeriods: [
+        { id: "afternoon", startTime: "13:00", endTime: "17:00", breakMinutes: 0 },
+        { id: "morning", startTime: "08:00", endTime: "12:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [lateEvent, earlyEvent],
+    })).toEqual({
+      plannedStart: "08:00",
+      plannedFinish: "17:00",
+      effectiveEvents: [earlyEvent, lateEvent],
     });
   });
 

@@ -185,10 +185,10 @@ describe("manager attendance views", () => {
       "{formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}",
     );
     expect(controls).toContain(
-      "Add Clock in at {formatTimeUk(preview.plannedStartTimestamp)}.",
+      "Add Clock in at {preview.plannedStart}.",
     );
     expect(controls).toContain(
-      "Add Clock out at {formatTimeUk(preview.plannedFinishTimestamp)}.",
+      "Add Clock out at {preview.plannedFinish}.",
     );
     expect(controls).toContain(
       "All intermediate and lunch events will be removed. Add lunch events manually afterwards.",
