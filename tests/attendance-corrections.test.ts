@@ -11,14 +11,20 @@ import {
   buildAttendanceDayReturnTo,
   previewManualCorrectionChanges,
   previewPlannedHoursChanges,
+  previewResetToPlannedHours,
 } from "@/components/attendance/attendance-correction-controls";
 import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 
 const date = "2026-07-28";
 const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
+const removalMigrationPath = "supabase/migrations/20260729002614_attendance_remove_and_reset.sql";
 
 function migrationSql() {
   return readFileSync(resolve(migrationPath), "utf8");
+}
+
+function removalMigrationSql() {
+  return readFileSync(resolve(removalMigrationPath), "utf8");
 }
 
 function sqlFunction(sql: string, name: string) {
@@ -728,6 +734,84 @@ describe("attendance correction control contracts", () => {
     });
   });
 
+  it("makes reset unavailable for a nonexistent spring clock-change boundary", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-03-29",
+      plannedPeriods: [
+        { id: "spring-gap", startTime: "01:30", endTime: "03:30", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "01:30",
+      plannedFinish: "03:30",
+      effectiveEvents: [],
+      unusableBoundary: { kind: "start", time: "01:30" },
+    });
+  });
+
+  it("makes reset unavailable for an ambiguous autumn clock-change boundary", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-10-25",
+      plannedPeriods: [
+        { id: "autumn-overlap", startTime: "01:30", endTime: "03:30", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "01:30",
+      plannedFinish: "03:30",
+      effectiveEvents: [],
+      unusableBoundary: { kind: "start", time: "01:30" },
+    });
+  });
+
+  it("keeps reset available for unique planned boundaries on a normal date", () => {
+    expect(previewResetToPlannedHours({
+      date: "2026-07-28",
+      plannedPeriods: [
+        { id: "normal", startTime: "09:00", endTime: "17:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [],
+    })).toEqual({
+      plannedStart: "09:00",
+      plannedFinish: "17:00",
+      effectiveEvents: [],
+      unusableBoundary: null,
+    });
+  });
+
+  it("uses the earliest start and latest finish in a multi-period reset preview", () => {
+    const lateEvent = {
+      id: "late-event",
+      staffId: "staff-1",
+      eventType: "clock_out" as const,
+      eventTimestamp: "2026-07-28T17:15:00.000Z",
+      recordedDate: date,
+      source: "kiosk" as const,
+      originalEventId: null,
+      correctionId: null,
+    };
+    const earlyEvent = {
+      ...lateEvent,
+      id: "early-event",
+      eventType: "clock_in" as const,
+      eventTimestamp: "2026-07-28T07:15:00.000Z",
+    };
+
+    expect(previewResetToPlannedHours({
+      date,
+      plannedPeriods: [
+        { id: "afternoon", startTime: "13:00", endTime: "17:00", breakMinutes: 0 },
+        { id: "morning", startTime: "08:00", endTime: "12:00", breakMinutes: 0 },
+      ],
+      effectiveEvents: [lateEvent, earlyEvent],
+    })).toEqual({
+      plannedStart: "08:00",
+      plannedFinish: "17:00",
+      effectiveEvents: [earlyEvent, lateEvent],
+      unusableBoundary: null,
+    });
+  });
+
   it("classifies equivalent offset and Z timestamps at the same planned boundaries", () => {
     expect(previewPlannedHoursChanges({
       date,
@@ -767,6 +851,63 @@ describe("attendance correction control contracts", () => {
 });
 
 describe("append-only attendance correction migration", () => {
+  it("provides an authenticated manager-only append-only removal RPC", () => {
+    const sql = removalMigrationSql();
+    const removeEvent = sqlFunction(sql, "remove_clock_event_from_hours");
+
+    expect(removeEvent).toContain("security definer");
+    expect(removeEvent).toContain("set search_path = public");
+    expect(removeEvent).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(removeEvent).toContain("perform public.lock_attendance_staff_writes");
+    expect(removeEvent).toMatch(/operation_kind = 'remove'[\s\S]*return operation_id;[\s\S]*get_attendance_event_revision/i);
+    expect(removeEvent).toContain("public.get_attendance_event_revision");
+    expect(removeEvent).toContain("public.get_effective_clock_events");
+    expect(removeEvent).toContain("public.lock_attendance_operation");
+    expect(removeEvent).toContain("public.attendance_operation_requests");
+    expect(removeEvent).toMatch(/correction_kind[\s\S]*exclude/i);
+    expect(removeEvent).toMatch(/id[\s\S]*operation_id[\s\S]*batch_id[\s\S]*operation_id/i);
+    expect(sql).toMatch(/revoke all on function public\.remove_clock_event_from_hours\([\s\S]*from public, anon, authenticated/i);
+    expect(sql).toMatch(/grant execute on function public\.remove_clock_event_from_hours\([\s\S]*to authenticated/i);
+  });
+
+  it("provides an atomic append-only reset-to-planned-hours RPC", () => {
+    const sql = removalMigrationSql();
+    const resetAttendance = sqlFunction(sql, "reset_attendance_to_planned_hours");
+
+    expect(resetAttendance).toContain("security definer");
+    expect(resetAttendance).toContain("set search_path = public");
+    expect(resetAttendance).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(resetAttendance).toContain("perform public.lock_attendance_staff_writes");
+    expect(resetAttendance).toMatch(/operation_kind = 'reset'[\s\S]*return operation_id;[\s\S]*get_attendance_event_revision/i);
+    expect(resetAttendance).toMatch(/rw\.status = 'published'/i);
+    expect(resetAttendance).toMatch(/rs\.status <> 'cancelled'/i);
+    expect(resetAttendance).toMatch(/from public\.rota_weeks rw[\s\S]*for update[\s\S]*from public\.rota_shifts rs[\s\S]*for update/i);
+    expect(resetAttendance).toMatch(/min\(rs\.start_time\)[\s\S]*max\(rs\.end_time\)/i);
+    expect(resetAttendance).toMatch(/planned_start is distinct from expected_planned_start/i);
+    expect(resetAttendance).toMatch(/planned_finish is distinct from expected_planned_finish/i);
+    expect(resetAttendance).toContain("at time zone 'Europe/London'");
+    expect(resetAttendance).toMatch(/effective_events jsonb[\s\S]*jsonb_agg/i);
+    expect(resetAttendance).toMatch(/correction_kind[\s\S]*exclude/i);
+    expect(resetAttendance).toMatch(/correction_kind[\s\S]*add/i);
+    expect(resetAttendance).toMatch(/case when action\.ordinal = 1 then 'primary'/i);
+    expect(resetAttendance).toMatch(/batch_id[\s\S]*operation_id/i);
+    expect(resetAttendance).toContain("public.lock_attendance_operation");
+    expect(resetAttendance).toContain("public.attendance_operation_requests");
+    expect(sql).toMatch(/revoke all on function public\.reset_attendance_to_planned_hours\([\s\S]*from public, anon, authenticated/i);
+    expect(sql).toMatch(/grant execute on function public\.reset_attendance_to_planned_hours\([\s\S]*to authenticated/i);
+  });
+
+  it("serializes and records shared attendance operation IDs by request identity", () => {
+    const sql = removalMigrationSql();
+
+    expect(sql).toMatch(/create table public\.attendance_operation_requests[\s\S]*operation_id uuid primary key/i);
+    expect(sql).toMatch(/operation_kind text not null check \(operation_kind in \('remove', 'reset'\)\)/i);
+    expect(sql).toMatch(/expected_planned_start time/i);
+    expect(sql).toMatch(/expected_planned_finish time/i);
+    expect(sql).toMatch(/create or replace function public\.lock_attendance_operation[\s\S]*pg_advisory_xact_lock[\s\S]*'attendance-operation:' \|\| target_operation_id/i);
+    expect(sql).toMatch(/operation ID is already used for a different attendance operation/i);
+  });
+
   it("creates an immutable correction table with manager reads and RPC-only writes", () => {
     const sql = migrationSql();
 

@@ -69,7 +69,10 @@ export function londonDateStartUtc(date: string): Date {
   return new Date(result);
 }
 
-export function londonLocalDateTimeToUtc(value: string): { recordedDate: string; timestamp: Date } {
+function londonLocalDateTimeCandidates(value: string): {
+  recordedDate: string;
+  candidates: number[];
+} {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
   if (!match) throw new RangeError("Invalid local date and time.");
 
@@ -113,13 +116,28 @@ export function londonLocalDateTimeToUtc(value: string): { recordedDate: string;
     .map((offset) => intended - offset)
     .filter((candidate) => matchesLondonDateTime(candidate, expected))
     .sort((left, right) => left - right);
-  const selected = candidates.at(-1);
-  if (selected === undefined || !matchesLondonDateTime(selected, expected)) {
+  if (!candidates.length) {
     throw new RangeError("Invalid local date and time.");
   }
 
+  return {
+    recordedDate: `${year}-${month}-${day}`,
+    candidates,
+  };
+}
+
+export function londonLocalDateTimeHasUniqueInstant(value: string): boolean {
+  try {
+    return londonLocalDateTimeCandidates(value).candidates.length === 1;
+  } catch {
+    return false;
+  }
+}
+
+export function londonLocalDateTimeToUtc(value: string): { recordedDate: string; timestamp: Date } {
+  const { recordedDate, candidates } = londonLocalDateTimeCandidates(value);
+  const selected = candidates.at(-1)!;
   const timestamp = new Date(selected);
-  const recordedDate = `${year}-${month}-${day}`;
   if (isoDateInLondon(timestamp) !== recordedDate) {
     throw new RangeError("Invalid local date and time.");
   }

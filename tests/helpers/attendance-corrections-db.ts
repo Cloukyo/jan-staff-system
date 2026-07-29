@@ -468,6 +468,12 @@ export async function createAttendanceTestDatabase() {
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      resolve("supabase/migrations/20260729002614_attendance_remove_and_reset.sql"),
+      "utf8",
+    ),
+  );
   await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
   return db;
 }
@@ -499,18 +505,27 @@ export async function seedStaffShift(
     "insert into public.staff_profiles (id, full_name) values ($1, $2)",
     [input.staffId, input.staffId],
   );
-  const week = await db.query<{ id: string }>(
-    `insert into public.rota_weeks (week_start_date, status)
-     values ($1::date, 'published')
-     returning id::text`,
+  const existingWeek = await db.query<{ id: string }>(
+    `select id::text
+     from public.rota_weeks
+     where week_start_date = $1::date and status = 'published'
+     limit 1`,
     [input.date],
   );
+  const weekId = existingWeek.rows[0]?.id ?? (
+    await db.query<{ id: string }>(
+      `insert into public.rota_weeks (week_start_date, status)
+       values ($1::date, 'published')
+       returning id::text`,
+      [input.date],
+    )
+  ).rows[0].id;
   await db.query(
     `insert into public.rota_shifts (
        rota_week_id, staff_id, shift_date, start_time, end_time
      )
      values ($1::uuid, $2, $3::date, $4::time, $5::time)`,
-    [week.rows[0].id, input.staffId, input.date, start, finish],
+    [weekId, input.staffId, input.date, start, finish],
   );
 }
 
@@ -556,6 +571,38 @@ export async function usePlannedHours(db: PGlite, staffId: string, date: string)
        $3
      )::text as batch_id`,
     [staffId, date, expectedRevision],
+  );
+  return result.rows[0].batch_id;
+}
+
+export async function resetAttendanceToPlannedHours(
+  db: PGlite,
+  input: {
+    staffId: string;
+    date: string;
+    reason?: string;
+    expectedRevision?: string;
+    operationId?: string;
+    expectedPlannedStart?: string;
+    expectedPlannedFinish?: string;
+  },
+) {
+  const expectedRevision = input.expectedRevision
+    ?? await attendanceRevision(db, input.staffId, input.date);
+  const operationId = input.operationId ?? randomUUID();
+  const result = await db.query<{ batch_id: string }>(
+    `select public.reset_attendance_to_planned_hours(
+       $1, $2::date, $3, $4, $5::uuid, $6::time, $7::time
+     )::text as batch_id`,
+    [
+      input.staffId,
+      input.date,
+      input.reason ?? "Reset attendance to planned hours",
+      expectedRevision,
+      operationId,
+      input.expectedPlannedStart ?? "09:00",
+      input.expectedPlannedFinish ?? "17:00",
+    ],
   );
   return result.rows[0].batch_id;
 }

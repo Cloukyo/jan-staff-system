@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import {
@@ -11,6 +12,7 @@ import {
   createAttendanceTestDatabase,
   effectiveEvents,
   resetRole,
+  resetAttendanceToPlannedHours,
   saveManualCorrection,
   seedClockEvent,
   seedStaffShift,
@@ -772,6 +774,806 @@ describe("attendance correction PostgreSQL migration", () => {
        where staff_id = 'stale-planned-preview'`,
     );
     expect(count.rows[0].count).toBe(0);
+  });
+
+  it("appends an exclude correction for an original event without deleting its source row", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-original", date: "2026-08-25" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-original",
+      timestamp: "2026-08-25T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-original", "2026-08-25");
+    const operationId = "10000000-0000-0000-0000-000000000025";
+
+    const result = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      [
+        "remove-original",
+        "2026-08-25",
+        originalId,
+        "Remove original clock-in",
+        revision,
+        operationId,
+      ],
+    );
+    const correction = await db.query<{
+      id: string;
+      batch_id: string;
+      correction_role: string;
+      correction_kind: string;
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+      event_type: string | null;
+      event_timestamp: string | null;
+    }>(
+      `select
+         id::text,
+         batch_id::text,
+         correction_role,
+         correction_kind,
+         original_event_id::text,
+         supersedes_correction_id::text,
+         event_type,
+         event_timestamp::text
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [operationId],
+    );
+    const source = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_events
+       where id = $1::uuid`,
+      [originalId],
+    );
+
+    expect(result.rows[0].batch_id).toBe(operationId);
+    expect(correction.rows).toEqual([{
+      id: operationId,
+      batch_id: operationId,
+      correction_role: "primary",
+      correction_kind: "exclude",
+      original_event_id: originalId,
+      supersedes_correction_id: null,
+      event_type: null,
+      event_timestamp: null,
+    }]);
+    expect(source.rows[0].count).toBe(1);
+    expect(await effectiveEvents(db, "remove-original", "2026-08-25")).toEqual([]);
+  });
+
+  it("appends an exclude correction that supersedes an active manager-added event", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-added", date: "2026-08-26" });
+    const addBatchId = await saveManualCorrection(db, {
+      staffId: "remove-added",
+      date: "2026-08-26",
+      eventType: "clock_in",
+      timestamp: "2026-08-26T09:00:00+01:00",
+    });
+    const added = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [addBatchId],
+    );
+    const revision = await attendanceRevision(db, "remove-added", "2026-08-26");
+    const operationId = "10000000-0000-0000-0000-000000000026";
+
+    const result = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      [
+        "remove-added",
+        "2026-08-26",
+        added.rows[0].id,
+        "Remove added clock-in",
+        revision,
+        operationId,
+      ],
+    );
+    const correction = await db.query<{
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+      correction_kind: string;
+    }>(
+      `select original_event_id::text, supersedes_correction_id::text, correction_kind
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [operationId],
+    );
+    const source = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [added.rows[0].id],
+    );
+
+    expect(result.rows[0].batch_id).toBe(operationId);
+    expect(correction.rows).toEqual([{
+      original_event_id: null,
+      supersedes_correction_id: added.rows[0].id,
+      correction_kind: "exclude",
+    }]);
+    expect(source.rows[0].count).toBe(1);
+    expect(await effectiveEvents(db, "remove-added", "2026-08-26")).toEqual([]);
+  });
+
+  it("rejects a stale removal revision without appending a correction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-stale", date: "2026-08-27" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-stale",
+      timestamp: "2026-08-27T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-stale", "2026-08-27");
+    await seedClockEvent(db, {
+      staffId: "remove-stale",
+      timestamp: "2026-08-27T17:00:00+01:00",
+      eventType: "clock_out",
+    });
+
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-stale",
+        "2026-08-27",
+        originalId,
+        "Remove stale event",
+        revision,
+        "10000000-0000-0000-0000-000000000027",
+      ],
+    )).rejects.toThrow(/changed after this preview/i);
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where staff_id = 'remove-stale'`,
+    );
+
+    expect(count.rows[0].count).toBe(0);
+  });
+
+  it("rejects removal requests from non-managers", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-staff", date: "2026-08-28" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-staff",
+      timestamp: "2026-08-28T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-staff", "2026-08-28");
+
+    await setCurrentAccount(db, STAFF_ACCOUNT_ID);
+    await setAuthenticatedRole(db);
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-staff",
+        "2026-08-28",
+        originalId,
+        "Staff removal request",
+        revision,
+        "10000000-0000-0000-0000-000000000028",
+      ],
+    )).rejects.toThrow(/manager access required/i);
+    await resetRole(db);
+  });
+
+  it("rejects removal reasons shorter than five characters", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-short-reason", date: "2026-08-29" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-short-reason",
+      timestamp: "2026-08-29T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-short-reason", "2026-08-29");
+
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-short-reason",
+        "2026-08-29",
+        originalId,
+        "Nope",
+        revision,
+        "10000000-0000-0000-0000-000000000029",
+      ],
+    )).rejects.toThrow(/at least five characters/i);
+  });
+
+  it("returns the existing removal batch when an operation is retried", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-retry", date: "2026-08-30" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-retry",
+      timestamp: "2026-08-30T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-retry", "2026-08-30");
+    const operationId = "10000000-0000-0000-0000-000000000030";
+    const params = [
+      "remove-retry",
+      "2026-08-30",
+      originalId,
+      "Retry removal request",
+      revision,
+      operationId,
+    ];
+
+    const first = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      params,
+    );
+    const second = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      params,
+    );
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [operationId],
+    );
+
+    expect(first.rows[0].batch_id).toBe(operationId);
+    expect(second.rows[0].batch_id).toBe(operationId);
+    expect(count.rows[0].count).toBe(1);
+  });
+
+  it("rejects a reset operation ID reused for another staff member and date", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const operationId = "30000000-0000-0000-0000-000000000001";
+    await seedStaffShift(db, { staffId: "reset-collision-first", date: "2026-09-07" });
+    await seedStaffShift(db, { staffId: "reset-collision-second", date: "2026-09-08" });
+
+    await resetAttendanceToPlannedHours(db, {
+      staffId: "reset-collision-first",
+      date: "2026-09-07",
+      operationId,
+    });
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId: "reset-collision-second",
+      date: "2026-09-08",
+      operationId,
+    })).rejects.toThrow(/operation ID is already used for a different attendance operation/i);
+    const secondStaffCorrections = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where staff_id = 'reset-collision-second'`,
+    );
+    expect(secondStaffCorrections.rows[0].count).toBe(0);
+  });
+
+  it("rejects a removal operation ID reused as a reset operation", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "remove-then-reset-collision";
+    const date = "2026-09-09";
+    const operationId = "30000000-0000-0000-0000-000000000002";
+    await seedStaffShift(db, { staffId, date });
+    const originalId = await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-09T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const removalRevision = await attendanceRevision(db, staffId, date);
+
+    await db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [staffId, date, originalId, "Remove before reset collision", removalRevision, operationId],
+    );
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      operationId,
+    })).rejects.toThrow(/operation ID is already used for a different attendance operation/i);
+    const batch = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [operationId],
+    );
+    expect(batch.rows[0].count).toBe(1);
+  });
+
+  it("rejects a reset operation ID reused as a removal operation", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-then-remove-collision";
+    const date = "2026-09-10";
+    const operationId = "30000000-0000-0000-0000-000000000003";
+    await seedStaffShift(db, { staffId, date });
+    await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-10T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+
+    await resetAttendanceToPlannedHours(db, { staffId, date, operationId });
+    const effectiveStart = await db.query<{ event_id: string }>(
+      `select event_id::text
+       from public.get_effective_clock_events($1::date, $1::date, $2)
+       where event_type = 'clock_in'`,
+      [date, staffId],
+    );
+    const removalRevision = await attendanceRevision(db, staffId, date);
+
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        staffId,
+        date,
+        effectiveStart.rows[0].event_id,
+        "Remove after reset collision",
+        removalRevision,
+        operationId,
+      ],
+    )).rejects.toThrow(/operation ID is already used for a different attendance operation/i);
+    const batch = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [operationId],
+    );
+    expect(batch.rows[0].count).toBe(3);
+  });
+
+  it("serializes concurrent reset requests sharing one operation ID", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const operationId = "30000000-0000-0000-0000-000000000004";
+    await seedStaffShift(db, { staffId: "reset-concurrent-first", date: "2026-09-11" });
+    await seedStaffShift(db, { staffId: "reset-concurrent-second", date: "2026-09-11" });
+
+    const results = await Promise.allSettled([
+      resetAttendanceToPlannedHours(db, {
+        staffId: "reset-concurrent-first",
+        date: "2026-09-11",
+        operationId,
+      }),
+      resetAttendanceToPlannedHours(db, {
+        staffId: "reset-concurrent-second",
+        date: "2026-09-11",
+        operationId,
+      }),
+    ]);
+    const batchStaff = await db.query<{ staff_id: string; count: number }>(
+      `select staff_id, count(*)::integer as count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid
+       group by staff_id`,
+      [operationId],
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(batchStaff.rows).toHaveLength(1);
+  });
+
+  it("resets malformed effective attendance to full published planned boundaries", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-malformed";
+    const date = "2026-09-01";
+    const operationId = "20000000-0000-0000-0000-000000000001";
+    await seedStaffShift(db, { staffId, date });
+    const originalStart = await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-01T08:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const originalMiddle = await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-01T12:00:00+01:00",
+      eventType: "clock_out",
+    });
+    const activeCorrectionBatch = await saveManualCorrection(db, {
+      staffId,
+      date,
+      targetEventId: originalMiddle,
+      eventType: "clock_in",
+      timestamp: "2026-09-01T12:15:00+01:00",
+    });
+    const originalFinish = await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-01T18:00:00+01:00",
+      eventType: "clock_out",
+    });
+
+    const batchId = await resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      operationId,
+    });
+    const corrections = await db.query<{
+      correction_kind: string;
+      correction_role: string;
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+      event_type: string | null;
+      local_time: string | null;
+      reason: string;
+    }>(
+      `select
+         correction_kind,
+         correction_role,
+         original_event_id::text,
+         supersedes_correction_id::text,
+         event_type,
+         to_char(event_timestamp at time zone 'Europe/London', 'HH24:MI') as local_time,
+         reason
+       from public.clock_event_corrections
+       where batch_id = $1::uuid
+       order by created_at, id`,
+      [operationId],
+    );
+    const originalCount = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_events
+       where id = any($1::uuid[])`,
+      [[originalStart, originalMiddle, originalFinish]],
+    );
+    const activeCorrection = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [activeCorrectionBatch],
+    );
+    const duration = await db.query<{ minutes: number }>(
+      `select extract(epoch from (max(event_timestamp) - min(event_timestamp)))::integer / 60 as minutes
+       from public.get_effective_clock_events($1::date, $1::date, $2)`,
+      [date, staffId],
+    );
+
+    expect(batchId).toBe(operationId);
+    expect(corrections.rows).toHaveLength(5);
+    expect(corrections.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ correction_kind: "exclude", correction_role: "primary", original_event_id: originalStart }),
+      expect.objectContaining({ correction_kind: "exclude", correction_role: "consequential", supersedes_correction_id: activeCorrection.rows[0].id }),
+      expect.objectContaining({ correction_kind: "exclude", correction_role: "consequential", original_event_id: originalFinish }),
+      expect.objectContaining({ correction_kind: "add", correction_role: "consequential", event_type: "clock_in", local_time: "09:00" }),
+      expect.objectContaining({ correction_kind: "add", correction_role: "consequential", event_type: "clock_out", local_time: "17:00" }),
+    ]));
+    expect(corrections.rows.every((correction) => correction.reason === "Reset attendance to planned hours")).toBe(true);
+    expect(originalCount.rows[0].count).toBe(3);
+    expect(await effectiveEvents(db, staffId, date)).toMatchObject([
+      { event_type: "clock_in", local_time: "09:00" },
+      { event_type: "clock_out", local_time: "17:00" },
+    ]);
+    expect(duration.rows[0].minutes).toBe(480);
+  });
+
+  it("resets an already-correct day through one append-only batch", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-correct";
+    const date = "2026-09-02";
+    const operationId = "20000000-0000-0000-0000-000000000002";
+    await seedStaffShift(db, { staffId, date });
+    await seedClockEvent(db, { staffId, timestamp: "2026-09-02T09:00:00+01:00", eventType: "clock_in" });
+    await seedClockEvent(db, { staffId, timestamp: "2026-09-02T17:00:00+01:00", eventType: "clock_out" });
+
+    await resetAttendanceToPlannedHours(db, { staffId, date, operationId });
+    const corrections = await db.query<{ count: number; batch_count: number }>(
+      `select count(*)::integer as count, count(distinct batch_id)::integer as batch_count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [operationId],
+    );
+
+    expect(corrections.rows[0]).toEqual({ count: 4, batch_count: 1 });
+    expect(await effectiveEvents(db, staffId, date)).toMatchObject([
+      { event_type: "clock_in", local_time: "09:00" },
+      { event_type: "clock_out", local_time: "17:00" },
+    ]);
+  });
+
+  it("rejects a reset without a published shift before writing corrections", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-no-shift";
+    const date = "2026-09-03";
+    await db.query("insert into public.staff_profiles (id, full_name) values ($1, $1)", [staffId]);
+    const revision = await attendanceRevision(db, staffId, date);
+
+    await expect(resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision }))
+      .rejects.toThrow(/no published rota shift/i);
+    const count = await db.query<{ count: number }>(
+      "select count(*)::integer as count from public.clock_event_corrections where staff_id = $1",
+      [staffId],
+    );
+    expect(count.rows[0].count).toBe(0);
+  });
+
+  it("rejects a stale reset revision without writing corrections", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-stale";
+    const date = "2026-09-04";
+    await seedStaffShift(db, { staffId, date });
+    const revision = await attendanceRevision(db, staffId, date);
+    await seedClockEvent(db, { staffId, timestamp: "2026-09-04T08:00:00+01:00", eventType: "clock_in" });
+
+    await expect(resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision }))
+      .rejects.toThrow(/changed after this preview/i);
+    const count = await db.query<{ count: number }>(
+      "select count(*)::integer as count from public.clock_event_corrections where staff_id = $1",
+      [staffId],
+    );
+    expect(count.rows[0].count).toBe(0);
+  });
+
+  it.each([
+    {
+      label: "start",
+      staffId: "reset-stale-planned-start",
+      date: "2026-09-14",
+      column: "start_time",
+      replacement: "08:30",
+    },
+    {
+      label: "finish",
+      staffId: "reset-stale-planned-finish",
+      date: "2026-09-15",
+      column: "end_time",
+      replacement: "17:30",
+    },
+  ])("rejects a stale planned $label with SQLSTATE 40001 before writing", async ({
+    staffId,
+    date,
+    column,
+    replacement,
+  }) => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const operationId = randomUUID();
+    await seedStaffShift(db, { staffId, date });
+    const revision = await attendanceRevision(db, staffId, date);
+    await db.query(
+      `update public.rota_shifts
+       set ${column} = $1::time
+       where staff_id = $2 and shift_date = $3::date`,
+      [replacement, staffId, date],
+    );
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      expectedPlannedStart: "09:00",
+      expectedPlannedFinish: "17:00",
+      operationId,
+    })).rejects.toMatchObject({ code: "40001" });
+    const writes = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(writes.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+  });
+
+  it.each([
+    { label: "spring-forward", date: "2026-03-29" },
+    { label: "autumn overlap", date: "2026-10-25" },
+  ])("rejects a $label reset boundary before writing", async ({ label, date }) => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = `reset-${label.replaceAll(" ", "-")}`;
+    const operationId = randomUUID();
+    await seedStaffShift(db, {
+      staffId,
+      date,
+      start: "01:30",
+      finish: "03:30",
+    });
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedPlannedStart: "01:30",
+      expectedPlannedFinish: "03:30",
+      operationId,
+    })).rejects.toThrow(/clock change/i);
+    const writes = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(writes.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+  });
+
+  it("accepts a unique 01:30 reset boundary on a normal London date", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-normal-boundary";
+    const date = "2026-02-15";
+    await seedStaffShift(db, {
+      staffId,
+      date,
+      start: "01:30",
+      finish: "03:30",
+    });
+
+    await resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedPlannedStart: "01:30",
+      expectedPlannedFinish: "03:30",
+    });
+
+    expect(await effectiveEvents(db, staffId, date)).toMatchObject([
+      { event_type: "clock_in", local_time: "01:30" },
+      { event_type: "clock_out", local_time: "03:30" },
+    ]);
+  });
+
+  it("rejects reset requests from non-managers", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-staff";
+    const date = "2026-09-05";
+    await seedStaffShift(db, { staffId, date });
+    const revision = await attendanceRevision(db, staffId, date);
+
+    await setCurrentAccount(db, STAFF_ACCOUNT_ID);
+    await setAuthenticatedRole(db);
+    await expect(resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision }))
+      .rejects.toThrow(/manager access required/i);
+    await resetRole(db);
+  });
+
+  it("returns the original reset batch without duplicate corrections on retry", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-retry";
+    const date = "2026-09-06";
+    const operationId = "20000000-0000-0000-0000-000000000006";
+    await seedStaffShift(db, { staffId, date });
+    await seedClockEvent(db, { staffId, timestamp: "2026-09-06T08:30:00+01:00", eventType: "clock_in" });
+    const revision = await attendanceRevision(db, staffId, date);
+
+    const first = await resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision, operationId });
+    const second = await resetAttendanceToPlannedHours(db, { staffId, date, expectedRevision: revision, operationId });
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+      expectedPlannedFinish: "16:30",
+    })).rejects.toThrow(/operation ID is already used for a different attendance operation/i);
+    const count = await db.query<{ count: number }>(
+      "select count(*)::integer as count from public.clock_event_corrections where batch_id = $1::uuid",
+      [operationId],
+    );
+    const request = await db.query<{ planned_start: string; planned_finish: string }>(
+      `select
+         to_char(expected_planned_start, 'HH24:MI') as planned_start,
+         to_char(expected_planned_finish, 'HH24:MI') as planned_finish
+       from public.attendance_operation_requests
+       where operation_id = $1::uuid`,
+      [operationId],
+    );
+
+    expect(first).toBe(operationId);
+    expect(second).toBe(operationId);
+    expect(count.rows[0].count).toBe(3);
+    expect(request.rows[0]).toEqual({ planned_start: "09:00", planned_finish: "17:00" });
+  });
+
+  it("rolls back the request ledger when correction insertion fails and permits retry", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    const staffId = "reset-atomic-retry";
+    const date = "2026-09-16";
+    const operationId = "20000000-0000-0000-0000-000000000016";
+    await seedStaffShift(db, { staffId, date });
+    await seedClockEvent(db, {
+      staffId,
+      timestamp: "2026-09-16T08:30:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, staffId, date);
+    await db.exec(`
+      create function public.fail_selected_reset_correction()
+      returns trigger
+      language plpgsql
+      set search_path = public
+      as $$
+      begin
+        if new.batch_id = '${operationId}'::uuid then
+          raise exception 'Injected correction insert failure';
+        end if;
+        return new;
+      end;
+      $$;
+
+      create trigger fail_selected_reset_correction
+      before insert on public.clock_event_corrections
+      for each row execute function public.fail_selected_reset_correction();
+    `);
+
+    await expect(resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+    })).rejects.toThrow(/injected correction insert failure/i);
+    const failedWrites = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+    expect(failedWrites.rows[0]).toEqual({ request_count: 0, correction_count: 0 });
+
+    await db.exec(`
+      drop trigger fail_selected_reset_correction on public.clock_event_corrections;
+      drop function public.fail_selected_reset_correction();
+    `);
+    const retry = await resetAttendanceToPlannedHours(db, {
+      staffId,
+      date,
+      expectedRevision: revision,
+      operationId,
+    });
+    const successfulWrites = await db.query<{ request_count: number; correction_count: number }>(
+      `select
+         (select count(*)::integer
+          from public.attendance_operation_requests
+          where operation_id = $1::uuid) as request_count,
+         (select count(*)::integer
+          from public.clock_event_corrections
+          where batch_id = $1::uuid) as correction_count`,
+      [operationId],
+    );
+
+    expect(retry).toBe(operationId);
+    expect(successfulWrites.rows[0]).toEqual({ request_count: 1, correction_count: 3 });
   });
 
   it.each([

@@ -160,10 +160,56 @@ describe("manager attendance views", () => {
       resolve("src/components/attendance/attendance-correction-controls.tsx"),
       "utf8",
     );
-    expect(controls.indexOf(">Add missing event<"))
-      .toBeLessThan(controls.indexOf(">Use planned hours<"));
-    expect(controls.indexOf(">Add missing event<"))
+    expect(controls.indexOf(">Reset to planned hours<"))
+      .toBeLessThan(controls.indexOf(">Add missing event<"));
+    expect(controls.indexOf(">Reset to planned hours<"))
       .toBeLessThan(controls.indexOf("day.effectiveEvents.map"));
+  });
+
+  it("renders reviewed reset and per-event removal controls without hiding malformed days", () => {
+    const controls = readFileSync(
+      resolve("src/components/attendance/attendance-correction-controls.tsx"),
+      "utf8",
+    );
+    const timeline = readFileSync(
+      resolve("src/components/attendance/staff-hours-timeline.tsx"),
+      "utf8",
+    );
+    const managerHelp = readFileSync(
+      resolve("src/lib/help/manager-help.ts"),
+      "utf8",
+    );
+
+    expect(controls).toContain("preview.effectiveEvents.map((event)");
+    expect(controls).toContain(
+      "{formatTimeUk(event.eventTimestamp)} {eventLabel(event.eventType)}",
+    );
+    expect(controls).toContain(
+      "Add Clock in at {preview.plannedStart}.",
+    );
+    expect(controls).toContain(
+      "Add Clock out at {preview.plannedFinish}.",
+    );
+    expect(controls).toContain(
+      "All intermediate and lunch events will be removed. Add lunch events manually afterwards.",
+    );
+    expect(controls.match(/name="confirmed"/g)).toHaveLength(2);
+    expect(controls.match(/value="yes"/g)).toHaveLength(2);
+    expect(controls.match(/minLength=\{5\}/g)).toHaveLength(4);
+    expect(controls.match(/variant="danger"/g)).toHaveLength(2);
+    expect(controls).toContain('"Remove from hours"');
+    expect(controls).not.toContain(">Delete<");
+    expect(controls).toContain("Original records remain in attendance history.");
+    expect(controls).not.toContain("!preview.canApply");
+    expect(controls).not.toContain("Make manual corrections first");
+
+    expect(timeline).toContain("removeBoundClockEventAction");
+    expect(timeline).toContain("resetBoundAttendanceToPlannedHoursAction");
+    expect(timeline).toContain("removeAction={removeAction}");
+    expect(timeline).toContain("resetAction={resetAction}");
+
+    expect(managerHelp).toContain("Reset to planned hours");
+    expect(managerHelp).toContain("Add any lunch events manually afterwards.");
   });
 
   it("gives the manager shell an explicit vertical scroll owner", () => {

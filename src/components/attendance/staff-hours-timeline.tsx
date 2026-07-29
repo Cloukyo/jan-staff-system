@@ -5,10 +5,12 @@ import { AttendanceCorrectionControls } from "@/components/attendance/attendance
 import { AttendanceDayDisclosure } from "@/components/attendance/attendance-day-disclosure";
 import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
 import {
+  removeBoundClockEventAction,
+  resetBoundAttendanceToPlannedHoursAction,
   saveBoundClockEventCorrectionAction,
-  useBoundPlannedHoursAction,
 } from "@/lib/attendance/correction-actions";
 import { buildAttendanceDayReturnTo } from "@/lib/attendance/day-route";
+import { getPlannedHoursBoundaries } from "@/lib/attendance/planned-hours-boundaries";
 import {
   buildAttendanceTimelineWindow,
   layoutAttendanceTimelineEvents,
@@ -241,15 +243,19 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
   const correctionCount = day.audit.corrections.length;
   const correctionId = randomUUID();
   const returnTo = buildAttendanceDayReturnTo({ staffId: day.staffId, from, to, day: day.date });
+  const plannedBoundaries = getPlannedHoursBoundaries(day.plannedPeriods);
   const context = {
     staffId: day.staffId,
     attendanceDate: day.date,
     correctionId,
     returnTo,
     eventRevision: day.eventRevision,
+    plannedStart: plannedBoundaries?.plannedStart,
+    plannedFinish: plannedBoundaries?.plannedFinish,
   };
   const manualAction = saveBoundClockEventCorrectionAction.bind(null, context);
-  const plannedHoursAction = useBoundPlannedHoursAction.bind(null, context);
+  const removeAction = removeBoundClockEventAction.bind(null, context);
+  const resetAction = resetBoundAttendanceToPlannedHoursAction.bind(null, context);
   return (
     <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-5 sm:px-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -266,7 +272,7 @@ export function StaffHoursDayDetail({ day, from, to }: { day: StaffHoursDay; fro
       <MobileAttendanceTable day={day} />
 
       <p className="mt-4 text-sm text-slate-700" data-attendance-mutation-slot="day-detail">Original clock events are read-only. {correctionCount ? `${correctionCount} manager correction${correctionCount === 1 ? " is" : "s are"} shown separately.` : ""}</p>
-      <AttendanceCorrectionControls day={day} correctionId={correctionId} returnTo={returnTo} manualAction={manualAction} plannedHoursAction={plannedHoursAction} />
+      <AttendanceCorrectionControls day={day} correctionId={correctionId} returnTo={returnTo} manualAction={manualAction} removeAction={removeAction} resetAction={resetAction} />
     </div>
   );
 }
