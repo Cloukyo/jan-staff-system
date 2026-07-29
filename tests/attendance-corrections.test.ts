@@ -16,9 +16,14 @@ import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correc
 
 const date = "2026-07-28";
 const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
+const removalMigrationPath = "supabase/migrations/20260729002614_attendance_remove_and_reset.sql";
 
 function migrationSql() {
   return readFileSync(resolve(migrationPath), "utf8");
+}
+
+function removalMigrationSql() {
+  return readFileSync(resolve(removalMigrationPath), "utf8");
 }
 
 function sqlFunction(sql: string, name: string) {
@@ -767,6 +772,23 @@ describe("attendance correction control contracts", () => {
 });
 
 describe("append-only attendance correction migration", () => {
+  it("provides an authenticated manager-only append-only removal RPC", () => {
+    const sql = removalMigrationSql();
+    const removeEvent = sqlFunction(sql, "remove_clock_event_from_hours");
+
+    expect(removeEvent).toContain("security definer");
+    expect(removeEvent).toContain("set search_path = public");
+    expect(removeEvent).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(removeEvent).toContain("perform public.lock_attendance_staff_writes");
+    expect(removeEvent).toMatch(/batch_id = operation_id[\s\S]*return operation_id;[\s\S]*get_attendance_event_revision/i);
+    expect(removeEvent).toContain("public.get_attendance_event_revision");
+    expect(removeEvent).toContain("public.get_effective_clock_events");
+    expect(removeEvent).toMatch(/correction_kind[\s\S]*exclude/i);
+    expect(removeEvent).toMatch(/id[\s\S]*operation_id[\s\S]*batch_id[\s\S]*operation_id/i);
+    expect(sql).toMatch(/revoke all on function public\.remove_clock_event_from_hours\([\s\S]*from public, anon, authenticated/i);
+    expect(sql).toMatch(/grant execute on function public\.remove_clock_event_from_hours\([\s\S]*to authenticated/i);
+  });
+
   it("creates an immutable correction table with manager reads and RPC-only writes", () => {
     const sql = migrationSql();
 

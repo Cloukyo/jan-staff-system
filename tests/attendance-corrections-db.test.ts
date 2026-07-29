@@ -774,6 +774,272 @@ describe("attendance correction PostgreSQL migration", () => {
     expect(count.rows[0].count).toBe(0);
   });
 
+  it("appends an exclude correction for an original event without deleting its source row", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-original", date: "2026-08-25" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-original",
+      timestamp: "2026-08-25T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-original", "2026-08-25");
+    const operationId = "10000000-0000-0000-0000-000000000025";
+
+    const result = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      [
+        "remove-original",
+        "2026-08-25",
+        originalId,
+        "Remove original clock-in",
+        revision,
+        operationId,
+      ],
+    );
+    const correction = await db.query<{
+      id: string;
+      batch_id: string;
+      correction_role: string;
+      correction_kind: string;
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+      event_type: string | null;
+      event_timestamp: string | null;
+    }>(
+      `select
+         id::text,
+         batch_id::text,
+         correction_role,
+         correction_kind,
+         original_event_id::text,
+         supersedes_correction_id::text,
+         event_type,
+         event_timestamp::text
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [operationId],
+    );
+    const source = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_events
+       where id = $1::uuid`,
+      [originalId],
+    );
+
+    expect(result.rows[0].batch_id).toBe(operationId);
+    expect(correction.rows).toEqual([{
+      id: operationId,
+      batch_id: operationId,
+      correction_role: "primary",
+      correction_kind: "exclude",
+      original_event_id: originalId,
+      supersedes_correction_id: null,
+      event_type: null,
+      event_timestamp: null,
+    }]);
+    expect(source.rows[0].count).toBe(1);
+    expect(await effectiveEvents(db, "remove-original", "2026-08-25")).toEqual([]);
+  });
+
+  it("appends an exclude correction that supersedes an active manager-added event", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-added", date: "2026-08-26" });
+    const addBatchId = await saveManualCorrection(db, {
+      staffId: "remove-added",
+      date: "2026-08-26",
+      eventType: "clock_in",
+      timestamp: "2026-08-26T09:00:00+01:00",
+    });
+    const added = await db.query<{ id: string }>(
+      `select id::text
+       from public.clock_event_corrections
+       where batch_id = $1::uuid and correction_role = 'primary'`,
+      [addBatchId],
+    );
+    const revision = await attendanceRevision(db, "remove-added", "2026-08-26");
+    const operationId = "10000000-0000-0000-0000-000000000026";
+
+    const result = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      [
+        "remove-added",
+        "2026-08-26",
+        added.rows[0].id,
+        "Remove added clock-in",
+        revision,
+        operationId,
+      ],
+    );
+    const correction = await db.query<{
+      original_event_id: string | null;
+      supersedes_correction_id: string | null;
+      correction_kind: string;
+    }>(
+      `select original_event_id::text, supersedes_correction_id::text, correction_kind
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [operationId],
+    );
+    const source = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where id = $1::uuid`,
+      [added.rows[0].id],
+    );
+
+    expect(result.rows[0].batch_id).toBe(operationId);
+    expect(correction.rows).toEqual([{
+      original_event_id: null,
+      supersedes_correction_id: added.rows[0].id,
+      correction_kind: "exclude",
+    }]);
+    expect(source.rows[0].count).toBe(1);
+    expect(await effectiveEvents(db, "remove-added", "2026-08-26")).toEqual([]);
+  });
+
+  it("rejects a stale removal revision without appending a correction", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-stale", date: "2026-08-27" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-stale",
+      timestamp: "2026-08-27T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-stale", "2026-08-27");
+    await seedClockEvent(db, {
+      staffId: "remove-stale",
+      timestamp: "2026-08-27T17:00:00+01:00",
+      eventType: "clock_out",
+    });
+
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-stale",
+        "2026-08-27",
+        originalId,
+        "Remove stale event",
+        revision,
+        "10000000-0000-0000-0000-000000000027",
+      ],
+    )).rejects.toThrow(/changed after this preview/i);
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where staff_id = 'remove-stale'`,
+    );
+
+    expect(count.rows[0].count).toBe(0);
+  });
+
+  it("rejects removal requests from non-managers", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-staff", date: "2026-08-28" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-staff",
+      timestamp: "2026-08-28T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-staff", "2026-08-28");
+
+    await setCurrentAccount(db, STAFF_ACCOUNT_ID);
+    await setAuthenticatedRole(db);
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-staff",
+        "2026-08-28",
+        originalId,
+        "Staff removal request",
+        revision,
+        "10000000-0000-0000-0000-000000000028",
+      ],
+    )).rejects.toThrow(/manager access required/i);
+    await resetRole(db);
+  });
+
+  it("rejects removal reasons shorter than five characters", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-short-reason", date: "2026-08-29" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-short-reason",
+      timestamp: "2026-08-29T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-short-reason", "2026-08-29");
+
+    await expect(db.query(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )`,
+      [
+        "remove-short-reason",
+        "2026-08-29",
+        originalId,
+        "Nope",
+        revision,
+        "10000000-0000-0000-0000-000000000029",
+      ],
+    )).rejects.toThrow(/at least five characters/i);
+  });
+
+  it("returns the existing removal batch when an operation is retried", async () => {
+    await resetRole(db);
+    await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
+    await seedStaffShift(db, { staffId: "remove-retry", date: "2026-08-30" });
+    const originalId = await seedClockEvent(db, {
+      staffId: "remove-retry",
+      timestamp: "2026-08-30T09:00:00+01:00",
+      eventType: "clock_in",
+    });
+    const revision = await attendanceRevision(db, "remove-retry", "2026-08-30");
+    const operationId = "10000000-0000-0000-0000-000000000030";
+    const params = [
+      "remove-retry",
+      "2026-08-30",
+      originalId,
+      "Retry removal request",
+      revision,
+      operationId,
+    ];
+
+    const first = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      params,
+    );
+    const second = await db.query<{ batch_id: string }>(
+      `select public.remove_clock_event_from_hours(
+         $1, $2::date, $3::uuid, $4, $5, $6::uuid
+       )::text as batch_id`,
+      params,
+    );
+    const count = await db.query<{ count: number }>(
+      `select count(*)::integer as count
+       from public.clock_event_corrections
+       where batch_id = $1::uuid`,
+      [operationId],
+    );
+
+    expect(first.rows[0].batch_id).toBe(operationId);
+    expect(second.rows[0].batch_id).toBe(operationId);
+    expect(count.rows[0].count).toBe(1);
+  });
+
   it.each([
     { kind: "replace" as const, staffId: "kiosk-replaced" },
     { kind: "exclude" as const, staffId: "kiosk-excluded" },

@@ -468,6 +468,12 @@ export async function createAttendanceTestDatabase() {
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      resolve("supabase/migrations/20260729002614_attendance_remove_and_reset.sql"),
+      "utf8",
+    ),
+  );
   await setCurrentAccount(db, MANAGER_ACCOUNT_ID);
   return db;
 }
