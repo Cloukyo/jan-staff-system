@@ -789,6 +789,29 @@ describe("append-only attendance correction migration", () => {
     expect(sql).toMatch(/grant execute on function public\.remove_clock_event_from_hours\([\s\S]*to authenticated/i);
   });
 
+  it("provides an atomic append-only reset-to-planned-hours RPC", () => {
+    const sql = removalMigrationSql();
+    const resetAttendance = sqlFunction(sql, "reset_attendance_to_planned_hours");
+
+    expect(resetAttendance).toContain("security definer");
+    expect(resetAttendance).toContain("set search_path = public");
+    expect(resetAttendance).toMatch(/manager_account\.role <> 'manager'/i);
+    expect(resetAttendance).toContain("perform public.lock_attendance_staff_writes");
+    expect(resetAttendance).toMatch(/batch_id = operation_id[\s\S]*return operation_id;[\s\S]*get_attendance_event_revision/i);
+    expect(resetAttendance).toMatch(/rw\.status = 'published'/i);
+    expect(resetAttendance).toMatch(/rs\.status <> 'cancelled'/i);
+    expect(resetAttendance).toMatch(/for update of rs, rw/i);
+    expect(resetAttendance).toMatch(/min\(rs\.start_time\)[\s\S]*max\(rs\.end_time\)/i);
+    expect(resetAttendance).toContain("at time zone 'Europe/London'");
+    expect(resetAttendance).toMatch(/effective_events jsonb[\s\S]*jsonb_agg/i);
+    expect(resetAttendance).toMatch(/correction_kind[\s\S]*exclude/i);
+    expect(resetAttendance).toMatch(/correction_kind[\s\S]*add/i);
+    expect(resetAttendance).toMatch(/case when action\.ordinal = 1 then 'primary'/i);
+    expect(resetAttendance).toMatch(/batch_id[\s\S]*operation_id/i);
+    expect(sql).toMatch(/revoke all on function public\.reset_attendance_to_planned_hours\([\s\S]*from public, anon, authenticated/i);
+    expect(sql).toMatch(/grant execute on function public\.reset_attendance_to_planned_hours\([\s\S]*to authenticated/i);
+  });
+
   it("creates an immutable correction table with manager reads and RPC-only writes", () => {
     const sql = migrationSql();
 

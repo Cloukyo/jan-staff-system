@@ -566,6 +566,34 @@ export async function usePlannedHours(db: PGlite, staffId: string, date: string)
   return result.rows[0].batch_id;
 }
 
+export async function resetAttendanceToPlannedHours(
+  db: PGlite,
+  input: {
+    staffId: string;
+    date: string;
+    reason?: string;
+    expectedRevision?: string;
+    operationId?: string;
+  },
+) {
+  const expectedRevision = input.expectedRevision
+    ?? await attendanceRevision(db, input.staffId, input.date);
+  const operationId = input.operationId ?? randomUUID();
+  const result = await db.query<{ batch_id: string }>(
+    `select public.reset_attendance_to_planned_hours(
+       $1, $2::date, $3, $4, $5::uuid
+     )::text as batch_id`,
+    [
+      input.staffId,
+      input.date,
+      input.reason ?? "Reset attendance to planned hours",
+      expectedRevision,
+      operationId,
+    ],
+  );
+  return result.rows[0].batch_id;
+}
+
 export async function attendanceRevision(db: PGlite, staffId: string, date: string) {
   const result = await db.query<{ revision: string }>(
     `select public.get_attendance_event_revision($1, $2::date) as revision`,
