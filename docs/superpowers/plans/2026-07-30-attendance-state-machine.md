@@ -8,6 +8,37 @@
 
 **Tech Stack:** Next.js 16 App Router, React 19, TypeScript 5, Vitest 4, Supabase/PostgreSQL 17, PL/pgSQL, date-fns 4
 
+## Execution Checkpoint: 30 July 2026
+
+Completed and committed:
+
+- Exact production migration history reconciliation and integrity test
+- Pure London operational-day attendance state derivation
+- Strict per-operational-day hours pairing
+- Offline security and physical-device enablement gate
+- Versioned Staff Clock PWA shell
+- Durable IndexedDB roster, trusted state, queue, receipt, key and lockout storage
+- Device-specific six-digit offline PIN cryptography and signed payloads
+- Single-flight and IndexedDB-leased client synchronisation worker
+
+Current verification:
+
+- 29 Vitest files pass
+- 264 tests pass
+- TypeScript passes
+- ESLint passes
+- Next.js production build passes
+
+Blocked pending an approved disposable PostgreSQL 17 or Supabase branch:
+
+- Attendance exception and action-request schema
+- Authoritative state, reconciliation, correction and kiosk action RPCs
+- RLS, grants and database concurrency tests
+- Signed provisioning, sync and device-health server routes
+- Payroll readiness and manager conflict integration
+
+Docker, local PostgreSQL and `ATTENDANCE_TEST_DATABASE_URL` are unavailable. Production is not used for fixture or mutation testing. Offline clocking remains disabled pending the database work and the real-device checklist.
+
 ## Global Constraints
 
 - Use UK date, time and currency formats.
