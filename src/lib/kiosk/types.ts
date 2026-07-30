@@ -1,3 +1,5 @@
+import type { OfflineCapability } from "@/lib/kiosk/offline/types";
+
 export type KioskStatus = "clocked_in" | "clocked_out";
 
 export type KioskRosterEntry = {
@@ -15,6 +17,7 @@ export type KioskActionResult = {
   message: string;
   currentStatus?: KioskStatus;
   recordedAt?: string;
+  offlineCapability?: OfflineCapability;
   weeklyHours?: {
     weekStartDate: string;
     weekEndDate: string;
