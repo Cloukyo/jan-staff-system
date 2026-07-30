@@ -6,13 +6,25 @@ import {
   deleteOfflineDatabase,
   enqueueAttendanceAction,
   getActiveRoster,
+  getDeviceKeys,
+  getOfflinePinLockout,
+  getOfflinePinVerifier,
   getSyncReceipt,
   getTrustedState,
   listPendingActions,
   persistSyncReceipt,
+  putOfflinePinLockout,
+  putOfflinePinVerifier,
   putTrustedState,
   replaceRosterAtomically,
+  saveDeviceKeys,
 } from "@/lib/kiosk/offline/database";
+import {
+  createDeviceKeys,
+  createOfflinePinLockout,
+  enrolOfflinePin,
+  signOfflinePayload,
+} from "@/lib/kiosk/offline/crypto";
 import { buildProvisionalState } from "@/lib/kiosk/offline/projection";
 import type {
   OfflineRosterSnapshot,
@@ -272,5 +284,39 @@ describe("offline kiosk IndexedDB", () => {
     });
 
     expect(serialised).not.toMatch(/pin|pin_hash|hourly|salary/i);
+  });
+
+  it("persists non-extractable device keys and authenticated verifier records", async () => {
+    const keys = await createDeviceKeys();
+    const envelope = await enrolOfflinePin({
+      pin: "482731",
+      staffId: "staff-a",
+      authorisationId: "authorisation-1",
+      expiresAt: "2026-07-31T09:00:00Z",
+      verifierKey: keys.verifierKey,
+    });
+    const lockout = await createOfflinePinLockout({
+      staffId: "staff-a",
+      authorisationId: "authorisation-1",
+      verifierKey: keys.verifierKey,
+      updatedAt: "2026-07-30T09:00:00Z",
+    });
+    await saveDeviceKeys(keys);
+    await putOfflinePinVerifier(envelope);
+    await putOfflinePinLockout(lockout);
+    await closeOfflineDatabase();
+
+    const restored = await getDeviceKeys();
+    expect(restored?.signingPrivateKey.extractable).toBe(false);
+    expect(restored?.verifierKey.extractable).toBe(false);
+    await expect(
+      signOfflinePayload({ action: "clock_in" }, restored!.signingPrivateKey),
+    ).resolves.toEqual(expect.any(String));
+    expect(
+      await getOfflinePinVerifier("staff-a", "authorisation-1"),
+    ).toEqual(envelope);
+    expect(await getOfflinePinLockout("staff-a", "authorisation-1")).toEqual(
+      lockout,
+    );
   });
 });

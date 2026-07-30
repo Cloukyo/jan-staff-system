@@ -95,6 +95,38 @@ export type OfflineSyncReceipt = {
   retainedUntil: string;
 };
 
+export type OfflinePinVerifierEnvelope = {
+  schemaVersion: 1;
+  staffId: string;
+  authorisationId: string;
+  salt: string;
+  iterations: number;
+  verifier: string;
+  expiresAt: string;
+  authenticator: string;
+};
+
+export type OfflinePinLockout = {
+  schemaVersion: 1;
+  staffId: string;
+  authorisationId: string;
+  failureCount: number;
+  locked: boolean;
+  updatedAt: string;
+  authenticator: string;
+};
+
+export type OfflinePinVerificationResult = {
+  status: "verified" | "invalid" | "locked" | "expired" | "tampered";
+  lockout: OfflinePinLockout;
+};
+
+export type DeviceSecurityKeys = {
+  signingPrivateKey: CryptoKey;
+  signingPublicJwk: JsonWebKey;
+  verifierKey: CryptoKey;
+};
+
 export type SyncReceiptTransaction = {
   actionId: string;
   definitiveStatus: "synced" | "conflicted" | "rejected";

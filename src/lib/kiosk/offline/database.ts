@@ -1,5 +1,8 @@
 import {
   OFFLINE_DEFINITIVE_QUEUE_RETENTION_DAYS,
+  type DeviceSecurityKeys,
+  type OfflinePinLockout,
+  type OfflinePinVerifierEnvelope,
   type OfflineRosterSnapshot,
   type OfflineSyncReceipt,
   type PendingAttendanceAction,
@@ -231,6 +234,81 @@ export async function getTrustedState(
     transactionDone(transaction),
   ]);
   return result ?? null;
+}
+
+export async function saveDeviceKeys(
+  keys: DeviceSecurityKeys,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readwrite");
+  transaction.objectStore(stores.metadata).put({
+    key: "deviceSecurityKeys",
+    value: keys,
+  } satisfies MetadataRecord);
+  await transactionDone(transaction);
+}
+
+export async function getDeviceKeys(): Promise<DeviceSecurityKeys | null> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readonly");
+  const request = transaction
+    .objectStore(stores.metadata)
+    .get("deviceSecurityKeys");
+  const [record] = await Promise.all([
+    requestResult<MetadataRecord | undefined>(request),
+    transactionDone(transaction),
+  ]);
+  return (record?.value as DeviceSecurityKeys | undefined) ?? null;
+}
+
+export async function putOfflinePinVerifier(
+  envelope: OfflinePinVerifierEnvelope,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pinVerifiers, "readwrite");
+  transaction.objectStore(stores.pinVerifiers).put(envelope);
+  await transactionDone(transaction);
+}
+
+export async function getOfflinePinVerifier(
+  staffId: string,
+  authorisationId: string,
+): Promise<OfflinePinVerifierEnvelope | null> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pinVerifiers, "readonly");
+  const request = transaction
+    .objectStore(stores.pinVerifiers)
+    .get([staffId, authorisationId]);
+  const [envelope] = await Promise.all([
+    requestResult<OfflinePinVerifierEnvelope | undefined>(request),
+    transactionDone(transaction),
+  ]);
+  return envelope ?? null;
+}
+
+export async function putOfflinePinLockout(
+  lockout: OfflinePinLockout,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pinLockouts, "readwrite");
+  transaction.objectStore(stores.pinLockouts).put(lockout);
+  await transactionDone(transaction);
+}
+
+export async function getOfflinePinLockout(
+  staffId: string,
+  authorisationId: string,
+): Promise<OfflinePinLockout | null> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pinLockouts, "readonly");
+  const request = transaction
+    .objectStore(stores.pinLockouts)
+    .get([staffId, authorisationId]);
+  const [lockout] = await Promise.all([
+    requestResult<OfflinePinLockout | undefined>(request),
+    transactionDone(transaction),
+  ]);
+  return lockout ?? null;
 }
 
 export async function enqueueAttendanceAction(

@@ -30,6 +30,8 @@ The kiosk must never store plaintext PINs, production bcrypt hashes, salary, hou
 
 An attacker may try PIN combinations without contacting the server. Offline enrolment therefore requires six digits, uses a slow salted derivation and a device-specific non-extractable verifier key, expires after no more than 24 hours, and permits three failed comparisons. The fourth attempt is locked until a successful reconnect.
 
+The initial PBKDF2-HMAC-SHA-256 work factor is 600,000 iterations, matching the [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html). Three measurements on the development machine took 110 to 114 ms. The real kiosk must be benchmarked before enablement and the work factor must remain below one second on that device.
+
 This rate limit is a compensating control, not proof against a fully compromised browser.
 
 ### Developer tools and IndexedDB inspection
