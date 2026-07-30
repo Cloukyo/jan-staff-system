@@ -3,6 +3,7 @@
 import { CheckCircle2, Clock3, LogIn, LogOut } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { PinKeypad } from "@/components/kiosk/pin-keypad";
+import { ServiceWorkerRegistration } from "@/components/kiosk/service-worker-registration";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { changeTemporaryKioskPinAction, recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
@@ -94,6 +95,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
 
   return (
     <main className="min-h-screen bg-purple-950 p-4 text-white">
+      <ServiceWorkerRegistration />
       <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl flex-col rounded-2xl bg-lavender p-5 text-purple-950 shadow-2xl">
         <div className="flex items-center justify-between gap-4">
           <BrandMark />

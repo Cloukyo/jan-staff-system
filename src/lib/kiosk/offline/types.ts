@@ -53,11 +53,53 @@ export type PendingAttendanceAction = {
   signature: string;
 };
 
+export type UnsignedPendingAction = Omit<
+  PendingAttendanceAction,
+  | "schemaVersion"
+  | "deviceSequence"
+  | "queueCreatedAt"
+  | "status"
+  | "retryCount"
+  | "lastErrorCategory"
+>;
+
+export type OfflineRosterEntry = {
+  staffId: string;
+  displayName: string;
+  employmentRole: string;
+  offlineReady: boolean;
+};
+
+export type OfflineRosterSnapshot = {
+  schemaVersion: 1;
+  rosterVersion: string;
+  authorisationId: string;
+  issuedAt: string;
+  expiresAt: string;
+  serverTime: string;
+  entries: OfflineRosterEntry[];
+};
+
 export type TrustedAttendanceState = {
   staffId: string;
   rosterVersion: string;
   state: AttendanceStateResult;
   trustedAt: string;
+};
+
+export type OfflineSyncReceipt = {
+  schemaVersion: 1;
+  idempotencyKey: string;
+  outcome: "synced" | "conflicted" | "rejected";
+  receivedAtServer: string;
+  retainedUntil: string;
+};
+
+export type SyncReceiptTransaction = {
+  actionId: string;
+  definitiveStatus: "synced" | "conflicted" | "rejected";
+  receipt: OfflineSyncReceipt;
+  trustedState: TrustedAttendanceState;
 };
 
 function timestamp(value: string): number {
