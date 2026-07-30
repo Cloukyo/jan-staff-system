@@ -40,7 +40,7 @@ The audit baseline was 21 passing test files and 193 passing tests. A read-only 
 5. Read-only state derivation is deterministic and has no database writes.
 6. Exception reconciliation is a separate, documented write operation.
 7. Kiosk actions are explicit commands, never a toggle.
-8. Server time is authoritative for new kiosk events.
+8. Server time is authoritative for online kiosk events. Offline evidence preserves device and server times and is accepted only after server validation.
 9. Payroll pairing cannot cross operational-day boundaries.
 10. The implementation remains honestly single-organisation and single-location.
 
@@ -229,7 +229,10 @@ type AttendanceExceptionType =
   | "consecutive_clock_in"
   | "unmatched_clock_out"
   | "overlapping_attendance"
-  | "unusually_long_shift";
+  | "unusually_long_shift"
+  | "offline_sync_conflict"
+  | "device_clock_drift"
+  | "offline_time_uncertain";
 ```
 
 Additional warning types may be introduced for rota and leave context without changing clock evidence.
@@ -292,6 +295,15 @@ type PerformAttendanceActionInput = {
   action: AttendanceAction;
   expectedRevision: string;
   idempotencyKey: string;
+  offlineEvidence?: {
+    authorisationId: string;
+    occurredAtDevice: string;
+    deviceTimezone: string;
+    deviceSequence: number;
+    trustedSnapshotRevision: string;
+    rosterVersion: string;
+    signature: string;
+  };
 };
 ```
 
@@ -309,7 +321,7 @@ The device token and PIN remain separate authenticated inputs to the narrowly sc
 8. Derive the latest authoritative state and revision.
 9. Reject stale revisions or invalid transitions with the latest state.
 10. Reconcile required stale exceptions for `start_new_shift`.
-11. Insert one server-timestamped kiosk event where permitted.
+11. Insert one event where permitted. Online events use server time. Accepted offline events preserve the validated device occurrence time and server receipt time.
 12. Persist the complete safe result and resulting event reference.
 13. Return the stored result.
 
@@ -341,6 +353,8 @@ The table stores:
 - Resulting event identifier when present
 - Safe JSON response required to reproduce the result
 - Expiry timestamp
+- Offline authorisation and device sequence where applicable
+- Device occurrence time, server receipt time, clock-confidence result, and conflict category where applicable
 
 It never stores a PIN, PIN hash, candidate PIN, failed PIN comparison, or authentication secret.
 
@@ -395,6 +409,263 @@ Success displays the authoritative recorded time, duration for a completed valid
 
 Errors use safe codes and copy for network failure, invalid transition, stale state, duplicate request conflict, inactive device, unavailable staff, and server failure. Internal identifiers and Supabase errors are not exposed.
 
+## Offline-Resilient Kiosk
+
+### Authority boundary
+
+The server-side effective attendance ledger remains the sole attendance authority. IndexedDB records are provisional requests and trusted-state snapshots. They are never clock events and never affect payroll until the server accepts them through the normal attendance action transaction.
+
+The client never inserts or synchronises rows directly into `clock_events`, `clock_event_corrections`, `attendance_exceptions`, or `attendance_action_requests`.
+
+### Progressive Web App shell
+
+The production `/clock` experience is installable and can reopen after a previously authorised online setup. A deliberately scoped service worker caches:
+
+- The `/clock` application shell
+- The manifest, kiosk icons, font assets, and required Next.js chunks
+- Version metadata required to reject incompatible queue formats
+
+It does not broadly cache:
+
+- Manager routes
+- Authenticated manager responses
+- Payroll, compliance, leave, or staff-profile data
+- Supabase REST or RPC responses
+- PIN submissions or server errors
+
+The `/clock` document uses network-first with the last compatible shell as fallback. Immutable build assets use cache-first with versioned URLs. Obsolete shell caches are deleted only after the active client and queue schema are confirmed compatible.
+
+Background Sync is an optional enhancement. Correctness relies on foreground sync at application launch, browser `online` events, visibility regain, periodic retry while open, and the manual “Sync now” action.
+
+### Offline eligibility
+
+New offline actions are accepted locally only when all conditions are true:
+
+1. The device previously completed an online registered-kiosk session.
+2. The current device registration is represented by a trusted local authorisation package.
+3. A complete roster version was atomically stored.
+4. The selected staff member has a current device-specific offline PIN verifier.
+5. The authorisation has not passed its server-issued expiry.
+6. At least one full online synchronisation completed for the current authorisation.
+7. The trusted staff state is unambiguous or explicitly permits `start_new_shift`.
+8. The per-device offline feature flag is enabled.
+
+The default offline-authorisation lifetime is 24 hours. The server-issued expiry is authoritative. The client applies the expiry conservatively while disconnected. Expiry prevents new offline actions but does not delete queued actions, receipts, or diagnostic data.
+
+A cached but unregistered device can display only the setup-required or expired shell. It cannot access a roster, verify a PIN, or queue attendance.
+
+### Minimal roster
+
+The atomic offline roster snapshot contains only:
+
+- Stable staff identifier
+- Display name
+- Approved kiosk avatar reference when already supported
+- Offline verifier envelope
+- Roster version
+- Authorisation identifier and expiry
+- Registered device identifier
+- Trusted attendance state and revision
+
+It excludes full names where the display name is sufficient, contact information, addresses, DBS information, qualifications, payroll data, leave documents, manager details, and credentials.
+
+A new roster is written in one IndexedDB transaction and becomes active only after all entries and metadata validate. The previous complete version remains active if refresh fails.
+
+### Device-bound offline PIN verifier
+
+The production bcrypt PIN hash is never exposed to the kiosk.
+
+Offline verification uses a separately enrolled, device-specific verifier:
+
+1. The registered browser generates a non-extractable Web Crypto signing key and a non-extractable verifier key.
+2. The public signing key is registered with the server for that kiosk authorisation.
+3. After a successful online server PIN verification, the browser derives a slow PIN value using PBKDF2-SHA-256 with a per-staff, per-authorisation random salt and a centrally defined high iteration count.
+4. The browser authenticates the derived value with the non-extractable device verifier key.
+5. It stores only the salt, parameters, authenticated verifier, staff ID, authorisation version, and expiry.
+6. Offline candidates repeat the derivation and constant-time comparison.
+
+Online PIN use remains unchanged. Offline enrolment never stores the submitted PIN and clears all PIN state immediately.
+
+Offline enrolment requires a six-digit PIN because four-digit space is not sufficient against offline guessing. Staff who retain a four- or five-digit PIN can continue online clocking but cannot be marked offline-ready until they choose a six-digit PIN.
+
+The local policy permits three failed offline attempts per staff and authorisation. The fourth attempt locks offline verification until the device reconnects successfully. Lockout state is authenticated with the device verifier key so ordinary IndexedDB editing is detected.
+
+This design reduces casual IndexedDB copying and offline guessing risk but cannot make a browser PWA tamper-proof. An attacker with physical control, developer tools, and the ability to execute code in the kiosk origin may be able to invoke non-extractable keys or bypass client-side rate limiting. Client-side encryption does not remove this residual because its key is available to the running origin. The 24-hour expiry, six-digit requirement, device revocation, kiosk OS restrictions, and staged hardware testing are mandatory compensating controls.
+
+Full offline clocking must not be enabled or described as complete if the actual kiosk browser cannot persist non-extractable keys reliably across restart or cannot enforce an acceptable managed-device posture. In that case the PWA shell and queue remain available for diagnostics, but managers use the documented manual attendance procedure during outages.
+
+### IndexedDB stores
+
+The versioned database contains:
+
+- `metadata`: schema version, active roster version, authorisation, trusted clock anchor, and last sync
+- `rosters`: complete inactive and active roster snapshots
+- `trustedStates`: immutable last server state and revision per staff
+- `pinVerifiers`: device-specific verifier envelopes and expiry
+- `pinLockouts`: authenticated failed-attempt state
+- `pendingActions`: provisional signed action requests
+- `syncReceipts`: definitive server responses retained after queue completion
+- `localAudit`: authorised discard and recovery operations
+
+All updates which move an action between states or activate a roster use one IndexedDB transaction. A queue migration must either complete atomically or leave the previous schema usable. An incompatible application update displays a sync-required error and preserves data.
+
+No ordinary `localStorage` is used.
+
+### Pending action
+
+```ts
+type PendingAttendanceAction = {
+  schemaVersion: number;
+  idempotencyKey: string;
+  authorisationId: string;
+  rosterVersion: string;
+  deviceId: string;
+  staffId: string;
+  action: AttendanceAction;
+  occurredAtDevice: string;
+  deviceTimezone: string;
+  operationalDateAtDevice: string;
+  deviceSequence: number;
+  queueCreatedAt: string;
+  trustedSnapshotRevision: string;
+  priorPendingActionId: string | null;
+  unresolvedOlderException: boolean;
+  status: "pending" | "syncing" | "synced" | "conflicted" | "rejected";
+  retryCount: number;
+  lastErrorCategory: string | null;
+  signature: string;
+};
+```
+
+The entered PIN is absent. Every retry uses the same UUID and signed payload.
+
+### Device signature and server route
+
+The device signs the canonical action payload with its non-extractable private signing key. Copying a queue row to another device does not copy an exportable signing credential.
+
+A same-origin server route receives queued actions, reads the HttpOnly registered-device cookie, validates the device signature against the registered public key, checks authorisation version and expiry, and calls the narrowly scoped database action transaction. The offline database RPC is not directly granted to `anon` or `authenticated`; only the server boundary may invoke it.
+
+Signature verification proves that the registered browser key signed the payload. It does not independently prove that trustworthy kiosk code performed the local PIN comparison. The managed-device and short-expiry controls therefore remain part of the security boundary.
+
+### Provisional local state
+
+The kiosk rebuilds each staff member’s provisional state from:
+
+1. The immutable last trusted server snapshot
+2. That staff member’s queued actions ordered by sequence, occurrence time, and queue creation time
+
+It never edits the trusted snapshot. Provisional state and hours are labelled “Pending synchronisation” and are not described as confirmed or payroll-ready.
+
+If the trusted snapshot was stale, ambiguous, or awaiting review, the local projection exposes only actions explicitly safe in the snapshot. A known old missing clock-out may permit `start_new_shift`. It never turns an ambiguous state into a generic toggle.
+
+No trustworthy snapshot means no offline action.
+
+### Device and server timestamps
+
+Offline evidence preserves:
+
+- `occurred_at_device`: the unmodified wall-clock time shown when the action was queued
+- `received_at_server`: the server time at definitive receipt
+- Trusted server time and device wall-clock anchor from the last sync
+- Monotonic elapsed time where the browser session provides it
+- Device timezone and operational date claimed by the client
+
+The server validates:
+
+- Occurrence within the authorisation window
+- Named device timezone and London operational date
+- Device sequence monotonicity
+- Future timestamps
+- Reordering within one staff stream
+- Timestamp earlier than the last trusted contact where suspicious
+- Wall-clock movement inconsistent with available monotonic time
+- Difference from an estimated trusted time anchor
+
+The initial acceptable drift threshold is five minutes. A larger or unverifiable drift produces `device_clock_drift` or `offline_time_uncertain` conflict evidence rather than a normal event. An offline delay between occurrence and receipt is not itself clock drift.
+
+Accepted offline events use the validated `occurred_at_device` as `event_timestamp` and store `received_at_server`, device sequence, authorisation, and drift assessment as immutable audit metadata. The server never silently rewrites the submitted occurrence time.
+
+### Synchronisation
+
+Queue order is deterministic by device sequence, device occurrence time, and queue creation time. Actions are serial within each staff member. Different staff streams may progress independently, but the initial implementation may use a single deterministic worker for simplicity.
+
+For each item:
+
+1. Persist `syncing` without deleting the row.
+2. POST the original signed payload and UUID.
+3. Let the server verify device, authorisation, payload, revision, state, corrections, and permissions under the staff advisory lock.
+4. Persist the definitive receipt and new trusted snapshot in one local transaction.
+5. Mark the queue item definitive.
+6. Remove the pending payload only after the receipt is durable.
+
+If a timeout occurs after server acceptance, the unchanged UUID returns the stored server result on retry. Background Sync firing twice cannot create a second event.
+
+Completed receipts are retained for 30 days. Definitive queue payloads are retained for seven days before removal. Pending, conflicted, and indeterminate items are never removed by routine cleanup.
+
+### Server outcomes
+
+```ts
+type OfflineSyncOutcome =
+  | "synced"
+  | "already_processed"
+  | "unauthorised"
+  | "conflicted"
+  | "retryable_failure"
+  | "permanently_invalid";
+```
+
+An action conflicting with another kiosk event, a manager correction, changed revision, removed roster entry, revoked device, expired authorisation, reordered sequence, or uncertain time is preserved in the action request. Where attendance evidence requires review, an `offline_sync_conflict` source exception is created idempotently. It does not create a normal event or payroll time.
+
+Manager resolution uses the existing correction chain and displays requested action, occurrence time, receipt time, device, conflict reason, and relevant effective ledger.
+
+### Connectivity and user interface
+
+The kiosk status is always one of:
+
+- Online
+- Offline: clockings will sync later
+- Synchronising
+- Sync problem
+- Offline authorisation expired
+
+`navigator.onLine` is only one signal. A lightweight server reachability check determines confirmed connectivity.
+
+The offline notice reads:
+
+> Internet connection lost. Clockings recorded on this device will be marked as pending and synchronised when the connection returns.
+
+Offline confirmation reads:
+
+> Clock-in saved on this device at 8:57 AM. Pending synchronisation.
+
+or:
+
+> Clock-out saved on this device at 5:04 PM. Pending synchronisation.
+
+The screen shows pending count, oldest pending age, last successful sync, “Sync now”, and conflicts requiring manager review. It never uses normal online success styling for a local-only action.
+
+### Safe reset and recovery
+
+Manager logout, kiosk deregistration, reset, or local-data clearing checks for non-definitive actions. Ordinary reset cannot delete them.
+
+Destructive discard requires online manager authentication where possible, an explicit reason, a diagnostic export, and local audit. The server records the discard when reachable. Deregistration immediately prevents new offline actions but retains the queue for support recovery.
+
+### Device health
+
+The manager device view shows last contact, last roster refresh, authorisation expiry, last reported pending count, oldest pending age, last sync failure, clock-drift warning, offline feature flag, and revocation control.
+
+An offline device can report only its last known queue health. The manager UI labels unknown final queue state honestly.
+
+### Browser and hardware gate
+
+The baseline must work without Background Sync:
+
+- Installed iPad Home Screen PWA and Safari use launch, visibility, online-event, periodic foreground, and manual sync.
+- Chrome or Android installed PWA may additionally use Background Sync.
+- Ordinary browser mode uses the same foreground mechanisms but may have less predictable storage retention.
+
+The actual Jan Preschool tablet model, operating-system version, browser, storage-retention behaviour, private-key persistence, installed-PWA mode, and device-management restrictions are not recorded in the repository. Offline clocking remains disabled by default until these are tested on the physical device for browser restart, tablet restart, storage pressure, service-worker update, network loss, and clock change.
+
 ## Rota and Leave Context
 
 Rota and leave records provide warnings only:
@@ -424,6 +695,10 @@ Within each partition:
 Weekly hours and staff history use the same day-partitioned pairing service.
 
 Payroll readiness includes unresolved attendance exceptions. The existing explicit manager acknowledgement for unreviewed export remains available to avoid breaking current operations, but the exported workbook must prominently report unresolved exception counts and excluded malformed hours.
+
+Pending local actions never affect payroll. Accepted offline actions contribute exactly once using their accepted occurrence time. Conflicted actions contribute nothing until manager resolution.
+
+Payroll readiness also includes unresolved offline synchronisation conflicts, last reported pending queue counts, and recently offline devices whose final queue state is unknown. The application must not claim attendance is complete solely because normal server exceptions are clear when an offline-enabled kiosk may still hold unsynchronised evidence.
 
 No locked payroll record or historical event is rewritten automatically.
 
@@ -474,6 +749,8 @@ Structured server logging records:
 
 Logs contain staff and event identifiers only where the existing server logging policy permits. They never contain PINs, PIN hashes, candidate PINs, pay rates, or salary values.
 
+Offline telemetry additionally records safe device identifiers, queue counts, sync outcomes, conflict categories, clock-drift classifications, authorisation expiry, and authorised discard. It never records verifier material, device private keys, entered PINs, full signed payloads, or cached roster contents.
+
 ## Security Model
 
 ### Tables
@@ -497,6 +774,10 @@ Every `SECURITY DEFINER` function:
 
 Direct security tests cover anonymous unregistered clients, registered kiosk clients, authenticated staff, authenticated managers, and prohibited direct table writes.
 
+Offline security tests also cover an unregistered cached shell, expired authorisation, revoked device, changed device identifier, invalid device signature, replayed UUID, altered payload, verifier expiry, local lockout, queue tampering, and server-route denial of direct database mutation.
+
+Browser storage encryption and non-extractable keys are defence against casual extraction, not a claim of resistance to a fully compromised browser origin. Physical device management, short authorisation lifetime, six-digit offline PINs, revocation, and real-device testing are required controls.
+
 ## Single-Organisation Limitation
 
 The current production schema has no organisation or location ownership columns. This implementation must not claim tenant or location isolation and must not add nullable placeholders that imply security.
@@ -512,6 +793,8 @@ Schema additions must coexist with the current application during a rolling depl
 - Replaced RPC signatures are coordinated with the application deployment.
 - Existing immutable events, correction chains, and reviews remain readable.
 - Demo functionality is unchanged.
+- Offline capability is disabled by default and enabled per registered device only after provisioning and hardware validation.
+- Service-worker and IndexedDB schema versions remain compatible with retained queued evidence.
 
 Rollout order:
 
@@ -525,7 +808,11 @@ Rollout order:
 8. Verify representative normal, stale, duplicate, and corrected states.
 9. Run controlled exception backfill.
 10. Verify attendance issue counts and payroll totals.
-11. Monitor conflicts, retries, exception creation, and export warnings.
+11. Deploy the offline shell with offline clocking disabled.
+12. Provision and test one physical kiosk device.
+13. Enable offline clocking for that device only.
+14. Run a complete operational-period pilot with observed clockings.
+15. Monitor conflicts, retries, exception creation, queue health, drift, and export warnings.
 
 Rollback:
 
@@ -534,6 +821,8 @@ Rollback:
 - Do not delete new exception or idempotency audit records during emergency rollback.
 - Do not reverse correction-chain entries or mutate original clock events.
 - Drop additive objects only in a later reviewed cleanup migration after data retention decisions.
+- Do not unregister the service worker or clear IndexedDB while pending or conflicted evidence remains.
+- Disable the per-device offline feature flag to stop new offline actions without destroying queued evidence.
 
 ## Test Strategy
 
@@ -562,6 +851,38 @@ Rollback:
 - Concurrent manager correction causes a clean state conflict or serialised valid result.
 - Invalid transition returns latest state and allowed actions.
 
+### Offline queue tests
+
+- Offline clock-in and clock-out create explicit pending actions.
+- Multiple staff queues preserve each staff stream.
+- Queue survives reload, browser restart simulation, service-worker restart, and schema upgrade.
+- PIN values never enter IndexedDB.
+- Trusted snapshots remain immutable while provisional state changes.
+- Local confirmation is labelled pending.
+- Expired or absent authorisation blocks new queue items and preserves existing ones.
+
+### Offline synchronisation tests
+
+- Reconnect, app launch, visibility regain, periodic retry, and manual sync invoke the same worker.
+- Background Sync absence does not prevent foreground synchronisation.
+- Background Sync repetition remains idempotent.
+- Network loss midway leaves the item recoverable.
+- Server acceptance followed by client timeout returns the original receipt.
+- Per-staff actions remain ordered.
+- Different staff streams do not reorder within a staff member.
+- Queue items are removed only after a durable local receipt.
+
+### Offline conflict and security tests
+
+- Another kiosk action, manager correction, changed revision, removed staff, revoked device, expired authorisation, bad clock, duplicate UUID, changed payload, and older unresolved shift all return explicit outcomes.
+- Conflict evidence is retained and excluded from payroll.
+- Three offline PIN failures lead to local lockout before another comparison.
+- Production PIN hashes are never returned or stored.
+- Changed device identifier or invalid signature is rejected.
+- An unregistered cached kiosk cannot become offline-capable.
+- Authorised local discard requires manager evidence and preserves diagnostic output.
+- Device and server timestamps remain separately auditable.
+
 ### Payroll and compatibility tests
 
 - Pairing never crosses operational days.
@@ -572,6 +893,9 @@ Rollback:
 - Staff attendance history remains read-only.
 - Unresolved issues appear in payroll readiness and export warnings.
 - Old and new production totals are compared without rewriting history.
+- Pending offline actions do not affect payroll.
+- Accepted offline evidence affects payroll once.
+- Offline conflicts and unknown device queue state appear in payroll readiness.
 
 ### Database and security tests
 
@@ -583,6 +907,8 @@ Rollback:
 - Managers can resolve through correction functions.
 - Non-managers cannot resolve, dismiss, or enumerate manager-only issue data.
 - Function grants, revocations, and pinned search paths match the specification.
+- The offline sync database RPC is not directly executable by public browser roles.
+- The same-origin sync route validates the registered-device cookie, signature, authorisation, and payload.
 
 ### Full verification
 
@@ -596,6 +922,8 @@ npm.cmd run build
 ```
 
 Database migration replay, RPC integration tests, RLS tests, and diagnostic comparison are also required. The work must not be described as production-ready unless every applicable verification passes.
+
+Service-worker scope, cache inventory, IndexedDB recovery, offline tests with Background Sync present and absent, and tests on the real Jan Preschool device are also required before offline clocking is enabled.
 
 ## Acceptance Criteria
 
@@ -615,6 +943,14 @@ Database migration replay, RPC integration tests, RLS tests, and diagnostic comp
 - Production migration history and repository history are reconciled exactly.
 - RLS and direct-write denial are tested for each actor.
 - Lint, type checking, all automated tests, build, and database verification pass.
+- A previously authorised kiosk shell loads during an outage.
+- Secure offline PIN enrolment and verification use no production PIN hash or plaintext storage.
+- Pending actions survive reloads and restarts on tested kiosk hardware.
+- Every offline action retains one UUID across all retries.
+- Sync uses the normal state machine, locking, correction awareness, operational-day rules, and idempotency.
+- Conflicts are retained and manager-visible.
+- Local-only actions are visibly pending and excluded from payroll.
+- Offline clocking remains disabled for devices which have not passed hardware validation.
 
 ## Remaining Prerequisites and Follow-up
 
@@ -622,3 +958,5 @@ Database migration replay, RPC integration tests, RLS tests, and diagnostic comp
 - Genuine overnight shifts require a future configurable operational rollover rule.
 - Automated idempotency cleanup requires an approved maintenance scheduler or documented manual runbook.
 - Email, SMS, and push notifications remain out of scope.
+- A browser PWA cannot fully resist a physically controlled attacker with same-origin code execution. Managed-device controls remain necessary.
+- Actual Jan Preschool kiosk hardware and browser details must be recorded and tested before offline enablement.
