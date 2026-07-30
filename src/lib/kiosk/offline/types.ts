@@ -95,6 +95,38 @@ export type OfflineSyncReceipt = {
   retainedUntil: string;
 };
 
+export type OfflineSyncOutcome =
+  | "synced"
+  | "already_processed"
+  | "unauthorised"
+  | "conflicted"
+  | "retryable_failure"
+  | "permanently_invalid";
+
+export type OfflineSyncResponse = {
+  outcome: OfflineSyncOutcome;
+  receipt: OfflineSyncReceipt;
+  trustedState: TrustedAttendanceState;
+};
+
+export type OfflineSyncTrigger =
+  | "launch"
+  | "online"
+  | "visibility"
+  | "periodic"
+  | "manual"
+  | "background";
+
+export type OfflineSyncSummary = {
+  trigger: OfflineSyncTrigger;
+  attempted: number;
+  synced: number;
+  conflicted: number;
+  rejected: number;
+  retryableFailures: number;
+  leaseUnavailable: boolean;
+};
+
 export type OfflinePinVerifierEnvelope = {
   schemaVersion: 1;
   staffId: string;

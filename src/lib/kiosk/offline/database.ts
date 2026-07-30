@@ -364,6 +364,115 @@ export async function listPendingActions(
     .sort((left, right) => left.deviceSequence - right.deviceSequence);
 }
 
+async function updatePendingAction(
+  idempotencyKey: string,
+  update: (
+    action: PendingAttendanceAction,
+  ) => PendingAttendanceAction,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pendingActions, "readwrite");
+  const pendingActions = transaction.objectStore(stores.pendingActions);
+  const current = await requestResult<PendingAttendanceAction | undefined>(
+    pendingActions.get(idempotencyKey),
+  );
+  if (!current) {
+    transaction.abort();
+    await transactionDone(transaction).catch(() => undefined);
+    throw new Error("Pending attendance action does not exist");
+  }
+  pendingActions.put(update(current));
+  await transactionDone(transaction);
+}
+
+export async function markPendingActionSyncing(
+  idempotencyKey: string,
+): Promise<void> {
+  await updatePendingAction(idempotencyKey, (action) => ({
+    ...action,
+    status: "syncing",
+    lastErrorCategory: null,
+  }));
+}
+
+export async function markPendingActionRetryable(
+  idempotencyKey: string,
+  category: string,
+): Promise<void> {
+  await updatePendingAction(idempotencyKey, (action) => ({
+    ...action,
+    status: "pending",
+    retryCount: action.retryCount + 1,
+    lastErrorCategory: category,
+  }));
+}
+
+export async function resetInterruptedSyncActions(): Promise<void> {
+  const actions = await listPendingActions({ includeDefinitive: true });
+  for (const action of actions) {
+    if (action.status === "syncing") {
+      await markPendingActionRetryable(
+        action.idempotencyKey,
+        "interrupted_sync",
+      );
+    }
+  }
+}
+
+export async function acquireSyncLease(input: {
+  ownerId: string;
+  now: string;
+  leaseMilliseconds?: number;
+}): Promise<boolean> {
+  const now = new Date(input.now).getTime();
+  if (Number.isNaN(now)) {
+    throw new RangeError("Sync lease requires a valid timestamp");
+  }
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readwrite");
+  const metadata = transaction.objectStore(stores.metadata);
+  const current = await requestResult<MetadataRecord | undefined>(
+    metadata.get("syncLease"),
+  );
+  const lease = current?.value as
+    | { ownerId: string; expiresAt: string }
+    | undefined;
+  if (
+    lease &&
+    lease.ownerId !== input.ownerId &&
+    new Date(lease.expiresAt).getTime() > now
+  ) {
+    await transactionDone(transaction);
+    return false;
+  }
+
+  metadata.put({
+    key: "syncLease",
+    value: {
+      ownerId: input.ownerId,
+      expiresAt: new Date(
+        now + (input.leaseMilliseconds ?? 30_000),
+      ).toISOString(),
+    },
+  } satisfies MetadataRecord);
+  await transactionDone(transaction);
+  return true;
+}
+
+export async function releaseSyncLease(ownerId: string): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readwrite");
+  const metadata = transaction.objectStore(stores.metadata);
+  const current = await requestResult<MetadataRecord | undefined>(
+    metadata.get("syncLease"),
+  );
+  const lease = current?.value as { ownerId: string } | undefined;
+  if (lease?.ownerId === ownerId) {
+    metadata.delete("syncLease");
+  }
+  await transactionDone(transaction);
+}
+
 export async function persistSyncReceipt(
   input: SyncReceiptTransaction,
 ): Promise<void> {
