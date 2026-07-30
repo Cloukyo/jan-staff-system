@@ -1,5 +1,7 @@
-import { addDays, differenceInMinutes, format, parseISO } from "date-fns";
-import { isoDateInLondon } from "@/lib/dates/format";
+import { addDays, format, parseISO } from "date-fns";
+import { attendanceOperationalDate } from "@/lib/attendance/state-machine";
+import { pairAttendanceByOperationalDay } from "@/lib/attendance/pairing";
+import type { EffectiveAttendanceEvent } from "@/lib/attendance/types";
 
 export type WeekStartDay = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -12,6 +14,7 @@ export type AttendanceHoursEvent = {
 export type AttendanceHoursSummary = {
   completedMinutes: number;
   hasOpenShift: boolean;
+  hasUnresolvedException: boolean;
 };
 
 function isoDayOfWeek(date: Date): WeekStartDay {
@@ -44,24 +47,36 @@ export function summariseCompletedClockMinutes(
   rangeStart: string,
   rangeEnd: string,
 ): AttendanceHoursSummary {
-  const ordered = events
+  const effectiveEvents: EffectiveAttendanceEvent[] = events
     .filter((event) => event.staffId === staffId)
     .filter((event) => {
-      const eventDate = isoDateInLondon(new Date(event.eventTimestamp));
+      const eventDate = attendanceOperationalDate(event.eventTimestamp);
       return eventDate >= rangeStart && eventDate <= rangeEnd;
     })
-    .sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
+    .map((event, index) => {
+      const eventId = `hours:${event.staffId}:${event.eventTimestamp}:${event.eventType}:${index}`;
+      return {
+        eventId,
+        eventOrderKey: `${event.eventTimestamp}:${eventId}`,
+        originalEventId: eventId,
+        correctionId: null,
+        staffId: event.staffId,
+        eventType: event.eventType,
+        eventTimestamp: event.eventTimestamp,
+        source: "kiosk",
+      };
+    });
+  const days = pairAttendanceByOperationalDay(effectiveEvents);
+  const completedMinutes = days.reduce(
+    (total, day) => total + day.completedMinutes,
+    0,
+  );
+  const hasOpenShift = days.some((day) =>
+    day.anomalies.includes("missing_clock_out"),
+  );
+  const hasUnresolvedException = days.some(
+    (day) => day.anomalies.length > 0,
+  );
 
-  let completedMinutes = 0;
-  let open: Date | null = null;
-  for (const event of ordered) {
-    if (event.eventType === "clock_in") {
-      open = new Date(event.eventTimestamp);
-    } else if (open) {
-      completedMinutes += Math.max(0, differenceInMinutes(new Date(event.eventTimestamp), open));
-      open = null;
-    }
-  }
-
-  return { completedMinutes, hasOpenShift: open !== null };
+  return { completedMinutes, hasOpenShift, hasUnresolvedException };
 }

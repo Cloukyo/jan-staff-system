@@ -244,5 +244,17 @@ describe("kiosk weekly hours", () => {
 
     expect(summary.completedMinutes).toBe(240);
     expect(summary.hasOpenShift).toBe(true);
+    expect(summary.hasUnresolvedException).toBe(true);
+  });
+
+  it("does not count a shift whose clock-out falls on the next operational day", () => {
+    const summary = summariseCompletedClockMinutes([
+      { staffId: "staff-a", eventType: "clock_in", eventTimestamp: "2026-07-06T23:30:00+01:00" },
+      { staffId: "staff-a", eventType: "clock_out", eventTimestamp: "2026-07-07T00:30:00+01:00" },
+    ], "staff-a", "2026-07-06", "2026-07-12");
+
+    expect(summary.completedMinutes).toBe(0);
+    expect(summary.hasOpenShift).toBe(true);
+    expect(summary.hasUnresolvedException).toBe(true);
   });
 });
