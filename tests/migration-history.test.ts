@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 
 const expected = [
   [
+    "20260716144911_fix_manager_hours_preview_ambiguity.sql",
+    2501,
+    "2e528b7a5e280a881ff022d287fac3c3848200b18b32c43113698a7bd42696e7",
+  ],
+  [
     "20260723162038_staff_lifecycle_management.sql",
     2017,
     "f507abecf62cdc33fb2efceea1a886dfbfb7945d5e4e8fdb7a1c16468ebe270e",

@@ -50,6 +50,10 @@ textarea {
 /* Legacy Safari fallback: keep the manager shell usable if Tailwind utility layers are ignored. */
 .app-shell {
   min-height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
   background:
     radial-gradient(circle at 18% 0%, rgba(75, 42, 122, 0.08), transparent 30%),
     linear-gradient(180deg, #fbfcff 0%, var(--background) 38%, #f2f4f8 100%);
@@ -256,6 +260,50 @@ textarea {
 .app-shell__content {
   max-width: 1280px;
   margin: 0 auto;
+}
+
+.manager-page-nav {
+  position: sticky;
+  top: 73px;
+  z-index: 20;
+  margin-bottom: 24px;
+  border-top: 1px solid #d0d5dd;
+  border-bottom: 1px solid #d0d5dd;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.manager-page-nav__mobile {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.manager-page-nav__mobile label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.manager-page-nav__mobile select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #b8bec8;
+  border-radius: 6px;
+  padding: 8px 36px 8px 12px;
+  color: var(--foreground);
+  background: #fff;
+  font-weight: 700;
+}
+
+.manager-page-nav__mobile select:focus-visible,
+.manager-page-nav__links a:focus-visible {
+  outline: 2px solid var(--brand-purple);
+  outline-offset: 2px;
+}
+
+.manager-page-nav__links {
+  display: none;
 }
 
 .ui-button--primary,
@@ -526,7 +574,48 @@ tbody tr:hover {
   }
 }
 
+@media (min-width: 768px) {
+  .manager-page-nav__mobile {
+    display: none;
+  }
+
+  .manager-page-nav__links {
+    display: flex;
+    max-width: 100%;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 6px 0;
+  }
+
+  .manager-page-nav__links a {
+    display: inline-flex;
+    min-height: 44px;
+    flex: 0 0 auto;
+    align-items: center;
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: #475467;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .manager-page-nav__links a:hover {
+    background: #f2f4f7;
+  }
+
+  .manager-page-nav__links a[aria-current="page"] {
+    color: #fff;
+    background: var(--brand-purple);
+  }
+}
+
 @media (min-width: 1024px) {
+  .manager-page-nav {
+    top: 0;
+  }
+
   .app-shell__sidebar {
     position: fixed;
     inset: 0 auto 0 0;

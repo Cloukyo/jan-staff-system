@@ -1,7 +1,12 @@
 import Link from "next/link";
+import type { ProductionAccountRow } from "@/lib/accounts/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
+import { StaffRecordClocking } from "@/components/staff/staff-record-clocking";
+import { StaffRecordLogin } from "@/components/staff/staff-record-login";
+import { StaffRecordNav } from "@/components/staff/staff-record-nav";
+import { StaffRecordPay } from "@/components/staff/staff-record-pay";
 import {
   archiveComplianceRecordAction,
   saveCertificateAction,
@@ -13,7 +18,11 @@ import {
 } from "@/lib/compliance/actions";
 import type { StaffComplianceRecord } from "@/lib/compliance/repository";
 import { centralRecordCompletion, certificateStatus, certificateStatusLabel, certificateStatusTone, maskDbsNumber } from "@/lib/calculations/compliance";
-import { formatDateUk } from "@/lib/dates/format";
+import { formatDateUk, isoDateInLondon } from "@/lib/dates/format";
+import type { ManagerKioskRow } from "@/lib/kiosk/server";
+import { isPayDetailsReady } from "@/lib/payroll/calculations";
+import type { ProductionStaffRow } from "@/lib/payroll/types";
+import type { StaffRecordSection } from "@/lib/staff/record-sections";
 
 const checklist = [
   ["appointment_induction", "Appointment and induction"],
@@ -30,50 +39,131 @@ const checklist = [
   ["employee_information_form", "Employee information form"],
 ];
 
-export function ProductionComplianceDetail({ record }: { record: StaffComplianceRecord }) {
-  const { staff, centralRecord, account } = record;
+export function ProductionComplianceDetail({
+  record,
+  section,
+  kioskPerson,
+  account,
+  adminConfigured,
+  payPerson,
+}: {
+  record: StaffComplianceRecord;
+  section: StaffRecordSection;
+  kioskPerson: ManagerKioskRow | null;
+  account: ProductionAccountRow | null;
+  adminConfigured: boolean;
+  payPerson: ProductionStaffRow | null;
+}) {
+  const { staff, centralRecord } = record;
   const central = centralRecordCompletion(centralRecord, record.centralItems);
-  const loginState = !staff.email && !account?.email ? "No login" : !(staff.authUserId || account?.authUserId) ? "Email present, no Auth link" : account?.active === false ? "Disabled login" : "Active login";
+  const loginReady = (!staff.email && !record.account?.email)
+    || Boolean(record.account?.active && record.account.authUserId);
+  const employmentReady = Boolean(
+    staff.fullName.trim()
+    && staff.displayName.trim()
+    && staff.employmentRole.trim()
+    && staff.appointmentDate,
+  );
+  const trainingReady = Boolean(
+    record.qualifications.length
+    && record.certificates.length
+    && record.references.length
+    && central.completed === central.total,
+  );
+  const payReady = isPayDetailsReady(
+    payPerson?.payArrangements ?? [],
+    isoDateInLondon(),
+  );
   return (
     <AppShell>
       <div className="mb-6">
-        <Link className="text-sm font-bold text-purple-700" href="/compliance">Back to compliance</Link>
-        <p className="mt-3 text-sm font-bold text-green-700">Production data · Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">{staff.fullName}</h1>
-        <p className="mt-2 text-sm text-slate-600">Canonical staff ID: {staff.id}</p>
+        <Link className="text-sm font-bold text-purple-700" href="/staff">Back to staff records</Link>
+        <h1 className="mt-3 text-3xl font-black text-purple-950">{staff.fullName}</h1>
+        <p className="mt-2 text-sm text-slate-600">{staff.employmentRole}</p>
       </div>
 
+      <StaffRecordNav staffId={staff.id} section={section} />
+
       <div className="grid gap-4">
+        {section === "overview" && (
+          <StaffRecordOverview
+            items={[
+              ["Employment details complete", employmentReady],
+              ["Can use Staff Clock", Boolean(kioskPerson?.kioskEnabled)],
+              ["PIN ready", Boolean(kioskPerson?.pinReady)],
+              ["Staff login enabled or not required", loginReady],
+              ["Required training and checks", trainingReady],
+              ["Pay details present", payReady],
+            ]}
+          />
+        )}
+
+        {section === "employment" && (
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">Basic staff information</h2>
+          <h2 className="text-xl font-black text-purple-950">Employment</h2>
           <ProductionActionForm action={updateStaffProfileAction}>
             <input type="hidden" name="staffId" value={staff.id} />
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <Field label="Full name"><input className={inputClassName()} name="fullName" defaultValue={staff.fullName} required /></Field>
-              <Field label="Preferred name"><input className={inputClassName()} name="displayName" defaultValue={staff.displayName} /></Field>
+              <Field label="Full legal name"><input className={inputClassName()} name="fullName" defaultValue={staff.fullName} required /></Field>
+              <Field label="Name shown on Staff Clock"><input className={inputClassName()} name="displayName" defaultValue={staff.displayName} /></Field>
               <Field label="Role"><input className={inputClassName()} name="employmentRole" defaultValue={staff.employmentRole} required /></Field>
               <Field label="Main qualification"><input className={inputClassName()} name="mainQualificationLevel" defaultValue={staff.mainQualificationLevel ?? ""} /></Field>
               <Field label="Start date"><input className={inputClassName()} name="appointmentDate" type="date" defaultValue={staff.appointmentDate ?? ""} /></Field>
               <Field label="Email"><input className={inputClassName()} name="email" type="email" defaultValue={staff.email ?? account?.email ?? ""} /></Field>
             </div>
             <div className="mt-4 flex flex-wrap gap-4">
-              <label className="font-bold text-purple-950"><input name="isApprentice" type="checkbox" defaultChecked={staff.isApprentice} /> Apprentice</label>
-              <label className="font-bold text-purple-950"><input name="isCoverStaff" type="checkbox" defaultChecked={staff.isCoverStaff} /> Cover staff</label>
-              <label className="font-bold text-purple-950"><input name="active" type="checkbox" defaultChecked={staff.active} /> Active</label>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="isApprentice" type="checkbox" defaultChecked={staff.isApprentice} /> Apprentice</label>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="isCoverStaff" type="checkbox" defaultChecked={staff.isCoverStaff} /> Cover staff</label>
             </div>
             <Field label="Notes"><textarea className={inputClassName("mt-3 min-h-24 w-full")} name="notes" defaultValue={staff.notes ?? ""} /></Field>
           </ProductionActionForm>
         </Panel>
+        )}
 
-        <Panel>
-          <h2 className="text-xl font-black text-purple-950">Login/account status</h2>
-          <p className="mt-2 text-sm text-slate-600">{loginState}</p>
-          <p className="mt-1 text-sm text-slate-500">Auth user: {account?.authUserId ?? staff.authUserId ?? "Not linked"}</p>
-          <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/accounts">Manage account access</Link>
-        </Panel>
+        {section === "clocking-in" && (
+          <StaffRecordClocking
+            person={kioskPerson}
+          />
+        )}
 
+        {section === "staff-login" && (
+          <StaffRecordLogin
+            account={account}
+            staffId={staff.id}
+            fullName={staff.fullName}
+            email={staff.email ?? record.account?.email ?? null}
+            adminConfigured={adminConfigured}
+          />
+        )}
+
+        {section === "pay-details" && (
+          payPerson
+            ? <StaffRecordPay person={payPerson} />
+            : <Panel><EmptyState title="Pay details unavailable" body="The staff pay record could not be loaded." /></Panel>
+        )}
+
+        {section === "training-checks" && (
+          <>
+            <nav aria-label="Training and checks sections" className="flex flex-wrap gap-2">
+              {[
+                ["qualifications", "Qualifications"],
+                ["training-certificates", "Training and certificates"],
+                ["dbs-suitability", "DBS and suitability"],
+                ["central-record", "Central-record checklist"],
+                ["references", "References"],
+                ["import-warnings", "Import warnings"],
+              ].map(([id, label]) => (
+                <a
+                  key={id}
+                  className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200"
+                  href={`#${id}`}
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">Qualifications</h2>
+          <h2 id="qualifications" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Qualifications</h2>
           <div className="mt-4 grid gap-4">
             {record.qualifications.map((item) => (
               <div key={item.id} className="rounded-xl border border-purple-100 p-4">
@@ -96,7 +186,7 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
         </Panel>
 
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">Training and certificates</h2>
+          <h2 id="training-certificates" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Training and certificates</h2>
           <div className="mt-4 grid gap-4">
             {record.certificates.map((item) => {
               const status = certificateStatus(item);
@@ -123,14 +213,14 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
         </Panel>
 
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">DBS and suitability</h2>
+          <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
           <ProductionActionForm action={saveCentralRecordAction}>
             <input type="hidden" name="staffId" value={staff.id} />
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <label className="font-bold text-purple-950"><input name="dbsRecorded" type="checkbox" defaultChecked={centralRecord?.dbsRecorded} /> DBS recorded</label>
-              <label className="font-bold text-purple-950"><input name="dbsUpdateService" type="checkbox" defaultChecked={centralRecord?.dbsUpdateService} /> Update service</label>
-              <label className="font-bold text-purple-950"><input name="dbsNewCheckRequired" type="checkbox" defaultChecked={centralRecord?.dbsNewCheckRequired} /> New DBS required</label>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsRecorded" type="checkbox" defaultChecked={centralRecord?.dbsRecorded} /> DBS recorded</label>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsUpdateService" type="checkbox" defaultChecked={centralRecord?.dbsUpdateService} /> Update service</label>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsNewCheckRequired" type="checkbox" defaultChecked={centralRecord?.dbsNewCheckRequired} /> New DBS required</label>
               <Field label="DBS number (last four only)"><input className={inputClassName()} name="dbsNumberLast4" defaultValue={centralRecord?.dbsNumberLast4 ?? ""} maxLength={4} placeholder={maskDbsNumber(centralRecord?.dbsNumberLast4)} /></Field>
               <Field label="Issue date"><input className={inputClassName()} name="dbsIssueDate" type="date" defaultValue={centralRecord?.dbsIssueDate ?? ""} /></Field>
               <Field label="Last checked"><input className={inputClassName()} name="dbsLastCheckedAt" type="date" defaultValue={centralRecord?.dbsLastCheckedAt ?? ""} /></Field>
@@ -141,7 +231,7 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
         </Panel>
 
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">Central-record checklist</h2>
+          <h2 id="central-record" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Central-record checklist</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {checklist.map(([key, label]) => {
               const item = record.centralItems.find((entry) => entry.itemKey === key);
@@ -159,7 +249,7 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
         </Panel>
 
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">References</h2>
+          <h2 id="references" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">References</h2>
           <div className="mt-4 grid gap-4">
             {record.references.map((item) => <div key={item.id} className="rounded-xl border border-purple-100 p-4"><ProductionActionForm action={saveReferenceAction}><input type="hidden" name="staffId" value={staff.id} /><input type="hidden" name="referenceId" value={item.id} /><ReferenceFields item={item} /></ProductionActionForm><ArchiveForm table="staff_reference_checks" id={item.id} staffId={staff.id} /></div>)}
             <div className="rounded-xl bg-purple-50 p-4"><h3 className="font-black text-purple-950">Add reference</h3><ProductionActionForm action={saveReferenceAction}><input type="hidden" name="staffId" value={staff.id} /><ReferenceFields /></ProductionActionForm></div>
@@ -167,12 +257,42 @@ export function ProductionComplianceDetail({ record }: { record: StaffCompliance
         </Panel>
 
         <Panel>
-          <h2 className="text-xl font-black text-purple-950">Import warnings and audit</h2>
+          <h2 id="import-warnings" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Import warnings</h2>
           {record.importWarnings.length ? record.importWarnings.map((warning) => <div key={warning.id} className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><strong>{warning.status}</strong>{warning.warnings.map((text) => <p key={text}>{text}</p>)}</div>) : <EmptyState title="No import warnings" body="No import-review warnings are linked to this profile." />}
           <p className="mt-4 text-sm text-slate-600">Created {formatDateUk(staff.createdAt)}. Updated {formatDateUk(staff.updatedAt)}.</p>
         </Panel>
+          </>
+        )}
       </div>
     </AppShell>
+  );
+}
+
+function StaffRecordOverview({
+  items,
+}: {
+  items: Array<[label: string, complete: boolean]>;
+}) {
+  return (
+    <Panel>
+      <h2 className="text-xl font-black text-purple-950">Setup checklist</h2>
+      <p className="mt-2 text-sm text-slate-600">
+        Open a section above to complete anything that still needs attention.
+      </p>
+      <ul className="mt-4 grid gap-3 md:grid-cols-2">
+        {items.map(([label, complete]) => (
+          <li
+            key={label}
+            className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-purple-100 px-4 py-3"
+          >
+            <span className="font-bold text-purple-950">{label}</span>
+            <StatusPill tone={complete ? "green" : "amber"}>
+              {complete ? "Complete" : "Needs setup"}
+            </StatusPill>
+          </li>
+        ))}
+      </ul>
+    </Panel>
   );
 }
 

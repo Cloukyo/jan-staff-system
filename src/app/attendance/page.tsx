@@ -1,22 +1,143 @@
+import { randomUUID } from "node:crypto";
 import { AttendanceScreen } from "@/components/attendance/attendance-screen";
 import { AttendanceReview } from "@/components/attendance/attendance-review";
 import { AttendanceExceptions } from "@/components/attendance/attendance-exceptions";
-import { ProductionAttendance } from "@/components/attendance/production-attendance";
+import { AttendancePageNav } from "@/components/attendance/attendance-page-nav";
+import {
+  AttendanceCorrectionForm,
+  AttendanceHistory,
+  AttendanceToday,
+} from "@/components/attendance/production-attendance";
+import { StaffHoursList } from "@/components/attendance/staff-hours-list";
+import { StaffHoursNotFound, StaffHoursTimeline, YesterdayAttendance } from "@/components/attendance/staff-hours-timeline";
+import { ManagerHelpLink } from "@/components/help/manager-help-link";
 import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
+import { ClockPlus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
+import { parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
+import { saveBoundClockEventCorrectionAction } from "@/lib/attendance/correction-actions";
 import { requireAccount } from "@/lib/auth/permissions";
+import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
-import { loadAttendanceReviewDay, loadManagerHoursPreview } from "@/lib/attendance/review-server";
-import { loadAttendanceExceptions, normaliseAttendanceExceptionFilters } from "@/lib/attendance/exceptions-server";
+import { loadAttendanceReviewDay } from "@/lib/attendance/review-server";
+import {
+  loadAttendanceExceptions,
+  normaliseAttendanceExceptionFilters,
+} from "@/lib/attendance/exceptions-server";
+import {
+  loadAttendanceDay,
+  loadMissingEventPage,
+  loadStaffHoursList,
+  loadStaffHoursWeek,
+  previousLondonDate,
+} from "@/lib/attendance/staff-hours";
 
 export const dynamic = "force-dynamic";
 
-export default async function AttendancePage({ searchParams }: { searchParams: Promise<{ date?: string; hoursFrom?: string; hoursTo?: string; from?: string; to?: string; status?: string; type?: string; staffId?: string }> }) {
+export default async function AttendancePage({ searchParams }: { searchParams: Promise<Record<string, unknown>> }) {
   if (getAppMode() === "demo") return <AttendanceScreen />;
   await requireAccount(["manager"]);
-  const params = await searchParams;
-  const filters = normaliseAttendanceExceptionFilters(params);
-  const [dataset, review, hoursPreview, issues] = await Promise.all([loadManagerAttendance(), loadAttendanceReviewDay(params.date), loadManagerHoursPreview(params.hoursFrom, params.hoursTo), loadAttendanceExceptions(filters)]);
-  return <AppShell><div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-bold text-green-700">Production data | Supabase</p><h1 className="mt-1 text-3xl font-black text-purple-950">Attendance</h1><p className="mt-2 text-slate-600">Review each day, resolve exceptions and preserve original clock events.</p></div><Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/settings/kiosk">Open Kiosk Setup</Link></div><div className="grid gap-5"><AttendanceExceptions issues={issues} filters={filters} staff={dataset.staff} /><AttendanceReview data={review} /><ProductionAttendance {...dataset} hoursPreview={hoursPreview} /></div></AppShell>;
+  const rawParams = await searchParams;
+  const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(rawParams);
+  const exceptionFilters = normaliseAttendanceExceptionFilters(Object.fromEntries(
+    Object.entries(rawParams).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value : undefined,
+    ]),
+  ));
+  const yesterdayDate = previousLondonDate();
+  const dataset = view === "today" || view === "history" || view === "needs-attention"
+    ? await loadManagerAttendance()
+    : null;
+  const review = view === "needs-attention"
+    ? await loadAttendanceReviewDay(date)
+    : view === "today"
+      ? await loadAttendanceReviewDay(isoDateInLondon())
+      : null;
+  const attendanceExceptions = view === "needs-attention"
+    ? await loadAttendanceExceptions(exceptionFilters)
+    : null;
+  const yesterday = view === "yesterday" ? await loadAttendanceDay(yesterdayDate) : null;
+  const staffHoursList = view === "hours" && !staffIdProvided ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
+  const staffHoursWeek = view === "hours" && staffIdProvided && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
+  const missingEvent = view === "add-event" ? await loadMissingEventPage(staffId, date) : null;
+  const missingEventCorrectionId = randomUUID();
+  const missingEventReturnTo = missingEvent?.day
+    ? `/attendance?${new URLSearchParams({
+        view: "add-event",
+        staffId: missingEvent.day.staffId,
+        date: missingEvent.date,
+      }).toString()}`
+    : "/attendance?view=add-event";
+  const missingEventAction = missingEvent?.day
+    ? saveBoundClockEventCorrectionAction.bind(null, {
+        staffId: missingEvent.day.staffId,
+        attendanceDate: missingEvent.date,
+        correctionId: missingEventCorrectionId,
+        returnTo: missingEventReturnTo,
+        eventRevision: missingEvent.day.eventRevision,
+      })
+    : null;
+  return (
+    <AppShell>
+      <div className="mb-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-purple-950">Clock-ins &amp; hours</h1>
+            <p className="mt-2 text-slate-600">Fix missing clock events, review exceptions and check staff hours.</p>
+          </div>
+          <Link className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/settings/kiosk">
+            Clocking-in devices
+          </Link>
+        </div>
+        <div className="mt-5 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+          <Link
+            href="/attendance?view=add-event"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-purple-700 px-5 text-sm font-bold text-white hover:bg-purple-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700 sm:w-auto"
+          >
+            <ClockPlus aria-hidden className="h-5 w-5" />
+            Add a missing clock-in or clock-out
+          </Link>
+          <ManagerHelpLink taskId="add-missing-clock-event" />
+        </div>
+      </div>
+
+      <AttendancePageNav
+        activeView={view}
+        date={date}
+        day={day}
+        staffId={staffId}
+        hoursFrom={hoursFrom}
+        hoursTo={hoursTo}
+      />
+
+      <div className="mt-5">
+        {view === "needs-attention" && attendanceExceptions && dataset ? (
+          <div className="grid gap-5">
+            <AttendanceExceptions
+              issues={attendanceExceptions}
+              filters={exceptionFilters}
+              staff={dataset.staff}
+            />
+            {review ? <AttendanceReview data={review} /> : null}
+          </div>
+        ) : null}
+        {view === "today" && dataset && review ? <AttendanceToday staff={dataset.staff} rows={review.rows} /> : null}
+        {view === "yesterday" && yesterday ? <YesterdayAttendance data={yesterday} /> : null}
+        {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}
+        {view === "hours" && staffHoursWeek ? <StaffHoursTimeline data={staffHoursWeek} selectedDay={day} /> : null}
+        {view === "hours" && staffIdProvided && !staffHoursWeek ? <StaffHoursNotFound /> : null}
+        {view === "add-event" && missingEvent ? (
+          <AttendanceCorrectionForm
+            data={missingEvent}
+            action={missingEventAction}
+            correctionId={missingEventCorrectionId}
+            returnTo={missingEventReturnTo}
+          />
+        ) : null}
+        {view === "history" && dataset ? <AttendanceHistory staff={dataset.staff} events={dataset.events} /> : null}
+      </div>
+    </AppShell>
+  );
 }

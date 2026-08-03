@@ -39,6 +39,7 @@ describe("production kiosk migration safeguards", () => {
   const noLockoutMigration = readFileSync(resolve("supabase/migrations/20260618232128_remove_kiosk_pin_lockout.sql"), "utf8");
   const pgcryptoFix = readFileSync(resolve("supabase/migrations/202606110003_kiosk_pgcrypto_search_path.sql"), "utf8");
   const columnSecurity = readFileSync(resolve("supabase/migrations/202606110004_kiosk_pin_hash_column_security.sql"), "utf8");
+  const correctionMigration = readFileSync(resolve("supabase/migrations/20260728230702_clock_event_corrections.sql"), "utf8");
 
   it("keeps PIN hashes private and verifies them inside security-definer functions", () => {
     expect(migration).toContain("pin_hash text");
@@ -76,6 +77,16 @@ describe("production kiosk migration safeguards", () => {
     expect(migration).toContain("event_source = 'manager'");
     expect(migration).toContain("manager_correction = true");
     expect(migration).not.toMatch(/create policy [\\s\\S]* clock_events for update/i);
+  });
+
+  it("resolves bounded effective status inside public kiosk RPCs", () => {
+    expect(correctionMigration).toContain("get_latest_effective_clock_event");
+    expect(correctionMigration).toMatch(/get_kiosk_roster[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/verify_kiosk_pin[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/record_kiosk_clock_event[\s\S]*get_latest_effective_clock_event/i);
+    expect(correctionMigration).toMatch(/record_kiosk_clock_event[\s\S]*lock_attendance_staff_writes/i);
+    expect(correctionMigration).toContain("grant execute on function public.get_device_kiosk_roster(text) to anon, authenticated");
+    expect(correctionMigration).not.toMatch(/grant execute on function public\.get_kiosk_roster\(\) to anon/i);
   });
 });
 
@@ -127,6 +138,11 @@ describe("device-specific kiosk access", () => {
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*hourly_rate/i);
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*annual_salary/i);
     expect(migration).not.toMatch(/get_device_kiosk_roster[\s\S]*dbs_/i);
+  });
+
+  it("uses the bounded manager effective-status RPC instead of a historic scan", () => {
+    expect(kioskServer).toContain('rpc("get_manager_kiosk_statuses"');
+    expect(kioskServer).not.toContain('range_start: "1970-01-01"');
   });
 });
 
@@ -201,12 +217,40 @@ describe("kiosk PIN safety", () => {
   it("keeps setup controls out of attendance", () => {
     const attendance = readFileSync(resolve("src/components/attendance/production-attendance.tsx"), "utf8");
     const setup = readFileSync(resolve("src/app/settings/kiosk/page.tsx"), "utf8");
+    const devices = readFileSync(resolve("src/components/kiosk/device-management.tsx"), "utf8");
     expect(attendance).not.toContain("setKioskPinAction");
     expect(attendance).not.toContain("saveKioskSettingsAction");
-    expect(setup).toContain("StaffKioskManagement");
-    expect(setup).toContain("Kiosk Setup");
+    expect(setup).not.toContain("StaffKioskManagement");
+    expect(setup).not.toContain("loadManagerAttendance");
+    expect(setup).toContain("Clocking-in devices");
     expect(setup).toContain('href="/clock"');
     expect(setup).toContain("Open Staff Clock");
+    expect(devices).toContain("Register this browser");
+    expect(devices).toContain("Registered devices");
+    expect(devices).toContain("Revoke device");
+    expect(devices).toContain("Refresh Staff Clock");
+  });
+
+  it("refreshes Staff Clock consumers without changing database records", () => {
+    const actions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+    const start = actions.indexOf("export async function refreshStaffClockAction");
+    const refresh = actions.slice(start, actions.indexOf("\n}", start) + 2);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(refresh).toContain('requireAccount(["manager"])');
+    const revalidatedPaths = Array.from(
+      refresh.matchAll(/revalidatePath\("([^"]+)"\)/g),
+      ([, path]) => path,
+    );
+    expect(revalidatedPaths).toEqual([
+      "/clock",
+      "/settings/kiosk",
+      "/attendance",
+      "/staff",
+    ]);
+    expect(refresh).toContain('code: "refreshed"');
+    expect(refresh).toContain('message: "Staff Clock information refreshed."');
+    expect(refresh).not.toMatch(/supabase|insert|update|delete|upsert|rpc|clock_events/i);
   });
 
   it("uses clear Staff Clock terminology", () => {
@@ -215,6 +259,32 @@ describe("kiosk PIN safety", () => {
     expect(clock).not.toContain("Manager sign in");
     expect(clock).toContain("Staff Clock setup required");
     expect(kiosk).toContain(">Staff Clock<");
+  });
+
+  it("reuses one-person clocking controls without exposing pay data", () => {
+    const clocking = readFileSync(resolve("src/components/staff/staff-record-clocking.tsx"), "utf8");
+    const devices = readFileSync(resolve("src/components/kiosk/device-management.tsx"), "utf8");
+    const manager = readFileSync(resolve("src/components/kiosk/staff-kiosk-management.tsx"), "utf8");
+    expect(devices).toContain("Refresh Staff Clock");
+    expect(clocking).toContain("<StaffKioskControl");
+    expect(clocking).not.toMatch(/hourlyRate|annualSalary|monthlySalary/);
+    expect(manager).toContain("export function StaffKioskControl");
+    expect(manager).toContain("Every temporary PIN must be replaced");
+    const route = readFileSync(resolve("src/app/compliance/staff/[staffId]/page.tsx"), "utf8");
+    expect(clocking).toContain("<RefreshStaffClockControl");
+    expect(devices).toContain("refreshStaffClockAction");
+    expect(route).not.toContain("async function refreshStaffClock");
+    expect(route).not.toContain('from "next/cache"');
+  });
+
+  it("keeps account identifiers under advanced details while retaining audited actions", () => {
+    const login = readFileSync(resolve("src/components/staff/staff-record-login.tsx"), "utf8");
+    const accounts = readFileSync(resolve("src/components/accounts/production-accounts.tsx"), "utf8");
+    expect(login).toContain("<StaffAccountControl");
+    expect(accounts).toContain("export function StaffAccountControl");
+    expect(accounts).toContain(">Advanced details</summary>");
+    expect(accounts).toContain("Recent access audit");
+    expect(accounts).not.toContain("Existing Auth user UUID");
   });
 });
 

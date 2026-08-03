@@ -22,7 +22,7 @@ export function StaffKioskManagement({ staff }: { staff: ManagerKioskRow[] }) {
   );
 }
 
-function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
+export function StaffKioskControl({ person }: { person: ManagerKioskRow }) {
   const [settingsState, settingsAction] = useActionState(saveKioskSettingsAction, initial);
   const [pinState, pinAction] = useActionState(setKioskPinAction, initial);
   return (

@@ -1,5 +1,6 @@
 import { differenceInCalendarDays, isValid, parseISO } from "date-fns";
 import type { CertificateStatus, ComplianceIndicator, StaffCertificate, StaffCentralRecord, StaffProfile } from "@/types";
+import type { ComplianceDataset } from "@/lib/compliance/repository";
 
 export function certificateStatus(certificate: Pick<StaffCertificate, "expiryDate" | "completionDate" | "evidenceReference" | "permanent">, today = new Date()): CertificateStatus {
   if (!certificate.evidenceReference && !certificate.completionDate) return "awaiting_evidence";
@@ -118,6 +119,47 @@ export function complianceDashboardCounts(
     ).percent < 100).length,
     unverifiedEvidence: activeCertificates.filter((certificate) => certificate.evidenceReference && !certificate.verifiedAt).length,
   };
+}
+
+export function staffIdsNeedingComplianceChecks(
+  dataset: ComplianceDataset,
+  today = new Date(),
+): Set<string> {
+  const result = new Set<string>();
+  for (const person of dataset.staff.filter((item) => item.active)) {
+    const certificates = dataset.certificates.filter(
+      (item) => item.staffId === person.id && !item.archivedAt,
+    );
+    const firstAid = findCertificate(certificates, person.id, ["first aid"]);
+    const safeguarding = findCertificate(certificates, person.id, ["safeguarding"]);
+    const hasDateWarning = certificates.some((item) => {
+      const status = certificateStatus(item, today);
+      return status === "expired" || status.startsWith("expiring");
+    });
+    const hasUnverifiedEvidence = certificates.some(
+      (item) => Boolean(item.evidenceReference) && !item.verifiedAt,
+    ) || dataset.qualifications.some(
+      (item) =>
+        item.staffId === person.id
+        && !item.archivedAt
+        && Boolean(item.evidenceReference)
+        && !item.verifiedAt,
+    );
+    const central = centralRecordCompletion(
+      dataset.centralRecords.find((item) => item.staffId === person.id),
+      dataset.centralItems.filter((item) => item.staffId === person.id),
+    );
+    if (
+      !firstAid
+      || !safeguarding
+      || hasDateWarning
+      || hasUnverifiedEvidence
+      || central.percent < 100
+    ) {
+      result.add(person.id);
+    }
+  }
+  return result;
 }
 
 export function parseUkDateForImport(value: string): { isoDate: string | null; warning: string | null } {

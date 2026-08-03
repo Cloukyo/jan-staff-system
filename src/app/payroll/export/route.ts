@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAccount } from "@/lib/auth/permissions";
+import { validateAttendanceDateRange } from "@/lib/attendance/date-range";
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
@@ -12,7 +13,7 @@ import {
 import {
   loadPayrollAttendanceReviews,
   loadPayrollRotaShifts,
-  loadProductionClockEvents,
+  loadProductionAttendanceData,
   loadProductionStaffRows,
 } from "@/lib/payroll/server";
 import { loadOfflinePayrollReadiness } from "@/lib/payroll/offline-readiness-server";
@@ -22,19 +23,25 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   await requireAccount(["manager"]);
   const params = new URL(request.url).searchParams;
-  const periodStart = params.get("from") ?? "";
-  const periodEnd = params.get("to") ?? "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd) || periodStart > periodEnd) {
-    return NextResponse.json({ error: "Choose a valid payroll period." }, { status: 400 });
+  const validation = validateAttendanceDateRange(
+    params.get("from") ?? "",
+    params.get("to") ?? "",
+  );
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: "Choose a valid payroll period of up to 366 days." },
+      { status: 400 },
+    );
   }
+  const { from: periodStart, to: periodEnd } = validation.range;
   const includeInactive = params.get("inactive") === "1";
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
   const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
   const hoursMode = parsePayrollExportHoursMode(params);
-  const [staff, events, reviews, readiness, shifts, offlineReadiness] = await Promise.all([
+  const [staff, attendance, reviews, readiness, shifts, offlineReadiness] = await Promise.all([
     loadProductionStaffRows(),
-    loadProductionClockEvents(periodStart, periodEnd),
+    loadProductionAttendanceData(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
     loadPayrollRotaShifts(periodStart, periodEnd),
@@ -54,11 +61,18 @@ export async function GET(request: Request) {
   const includedStaff = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager));
   const allRows = includedStaff
-    .map((person) => createPayrollPreparationRow(person, events, periodStart, periodEnd, reviews));
+    .map((person) => createPayrollPreparationRow(
+      person,
+      attendance.audit.originalEvents,
+      attendance.effectiveEvents,
+      periodStart,
+      periodEnd,
+      reviews,
+    ));
   const allDetail = createPayrollExportDetail({
     staff: includedStaff,
     shifts,
-    events,
+    attendance,
     reviews,
     periodStart,
     periodEnd,

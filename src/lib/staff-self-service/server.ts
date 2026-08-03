@@ -1,7 +1,17 @@
 import { addDays, differenceInMinutes, isValid, parseISO } from "date-fns";
+import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
+import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
+import {
+  toAttendanceCorrection,
+  toOriginalClockEvent,
+  type ClockCorrectionResolverSourceRow,
+  type ClockEventSourceRow,
+} from "@/lib/attendance/staff-hours";
+import { analyseAttendanceDay } from "@/lib/attendance/sequence";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
+import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 
 export type StaffRotaShift = {
   id: string;
@@ -34,9 +44,18 @@ export type StaffRotaWeek = {
 
 export type StaffAttendanceEvent = {
   id: string;
+  orderKey?: string;
   eventType: "clock_in" | "clock_out";
   eventTimestamp: string;
   managerCorrection: boolean;
+};
+
+export type StaffAttendanceCorrection = {
+  id: string;
+  eventType: "clock_in" | "clock_out" | null;
+  eventTimestamp: string | null;
+  sourceLabel: "Manager correction";
+  status: "active" | "superseded";
 };
 
 export type StaffAttendanceDay = {
@@ -47,12 +66,28 @@ export type StaffAttendanceDay = {
   missingClockOut: boolean;
   hasManagerCorrection: boolean;
   events: StaffAttendanceEvent[];
+  originalEvents: StaffAttendanceEvent[];
+  corrections: StaffAttendanceCorrection[];
 };
 
 export type StaffAttendanceRange = {
   from: string;
   to: string;
   days: StaffAttendanceDay[];
+};
+
+type OwnAttendanceRecordRow = {
+  record_kind: "original" | "correction";
+  id: string;
+  event_type: "clock_in" | "clock_out" | null;
+  event_timestamp: string | null;
+  recorded_date: string;
+  event_source: "kiosk" | "manager" | "manager_correction" | null;
+  manager_correction: boolean;
+  correction_kind: "add" | "replace" | "exclude" | null;
+  original_event_id: string | null;
+  supersedes_correction_id: string | null;
+  created_at: string;
 };
 
 export function normaliseWeekStart(value?: string): string {
@@ -123,62 +158,133 @@ export async function loadStaffRotaWeek(weekValue?: string): Promise<StaffRotaWe
   };
 }
 
-export function summariseAttendanceDay(date: string, events: StaffAttendanceEvent[]): StaffAttendanceDay {
-  let openClockIn: Date | null = null;
-  let totalMinutes = 0;
-  let firstClockIn: string | null = null;
-  let finalClockOut: string | null = null;
-
-  for (const event of events) {
-    if (event.eventType === "clock_in") {
-      if (!firstClockIn) firstClockIn = event.eventTimestamp;
-      openClockIn = parseISO(event.eventTimestamp);
-    } else {
-      finalClockOut = event.eventTimestamp;
-      if (openClockIn) {
-        totalMinutes += Math.max(0, differenceInMinutes(parseISO(event.eventTimestamp), openClockIn));
-        openClockIn = null;
-      }
-    }
-  }
-
+export function summariseAttendanceDay(
+  date: string,
+  events: StaffAttendanceEvent[],
+  originalEvents: StaffAttendanceEvent[] = events,
+  corrections: StaffAttendanceCorrection[] = [],
+): StaffAttendanceDay {
+  const ordered = [...events].sort(
+    (left, right) => Date.parse(left.eventTimestamp) - Date.parse(right.eventTimestamp)
+      || (left.orderKey ?? left.id).localeCompare(right.orderKey ?? right.id)
+      || left.id.localeCompare(right.id),
+  );
+  const analysis = analyseAttendanceDay({
+    events: ordered.map((event) => ({
+      id: event.id,
+      orderKey: event.orderKey,
+      staffId: "self",
+      eventType: event.eventType,
+      eventTimestamp: event.eventTimestamp,
+      recordedDate: date,
+      source: event.managerCorrection ? "manager_correction" : "kiosk",
+      originalEventId: null,
+      correctionId: event.managerCorrection ? event.id : null,
+    })),
+  });
   return {
     date,
-    firstClockIn,
-    finalClockOut,
-    totalMinutes,
-    missingClockOut: openClockIn !== null,
-    hasManagerCorrection: events.some((event) => event.managerCorrection),
-    events,
+    firstClockIn: ordered.find((event) => event.eventType === "clock_in")?.eventTimestamp ?? null,
+    finalClockOut: ordered.filter((event) => event.eventType === "clock_out").at(-1)?.eventTimestamp ?? null,
+    totalMinutes: analysis.completedMinutes,
+    missingClockOut: analysis.hasOpenShift,
+    hasManagerCorrection: ordered.some((event) => event.managerCorrection) || corrections.length > 0,
+    events: ordered,
+    originalEvents,
+    corrections,
   };
 }
 
 export async function loadStaffAttendance(fromValue?: string, toValue?: string): Promise<StaffAttendanceRange> {
-  await requireAccount(["staff"]);
+  const account = await requireAccount(["staff"]);
   const range = normaliseDateRange(fromValue, toValue);
+  requireAttendanceDateRange(range.from, range.to);
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("get_own_effective_clock_events", {
-    range_start: range.from,
-    range_end: range.to,
-  });
-  if (error) throw new Error("Your attendance could not be loaded.");
-
-  const grouped = new Map<string, StaffAttendanceEvent[]>();
-  for (const row of data ?? []) {
-    const day = grouped.get(row.recorded_date) ?? [];
-    day.push({
-      id: row.event_id,
-      eventType: row.event_type,
-      eventTimestamp: row.event_timestamp,
-      managerCorrection: row.source === "manager_correction",
-    });
-    grouped.set(row.recorded_date, day);
+  let records: OwnAttendanceRecordRow[];
+  try {
+    records = await loadAllPostgrestPages<OwnAttendanceRecordRow>((from, to) => supabase
+      .rpc("get_own_attendance_records", {
+        range_start: range.from,
+        range_end: range.to,
+      })
+        .order("recorded_date")
+        .order("id")
+        .range(from, to));
+  } catch {
+    throw new Error("Your attendance could not be loaded.");
   }
+
+  const originalRows: ClockEventSourceRow[] = records
+    .filter((row) => row.record_kind === "original" && row.event_type && row.event_timestamp)
+    .map((row) => ({
+      id: row.id,
+      staff_id: account.staffId,
+      event_type: row.event_type!,
+      event_timestamp: row.event_timestamp!,
+      recorded_date: row.recorded_date,
+      event_source: row.event_source === "manager" ? "manager" : "kiosk",
+      manager_correction: row.manager_correction,
+      correction_reason: null,
+    }));
+  const correctionRows: ClockCorrectionResolverSourceRow[] = records
+    .filter((row) => row.record_kind === "correction" && row.correction_kind)
+    .map((row) => ({
+      id: row.id,
+      staff_id: account.staffId,
+      correction_kind: row.correction_kind!,
+      original_event_id: row.original_event_id,
+      supersedes_correction_id: row.supersedes_correction_id,
+      event_type: row.event_type,
+      event_timestamp: row.event_timestamp,
+      recorded_date: row.recorded_date,
+      created_at: row.created_at,
+    }));
+  const resolved = resolveEffectiveEvents(
+    originalRows.map(toOriginalClockEvent),
+    correctionRows.map(toAttendanceCorrection),
+  );
+  const correctionById = new Map(correctionRows.map((row) => [row.id, row]));
+  const dates = new Set([
+    ...originalRows.map((row) => row.recorded_date),
+    ...correctionRows.map((row) => row.recorded_date),
+    ...resolved.effective.map((event) => event.recordedDate),
+  ]);
 
   return {
     ...range,
-    days: [...grouped.entries()]
-      .map(([date, events]) => summariseAttendanceDay(date, events))
+    days: [...dates]
+      .map((date) => summariseAttendanceDay(
+        date,
+        resolved.effective
+          .filter((event) => event.recordedDate === date)
+          .map((event) => ({
+            id: event.id,
+            orderKey: event.orderKey,
+            eventType: event.eventType,
+            eventTimestamp: event.eventTimestamp,
+            managerCorrection: event.source !== "kiosk",
+          })),
+        originalRows
+          .filter((row) => row.recorded_date === date)
+          .map((row) => ({
+            id: row.id,
+            eventType: row.event_type,
+            eventTimestamp: row.event_timestamp,
+            managerCorrection: row.event_source === "manager" || row.manager_correction,
+          })),
+        resolved.audit.corrections
+          .filter((audit) => correctionById.get(audit.correctionId)?.recorded_date === date)
+          .map((audit) => {
+            const row = correctionById.get(audit.correctionId)!;
+            return {
+              id: row.id,
+              eventType: row.event_type,
+              eventTimestamp: row.event_timestamp,
+              sourceLabel: "Manager correction",
+              status: audit.status,
+            };
+          }),
+      ))
       .sort((a, b) => b.date.localeCompare(a.date)),
   };
 }

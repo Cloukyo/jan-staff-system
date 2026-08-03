@@ -2,6 +2,55 @@ import { addDays, format, parseISO, startOfWeek } from "date-fns";
 
 export const TIME_ZONE = "Europe/London";
 
+const londonDateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+  timeZone: TIME_ZONE,
+});
+
+function londonDateTimeParts(instant: number) {
+  return Object.fromEntries(
+    londonDateTimeFormatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
+  );
+}
+
+function londonOffsetAt(instant: number) {
+  const values = londonDateTimeParts(instant);
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  ) - instant;
+}
+
+function matchesLondonDateTime(
+  instant: number,
+  expected: {
+    year: string;
+    month: string;
+    day: string;
+    hour: string;
+    minute: string;
+    second: string;
+  },
+): boolean {
+  const actual = londonDateTimeParts(instant);
+  return actual.year === expected.year
+    && actual.month === expected.month
+    && actual.day === expected.day
+    && actual.hour === expected.hour
+    && actual.minute === expected.minute
+    && actual.second === expected.second;
+}
+
 export function isoDateInLondon(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     year: "numeric",
@@ -15,56 +64,91 @@ export function isoDateInLondon(date = new Date()): string {
 
 export function londonDateStartUtc(date: string): Date {
   const intended = Date.parse(`${date}T00:00:00.000Z`);
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    timeZone: TIME_ZONE,
-  });
-  const offsetAt = (instant: number) => {
-    const values = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
-    return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), Number(values.second)) - instant;
-  };
-  let result = intended - offsetAt(intended);
-  result = intended - offsetAt(result);
+  let result = intended - londonOffsetAt(intended);
+  result = intended - londonOffsetAt(result);
   return new Date(result);
 }
 
-export function londonLocalDateTimeToIso(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
-  if (!match) throw new RangeError("Choose a valid London date and time.");
-  const [, year, month, day, hour, minute] = match;
-  const intended = Date.UTC(
-    Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute),
-  );
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hourCycle: "h23", timeZone: TIME_ZONE,
-  });
-  const offsetAt = (instant: number) => {
-    const parts = Object.fromEntries(
-      formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
-    );
-    return Date.UTC(
-      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-      Number(parts.hour), Number(parts.minute), Number(parts.second),
-    ) - instant;
+function londonLocalDateTimeCandidates(value: string): {
+  recordedDate: string;
+  candidates: number[];
+} {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) throw new RangeError("Invalid local date and time.");
+
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const numeric = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second),
   };
-  let instant = intended - offsetAt(intended);
-  instant = intended - offsetAt(instant);
-  const localParts = Object.fromEntries(
-    formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
+  const intended = Date.UTC(
+    numeric.year,
+    numeric.month - 1,
+    numeric.day,
+    numeric.hour,
+    numeric.minute,
+    numeric.second,
   );
-  const roundTrip = `${localParts.year}-${localParts.month}-${localParts.day}T${localParts.hour}:${localParts.minute}`;
-  if (roundTrip !== value) {
-    throw new RangeError("That London date and time does not exist.");
+  const intendedDate = new Date(intended);
+  if (
+    intendedDate.getUTCFullYear() !== numeric.year
+    || intendedDate.getUTCMonth() !== numeric.month - 1
+    || intendedDate.getUTCDate() !== numeric.day
+    || intendedDate.getUTCHours() !== numeric.hour
+    || intendedDate.getUTCMinutes() !== numeric.minute
+    || intendedDate.getUTCSeconds() !== numeric.second
+  ) {
+    throw new RangeError("Invalid local date and time.");
   }
-  return new Date(instant).toISOString();
+
+  const expected = { year, month, day, hour, minute, second };
+  const sampleWindow = 36 * 60 * 60 * 1000;
+  const offsets = new Set([
+    londonOffsetAt(intended - sampleWindow),
+    londonOffsetAt(intended),
+    londonOffsetAt(intended + sampleWindow),
+  ]);
+  const candidates = [...offsets]
+    .map((offset) => intended - offset)
+    .filter((candidate) => matchesLondonDateTime(candidate, expected))
+    .sort((left, right) => left - right);
+  if (!candidates.length) {
+    throw new RangeError("Invalid local date and time.");
+  }
+
+  return {
+    recordedDate: `${year}-${month}-${day}`,
+    candidates,
+  };
+}
+
+export function londonLocalDateTimeHasUniqueInstant(value: string): boolean {
+  try {
+    return londonLocalDateTimeCandidates(value).candidates.length === 1;
+  } catch {
+    return false;
+  }
+}
+
+export function londonLocalDateTimeToUtc(value: string): { recordedDate: string; timestamp: Date } {
+  const { recordedDate, candidates } = londonLocalDateTimeCandidates(value);
+  const selected = candidates.at(-1)!;
+  const timestamp = new Date(selected);
+  if (isoDateInLondon(timestamp) !== recordedDate) {
+    throw new RangeError("Invalid local date and time.");
+  }
+  return {
+    recordedDate,
+    timestamp,
+  };
+}
+
+export function londonLocalDateTimeToIso(value: string): string {
+  return londonLocalDateTimeToUtc(value).timestamp.toISOString();
 }
 
 export function formatDateUk(date: string | Date): string {

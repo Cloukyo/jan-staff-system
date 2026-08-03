@@ -8,10 +8,11 @@ Do not use demo data, enable `offline_enabled`, backfill exceptions or change hi
 
 ## Migration safety and order
 
-The first five files reconcile migration history already applied in production. Their content is protected by SHA-256 tests and must not be edited or applied again under another version. The four later files are the new additive release sequence.
+The first six files reconcile migration history already applied in production. Their content is protected by SHA-256 tests and must not be edited or applied again under another version. The four later files are the new additive release sequence.
 
 | Migration | Purpose | Production treatment | Lock and runtime risk | History and rollback |
 | --- | --- | --- | --- | --- |
+| `20260716144911_fix_manager_hours_preview_ambiguity.sql` | Existing qualified manager-hours preview function | Already applied and reconciled | None during this release | Restored from its original Git commit and verified byte-for-byte against production history; do not rerun |
 | `20260723162038_staff_lifecycle_management.sql` | Existing staff lifecycle RPC | Already applied and reconciled | None during this release | Exact production history; do not rerun |
 | `20260723162052_enforce_staff_lifecycle_paths.sql` | Existing lifecycle enforcement | Already applied and reconciled | None during this release | Depends on the prior lifecycle migration; do not rerun |
 | `20260728230702_clock_event_corrections.sql` | Existing immutable correction-chain schema and effective-ledger RPCs | Already applied and reconciled | None during this release | Exact production history; does not rewrite original events |
@@ -42,7 +43,7 @@ npx.cmd supabase migration list
 npx.cmd supabase db push
 ```
 
-Do not use `--include-all`, repair migration history or reset the database during this release. Stop if the first five reconciled versions are not already recorded exactly once.
+Do not use `--include-all`, repair migration history or reset the database during this release. Stop if the first six reconciled versions are not already recorded exactly once.
 
 ## Controlled online deployment order
 

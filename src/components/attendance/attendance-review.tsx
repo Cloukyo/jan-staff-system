@@ -1,16 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDurationCompact, formatTimeUk } from "@/lib/dates/format";
 import { resolveAttendanceCorrectionRequestAction, saveAttendanceReviewAction } from "@/lib/attendance/review-actions";
 import type { AttendanceReviewDay } from "@/lib/attendance/review-server";
 
+type ReviewDecision = "approved" | "corrected" | "ignored" | "needs_staff_clarification";
+
+const reviewDecisionLabels: Record<ReviewDecision, string> = {
+  approved: "Approve recorded times",
+  corrected: "Enter corrected times",
+  ignored: "Accept exception with reason",
+  needs_staff_clarification: "Mark for follow-up",
+};
+
 export function AttendanceReview({ data }: { data: AttendanceReviewDay }) {
   return (
     <div className="grid gap-5">
       <Panel>
         <form className="flex flex-wrap items-end gap-3" method="get">
+          <input type="hidden" name="view" value="needs-attention" />
           <Field label="Review date"><input className={inputClassName()} type="date" name="date" defaultValue={data.date} /></Field>
           <button className="min-h-11 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" type="submit">Load day</button>
         </form>
@@ -62,25 +73,55 @@ export function AttendanceReview({ data }: { data: AttendanceReviewDay }) {
               </div>
             </div>
           ))}
-          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {(["approved", "corrected", "ignored", "needs_staff_clarification"] as const).map((status) => (
-              <ProductionActionForm
-                key={status}
-                action={saveAttendanceReviewAction}
-                submitLabel={status === "approved" ? "Approve" : status === "corrected" ? "Mark corrected" : status === "ignored" ? "Ignore with reason" : "Needs clarification"}
-                submitVariant={status === "approved" ? "primary" : "secondary"}
-              >
-                <input type="hidden" name="staffId" value={row.staffId} />
-                <input type="hidden" name="reviewDate" value={data.date} />
-                <input type="hidden" name="status" value={status} />
-                <Field label={status === "approved" ? "Optional note" : "Reason"}>
-                  <input className={inputClassName()} name="reason" minLength={status === "approved" ? undefined : 5} required={status !== "approved"} />
-                </Field>
-              </ProductionActionForm>
-            ))}
-          </div>
+          <AttendanceReviewDecision staffId={row.staffId} reviewDate={data.date} currentStatus={row.reviewStatus} />
         </Panel>
       )) : <EmptyState title="No attendance activity" body="There are no published shifts, clock events or staff requests for this date." />}
     </div>
+  );
+}
+
+function AttendanceReviewDecision({
+  staffId,
+  reviewDate,
+  currentStatus,
+}: {
+  staffId: string;
+  reviewDate: string;
+  currentStatus: AttendanceReviewDay["rows"][number]["reviewStatus"];
+}) {
+  const [decision, setDecision] = useState<ReviewDecision>(
+    currentStatus === "unreviewed" ? "approved" : currentStatus,
+  );
+  const reasonRequired = decision !== "approved";
+
+  return (
+    <ProductionActionForm
+      action={saveAttendanceReviewAction}
+      submitLabel="Save decision"
+      submitVariant={decision === "approved" ? "primary" : "secondary"}
+      className="mt-4 max-w-2xl"
+    >
+      <input type="hidden" name="staffId" value={staffId} />
+      <input type="hidden" name="reviewDate" value={reviewDate} />
+      <Field label="Decision">
+        <select
+          className={inputClassName()}
+          name="status"
+          value={decision}
+          onChange={(event) => setDecision(event.target.value as ReviewDecision)}
+        >
+          {(Object.entries(reviewDecisionLabels) as Array<[ReviewDecision, string]>).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </Field>
+      {reasonRequired ? (
+        <div className="mt-3">
+          <Field label="Reason">
+            <input className={inputClassName()} name="reason" minLength={5} required />
+          </Field>
+        </div>
+      ) : null}
+    </ProductionActionForm>
   );
 }
