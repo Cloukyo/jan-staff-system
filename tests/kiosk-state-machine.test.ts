@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapKioskActionResponse } from "@/lib/kiosk/actions";
+import { mapKioskActionResponse } from "@/lib/kiosk/rpc-mapping";
 import { kioskActionPresentation } from "@/lib/kiosk/presentation";
 import type { AttendanceStateResult } from "@/lib/attendance/types";
 import {
