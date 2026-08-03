@@ -73,6 +73,34 @@ create table public.kiosk_sync_health (
 create index kiosk_sync_health_contact_idx
 on public.kiosk_sync_health (last_contact_at, last_reported_pending_count);
 
+create or replace function public.revoke_kiosk_offline_authorisation()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (old.active and not new.active)
+    or (not old.reprovision_required and new.reprovision_required) then
+    update public.kiosk_offline_authorisations
+    set revoked_at = coalesce(revoked_at, clock_timestamp()),
+        revocation_reason = coalesce(revocation_reason, case
+          when not new.active then 'Kiosk device revoked by manager'
+          else 'Kiosk reprovision required by manager'
+        end)
+    where kiosk_device_id = new.id and revoked_at is null;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger kiosk_devices_revoke_offline_authorisation
+after update of active, reprovision_required on public.kiosk_devices
+for each row execute function public.revoke_kiosk_offline_authorisation();
+
+revoke all on function public.revoke_kiosk_offline_authorisation()
+from public, anon, authenticated;
+
 create table public.kiosk_offline_rate_limits (
   kiosk_device_id uuid not null references public.kiosk_devices(id) on delete restrict,
   operation text not null check (operation in (

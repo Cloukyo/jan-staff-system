@@ -7,6 +7,7 @@ import type { PayrollPreparationRow } from "@/lib/payroll/types";
 import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatHours, formatMoney } from "@/lib/dates/format";
 import type { PayrollExportHoursMode } from "@/lib/exports/payroll-options";
+import type { OfflinePayrollReadiness } from "@/lib/payroll/offline-readiness";
 
 export function ProductionPayrollScreen({
   rows,
@@ -16,6 +17,7 @@ export function ProductionPayrollScreen({
   includeManagers,
   includeZero,
   reviewReadiness,
+  offlineReadiness,
 }: {
   rows: PayrollPreparationRow[];
   periodStart: string;
@@ -24,6 +26,7 @@ export function ProductionPayrollScreen({
   includeManagers: boolean;
   includeZero: boolean;
   reviewReadiness: { unresolved: number; pendingRequests: number; openExceptions: number };
+  offlineReadiness: OfflinePayrollReadiness;
 }) {
   const router = useRouter();
   const [start, setStart] = useState(periodStart);
@@ -32,7 +35,7 @@ export function ProductionPayrollScreen({
   const [exportHours, setExportHours] = useState<PayrollExportHoursMode>("both");
   const attendanceIncomplete =
     reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0
-      || reviewReadiness.openExceptions > 0;
+      || reviewReadiness.openExceptions > 0 || offlineReadiness.status !== "ready";
   function apply() {
     router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${includeManagers ? "1" : "0"}&zero=${includeZero ? "1" : "0"}`);
   }
@@ -65,6 +68,13 @@ export function ProductionPayrollScreen({
         ) : (
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-900">Attendance records in this period have review decisions and no staff requests remain open.</div>
         )}
+        {offlineReadiness.status !== "ready" ? (
+          <div className={`mb-4 rounded-lg border p-4 text-sm ${offlineReadiness.status === "not_ready" ? "border-red-200 bg-red-50 text-red-950" : "border-amber-200 bg-amber-50 text-amber-950"}`} role="alert">
+            <p className="font-black">Offline attendance evidence: {offlineReadiness.status === "not_ready" ? "Not ready" : "Ready with warnings"}</p>
+            <p className="mt-2 font-semibold">{offlineReadiness.unresolvedConflicts} unresolved sync conflict(s), {offlineReadiness.reportedPendingActions} action(s) reported pending, {offlineReadiness.unknownQueueDevices} device(s) with unknown queue state, {offlineReadiness.staleOfflineDevices} device(s) offline since before this payroll period, {offlineReadiness.revokedEvidenceDevices} revoked device(s) that may retain evidence and {offlineReadiness.acceptedDriftWarnings} accepted clock-drift warning(s).</p>
+            <a className="mt-2 inline-block font-bold underline" href="/settings/kiosk">Review kiosk health</a>
+          </div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
           <Field label="Period start"><input className={inputClassName()} type="date" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
           <Field label="Period end"><input className={inputClassName()} type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></Field>
@@ -103,7 +113,7 @@ export function ProductionPayrollScreen({
             <p className="mt-2 text-sm text-amber-900">
               These hours may be inaccurate. {reviewReadiness.openExceptions} attendance issue(s), {reviewReadiness.unresolved} worked day(s)
               without review and {reviewReadiness.pendingRequests} staff correction
-              request(s) remain open. Check and correct the workbook manually before
+              request(s) remain open. Offline evidence status is {offlineReadiness.status.replaceAll("_", " ")} with {offlineReadiness.reportedPendingActions} reported pending action(s) and {offlineReadiness.unresolvedConflicts} unresolved sync conflict(s). Check and correct the workbook manually before
               using it for payroll.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">

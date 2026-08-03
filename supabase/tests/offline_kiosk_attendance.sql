@@ -33,6 +33,9 @@ begin
   if has_function_privilege('anon', 'public.report_kiosk_sync_health(text,uuid,integer,timestamptz,boolean,bigint,text)', 'execute') then
     raise exception 'kiosk health RPC is exposed to browser roles';
   end if;
+  if has_function_privilege('anon', 'public.revoke_kiosk_offline_authorisation()', 'execute') then
+    raise exception 'offline authorisation revocation trigger is exposed';
+  end if;
 end;
 $$;
 
