@@ -4,6 +4,7 @@ import { getSupabaseConfig, hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
+import { isoDateInLondon } from "@/lib/dates/format";
 
 type KioskRosterRow = {
   staff_id: string;
@@ -113,20 +114,25 @@ export type ManagerClockEvent = {
 
 export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[]; events: ManagerClockEvent[] }> {
   const supabase = await createSupabaseServerClient();
-  const [profiles, settings, events] = await Promise.all([
+  const today = isoDateInLondon();
+  const rangeStartDate = new Date(`${today}T12:00:00Z`);
+  rangeStartDate.setUTCDate(rangeStartDate.getUTCDate() - 365);
+  const [profiles, settings, events, statuses] = await Promise.all([
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),
-    supabase.from("clock_events").select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason").order("event_timestamp", { ascending: false }).limit(250),
+    supabase.rpc("get_manager_effective_clock_events", { range_start: rangeStartDate.toISOString().slice(0, 10), range_end: today, target_staff_id: null }),
+    supabase.rpc("get_manager_kiosk_statuses", { reference_date: today }),
   ]);
-  if (profiles.error || settings.error || events.error) throw new Error("Production attendance could not be loaded.");
+  if (profiles.error || settings.error || events.error || statuses.error) throw new Error("Production attendance could not be loaded.");
   const settingMap = new Map((settings.data ?? []).map((row) => [row.staff_id, row]));
   const eventRows = (events.data ?? []) as Array<Record<string, unknown>>;
-  const latestByStaff = new Map<string, string>();
+  const statusByStaff = new Map(((statuses.data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => [String(row.staff_id), String(row.current_status)]));
   const lastKioskUseByStaff = new Map<string, string>();
-  for (const event of eventRows) if (!latestByStaff.has(String(event.staff_id))) latestByStaff.set(String(event.staff_id), String(event.event_type));
+  eventRows.sort((left, right) => String(right.event_timestamp).localeCompare(String(left.event_timestamp)));
   for (const event of eventRows) {
     const staffId = String(event.staff_id);
-    if (String(event.event_source) === "kiosk" && !lastKioskUseByStaff.has(staffId)) {
+    if (String(event.source) === "kiosk" && !lastKioskUseByStaff.has(staffId)) {
       lastKioskUseByStaff.set(staffId, String(event.event_timestamp));
     }
   }
@@ -138,7 +144,7 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
         displayName: row.display_name,
         fullName: row.full_name,
         employmentRole: row.employment_role,
-        currentStatus: latestByStaff.get(row.id) === "clock_in" ? "clocked_in" : "clocked_out",
+        currentStatus: statusByStaff.get(row.id) === "clocked_in" ? "clocked_in" : "clocked_out",
         pinReady: Boolean(setting?.pin_updated_at) && !setting?.pin_reset_required,
         kioskEnabled: setting?.kiosk_enabled ?? false,
         pinUpdatedAt: setting?.pin_updated_at ?? null,
@@ -149,14 +155,14 @@ export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[
       };
     }),
     events: eventRows.map((row) => ({
-      id: String(row.id),
+      id: String(row.event_id),
       staffId: String(row.staff_id),
       eventType: String(row.event_type) as "clock_in" | "clock_out",
       eventTimestamp: String(row.event_timestamp),
       recordedDate: String(row.recorded_date),
-      eventSource: String(row.event_source) as "kiosk" | "manager",
-      managerCorrection: Boolean(row.manager_correction),
-      correctionReason: row.correction_reason ? String(row.correction_reason) : null,
+      eventSource: String(row.source) === "manager_correction" ? "manager" : "kiosk",
+      managerCorrection: String(row.source) === "manager_correction",
+      correctionReason: null,
     })),
   };
 }

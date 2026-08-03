@@ -98,11 +98,17 @@ export function createPayrollExportDetail(input: PayrollExportDetailInput): Payr
       const review = reviewsByDay.get(key);
       if (shifts.length === 0 && events.length === 0 && !review) return [];
 
-      const originals = events.filter((event) => !event.managerCorrection);
-      const corrections = events.filter((event) => event.managerCorrection);
+      const ledgerAware = events.some((event) => event.ledger);
+      const originals = ledgerAware
+        ? events.filter((event) => event.ledger === "original")
+        : events.filter((event) => !event.managerCorrection);
+      const effective = ledgerAware
+        ? events.filter((event) => event.ledger === "effective")
+        : events;
+      const corrections = effective.filter((event) => event.managerCorrection);
       const raw = calculateClockTotals(originals);
-      const adjusted = calculateClockTotals(events);
-      const warnings = [...adjusted.warnings];
+      const adjusted = calculateClockTotals(effective);
+      const warnings: string[] = [...adjusted.warnings];
       if (events.length > 0 && !review) warnings.push("Attendance review incomplete");
 
       return [{

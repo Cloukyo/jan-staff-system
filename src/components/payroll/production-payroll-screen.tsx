@@ -23,7 +23,7 @@ export function ProductionPayrollScreen({
   includeInactive: boolean;
   includeManagers: boolean;
   includeZero: boolean;
-  reviewReadiness: { unresolved: number; pendingRequests: number };
+  reviewReadiness: { unresolved: number; pendingRequests: number; openExceptions: number };
 }) {
   const router = useRouter();
   const [start, setStart] = useState(periodStart);
@@ -31,7 +31,8 @@ export function ProductionPayrollScreen({
   const [confirmExportOpen, setConfirmExportOpen] = useState(false);
   const [exportHours, setExportHours] = useState<PayrollExportHoursMode>("both");
   const attendanceIncomplete =
-    reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0;
+    reviewReadiness.unresolved > 0 || reviewReadiness.pendingRequests > 0
+      || reviewReadiness.openExceptions > 0;
   function apply() {
     router.push(`/payroll?from=${start}&to=${end}&inactive=${includeInactive ? "1" : "0"}&managers=${includeManagers ? "1" : "0"}&zero=${includeZero ? "1" : "0"}`);
   }
@@ -57,9 +58,9 @@ export function ProductionPayrollScreen({
   return (
     <div className="grid gap-5">
       <Panel>
-        {reviewReadiness.unresolved || reviewReadiness.pendingRequests ? (
+        {reviewReadiness.unresolved || reviewReadiness.pendingRequests || reviewReadiness.openExceptions ? (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
-            Attendance review is incomplete: {reviewReadiness.unresolved} worked day(s) are not reviewed and {reviewReadiness.pendingRequests} staff correction request(s) remain open.
+            Attendance review is incomplete: {reviewReadiness.openExceptions} attendance issue(s), {reviewReadiness.unresolved} unreviewed worked day(s) and {reviewReadiness.pendingRequests} staff correction request(s) remain open. <a className="underline" href={`/attendance?status=open&from=${periodStart}&to=${periodEnd}`}>Review attendance issues</a>.
           </div>
         ) : (
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-900">Attendance records in this period have review decisions and no staff requests remain open.</div>
@@ -100,8 +101,8 @@ export function ProductionPayrollScreen({
           >
             <p className="font-black text-amber-950">Export unreviewed attendance?</p>
             <p className="mt-2 text-sm text-amber-900">
-              These hours may be inaccurate. {reviewReadiness.unresolved} worked day(s)
-              are not reviewed and {reviewReadiness.pendingRequests} staff correction
+              These hours may be inaccurate. {reviewReadiness.openExceptions} attendance issue(s), {reviewReadiness.unresolved} worked day(s)
+              without review and {reviewReadiness.pendingRequests} staff correction
               request(s) remain open. Check and correct the workbook manually before
               using it for payroll.
             </p>

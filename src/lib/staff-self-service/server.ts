@@ -154,25 +154,23 @@ export function summariseAttendanceDay(date: string, events: StaffAttendanceEven
 }
 
 export async function loadStaffAttendance(fromValue?: string, toValue?: string): Promise<StaffAttendanceRange> {
-  const account = await requireAccount(["staff"]);
+  await requireAccount(["staff"]);
   const range = normaliseDateRange(fromValue, toValue);
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("clock_events")
-    .select("id,event_type,event_timestamp,recorded_date,manager_correction")
-    .eq("staff_id", account.staffId)
-    .gte("recorded_date", range.from)
-    .lte("recorded_date", range.to)
-    .order("event_timestamp");
+  const { data, error } = await supabase.rpc("get_own_effective_clock_events", {
+    range_start: range.from,
+    range_end: range.to,
+  });
   if (error) throw new Error("Your attendance could not be loaded.");
 
   const grouped = new Map<string, StaffAttendanceEvent[]>();
   for (const row of data ?? []) {
     const day = grouped.get(row.recorded_date) ?? [];
     day.push({
-      id: row.id,
+      id: row.event_id,
       eventType: row.event_type,
       eventTimestamp: row.event_timestamp,
-      managerCorrection: row.manager_correction,
+      managerCorrection: row.source === "manager_correction",
     });
     grouped.set(row.recorded_date, day);
   }

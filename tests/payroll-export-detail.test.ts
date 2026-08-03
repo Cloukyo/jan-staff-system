@@ -122,10 +122,10 @@ describe("payroll export detail calculations", () => {
       reason: "Manager corrected arrival",
     }];
     const events = [
-      event("original-in", "clock_in", "2026-07-01T08:00:00+01:00"),
-      event("manager-in", "clock_in", "2026-07-01T08:15:00+01:00", true),
-      event("original-out", "clock_out", "2026-07-01T16:00:00+01:00"),
-      event("manager-out", "clock_out", "2026-07-01T16:00:00+01:00", true),
+      { ...event("original-in", "clock_in", "2026-07-01T08:00:00+01:00"), ledger: "original" as const },
+      { ...event("original-out", "clock_out", "2026-07-01T16:00:00+01:00"), ledger: "original" as const },
+      { ...event("manager-in", "clock_in", "2026-07-01T08:15:00+01:00", true), ledger: "effective" as const },
+      { ...event("manager-out", "clock_out", "2026-07-01T16:00:00+01:00", true), ledger: "effective" as const },
     ];
 
     const detail = createPayrollExportDetail({

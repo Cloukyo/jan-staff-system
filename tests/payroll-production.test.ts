@@ -70,6 +70,29 @@ describe("production payroll preparation", () => {
     expect(result.warnings).toContain("Manager correction");
   });
 
+  it("compares immutable raw hours with the effective corrected ledger exactly once", () => {
+    const events = [
+      { id: "raw-in", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00+01:00", recordedDate: "2026-06-01", managerCorrection: false, ledger: "original" as const },
+      { id: "raw-out", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T16:00:00+01:00", recordedDate: "2026-06-01", managerCorrection: false, ledger: "original" as const },
+      { id: "effective-in", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:15:00+01:00", recordedDate: "2026-06-01", managerCorrection: true, ledger: "effective" as const },
+      { id: "effective-out", staffId: "staff-1", eventType: "clock_out" as const, eventTimestamp: "2026-06-01T16:00:00+01:00", recordedDate: "2026-06-01", managerCorrection: false, ledger: "effective" as const },
+    ];
+    const row = createPayrollPreparationRow(staff, events, "2026-06-01", "2026-06-01");
+    expect(row.recordedMinutes).toBe(480);
+    expect(row.adjustedMinutes).toBe(465);
+    expect(row.adjustmentNotes).toContain("Manager correction events included");
+  });
+
+  it("does not invent duration for malformed or cross-London-day events", () => {
+    const result = calculateClockTotals([
+      { id: "in", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T23:30:00+01:00", recordedDate: "2026-06-01", managerCorrection: false },
+      { id: "out", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-02T00:30:00+01:00", recordedDate: "2026-06-02", managerCorrection: false },
+    ]);
+    expect(result.recordedMinutes).toBe(0);
+    expect(result.warnings).toContain("Missing clock-out");
+    expect(result.warnings).toContain("Clock-out without clock-in");
+  });
+
   it("calculates hourly pay but keeps salaried attendance informational", () => {
     const events = [
       { id: "1", staffId: "staff-1", eventType: "clock_in" as const, eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },

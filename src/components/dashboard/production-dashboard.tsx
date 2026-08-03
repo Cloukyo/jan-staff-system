@@ -25,7 +25,10 @@ const cards: Array<{
     | "currentlyClockedIn"
     | "todayScheduledShifts"
     | "todayAttendanceExceptions"
+    | "unresolvedAttendanceIssues"
     | "missingClockOuts"
+    | "longRunningShifts"
+    | "pendingCorrections"
     | "pendingLeaveRequests"
     | "approvedLeaveRotaConflicts"
     | "expiredCertificates"
@@ -42,8 +45,10 @@ const cards: Array<{
   { key: "activeStaff", label: "Active staff", href: "/staff", tone: "purple", icon: Users },
   { key: "currentlyClockedIn", label: "Currently clocked in", href: "/attendance", tone: "green", icon: Clock3 },
   { key: "todayScheduledShifts", label: "Today's scheduled shifts", href: "/rota", tone: "purple", icon: CalendarClock },
-  { key: "todayAttendanceExceptions", label: "Today's attendance exceptions", href: "/attendance", tone: "red", icon: AlertTriangle },
-  { key: "missingClockOuts", label: "Missing clock-outs", href: "/attendance", tone: "red", icon: Clock3 },
+  { key: "unresolvedAttendanceIssues", label: "Unresolved attendance issues", href: "/attendance?status=open", tone: "red", icon: AlertTriangle },
+  { key: "missingClockOuts", label: "Missing clock-outs", href: "/attendance?status=open&type=missing_clock_out", tone: "red", icon: Clock3 },
+  { key: "longRunningShifts", label: "Long-running shifts", href: "/attendance?status=open&type=unusually_long_shift", tone: "red", icon: Clock3 },
+  { key: "pendingCorrections", label: "Pending corrections", href: "/attendance?status=open", tone: "amber", icon: ClipboardCheck },
   { key: "pendingLeaveRequests", label: "Pending leave requests", href: "/leave/requests", tone: "amber", icon: CalendarX2 },
   { key: "approvedLeaveRotaConflicts", label: "Approved leave conflicts", href: "/rota", tone: "red", icon: CalendarDays },
   { key: "expiredCertificates", label: "Expired certificates", href: "/compliance", tone: "red", icon: ShieldAlert },
@@ -107,7 +112,7 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
 
         <Panel>
           <div className="flex items-start justify-between gap-3">
-            <div><h2 className="text-lg font-black text-purple-950">Currently clocked in</h2><p className="mt-1 text-sm text-slate-600">Latest immutable clock events from Supabase.</p></div>
+              <div><h2 className="text-lg font-black text-purple-950">Currently clocked in</h2><p className="mt-1 text-sm text-slate-600">Current effective attendance from Supabase.</p></div>
             <CheckCircle2 className="h-5 w-5 text-green-700" aria-hidden />
           </div>
           {data.clockedInStaff.length ? (

@@ -1,5 +1,6 @@
 import { differenceInMinutes, parseISO } from "date-fns";
 import type { PayArrangement, PayrollAttendanceReview, PayrollPreparationRow, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
+import { pairAttendanceByOperationalDay } from "@/lib/attendance/pairing";
 
 export function arrangementsForPeriod(arrangements: PayArrangement[], start: string, end: string): PayArrangement[] {
   return arrangements
@@ -13,27 +14,30 @@ export function arrangementAt(arrangements: PayArrangement[], date: string): Pay
 }
 
 export function calculateClockTotals(events: ProductionClockEvent[], maximumShiftMinutes = 12 * 60) {
-  const ordered = [...events].sort((a, b) => a.eventTimestamp.localeCompare(b.eventTimestamp));
-  const warnings: string[] = [];
-  let open: ProductionClockEvent | null = null;
-  let recordedMinutes = 0;
-  for (const event of ordered) {
-    if (event.managerCorrection) warnings.push("Manager correction");
-    if (event.eventType === "clock_in") {
-      if (open) warnings.push("Overlapping sessions");
-      open = event;
-      continue;
-    }
-    if (!open) {
-      warnings.push("Clock-out without clock-in");
-      continue;
-    }
-    const minutes = Math.max(0, differenceInMinutes(parseISO(event.eventTimestamp), parseISO(open.eventTimestamp)));
-    recordedMinutes += minutes;
-    if (minutes > maximumShiftMinutes) warnings.push("Unusually long shift");
-    open = null;
-  }
-  if (open) warnings.push("Missing clock-out");
+  const warningLabels = {
+    consecutive_clock_in: "Overlapping sessions",
+    unmatched_clock_out: "Clock-out without clock-in",
+    overlapping_attendance: "Overlapping or malformed attendance",
+    unusually_long_shift: "Unusually long shift",
+    missing_clock_out: "Missing clock-out",
+    missing_clock_in: "Missing clock-in",
+    offline_sync_conflict: "Offline synchronisation conflict",
+    device_clock_drift: "Device clock difference",
+    offline_time_uncertain: "Offline time needs review",
+  } as const;
+  const pairings = pairAttendanceByOperationalDay(events.map((event) => ({
+    eventId: event.id,
+    eventOrderKey: `${event.eventTimestamp}:${event.id}`,
+    originalEventId: event.ledger === "effective" && !event.managerCorrection ? event.id : null,
+    correctionId: event.managerCorrection ? event.id : null,
+    staffId: event.staffId,
+    eventType: event.eventType,
+    eventTimestamp: event.eventTimestamp,
+    source: event.managerCorrection ? "manager_correction" : "kiosk",
+  })), maximumShiftMinutes);
+  const warnings: string[] = pairings.flatMap((day) => day.anomalies.map((type) => warningLabels[type]));
+  if (events.some((event) => event.managerCorrection)) warnings.push("Manager correction");
+  const recordedMinutes = pairings.reduce((total, day) => total + day.completedMinutes, 0);
   return { recordedMinutes, adjustedMinutes: recordedMinutes, warnings: Array.from(new Set(warnings)) };
 }
 
@@ -54,8 +58,11 @@ export function createPayrollPreparationRow(
   const periodArrangements = arrangementsForPeriod(staff.payArrangements, periodStart, periodEnd);
   const arrangement = arrangementAt(staff.payArrangements, periodEnd);
   const staffEvents = events.filter((event) => event.staffId === staff.id);
-  const rawTotals = calculateClockTotals(staffEvents.filter((event) => !event.managerCorrection));
-  const adjustedTotals = calculateClockTotals(staffEvents);
+  const ledgerAware = staffEvents.some((event) => event.ledger);
+  const rawEvents = ledgerAware ? staffEvents.filter((event) => event.ledger === "original") : staffEvents.filter((event) => !event.managerCorrection);
+  const effectiveEvents = ledgerAware ? staffEvents.filter((event) => event.ledger === "effective") : staffEvents;
+  const rawTotals = calculateClockTotals(rawEvents);
+  const adjustedTotals = calculateClockTotals(effectiveEvents);
   const warnings = [...adjustedTotals.warnings];
   if (!arrangement) warnings.push("Missing active pay arrangement");
   if (periodArrangements.length > 1) warnings.push("Pay arrangement changes within period");
@@ -74,14 +81,14 @@ export function createPayrollPreparationRow(
   const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
     ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
     : null;
-  const workedDates = new Set(staffEvents.map((event) => event.recordedDate));
+  const workedDates = new Set(effectiveEvents.map((event) => event.recordedDate));
   const staffReviews = reviews.filter((review) => review.staffId === staff.id && workedDates.has(review.reviewDate));
   const reviewedDates = new Set(staffReviews.map((review) => review.reviewDate));
   const unresolvedDays = [...workedDates].filter((date) => !reviewedDates.has(date)).length;
   if (unresolvedDays > 0) warnings.push("Attendance review incomplete");
   const adjustmentNotes = Array.from(new Set([
     ...staffReviews.map((review) => review.reason).filter((reason): reason is string => Boolean(reason)),
-    ...(staffEvents.some((event) => event.managerCorrection) ? ["Manager correction events included"] : []),
+    ...(effectiveEvents.some((event) => event.managerCorrection) ? ["Manager correction events included"] : []),
   ]));
   return {
     staffId: staff.id,

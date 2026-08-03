@@ -163,7 +163,7 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
     supabase.from("staff_profiles").select("id,full_name,active").eq("active", true).order("full_name"),
     supabase.from("rota_shifts").select("staff_id,start_time,end_time,status,rota_weeks!inner(status)")
       .eq("shift_date", date).is("archived_at", null).neq("status", "cancelled").eq("rota_weeks.status", "published"),
-    supabase.from("clock_events").select("staff_id,event_type,event_timestamp,manager_correction").eq("recorded_date", date).order("event_timestamp"),
+    supabase.rpc("get_manager_effective_clock_events", { range_start: date, range_end: date, target_staff_id: null }),
     supabase.from("attendance_day_reviews").select("staff_id,status,reason,reviewed_at").eq("review_date", date),
     supabase.from("attendance_correction_requests").select("id,staff_id,issue_type,staff_note,status").eq("attendance_date", date).eq("status", "pending"),
   ]);
@@ -174,7 +174,13 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
   const shiftByStaff = new Map((shifts.data ?? []).map((row) => [row.staff_id, row]));
   const reviewByStaff = new Map((reviews.data ?? []).map((row) => [row.staff_id, row]));
   const eventsByStaff = new Map<string, ClockRow[]>();
-  for (const event of (events.data ?? []) as ClockRow[]) {
+  for (const sourceEvent of (events.data ?? []) as Array<Record<string, unknown>>) {
+    const event: ClockRow = {
+      staff_id: String(sourceEvent.staff_id),
+      event_type: String(sourceEvent.event_type) as ClockRow["event_type"],
+      event_timestamp: String(sourceEvent.event_timestamp),
+      manager_correction: String(sourceEvent.source) === "manager_correction",
+    };
     const list = eventsByStaff.get(event.staff_id) ?? [];
     list.push(event);
     eventsByStaff.set(event.staff_id, list);
@@ -214,20 +220,24 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
   };
 }
 
-export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number }> {
+export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number; openExceptions: number }> {
   await requireAccount(["manager"]);
   const supabase = await createSupabaseServerClient();
-  const [reviews, requests, eventDays] = await Promise.all([
+  const [reviews, requests, eventDays, exceptions] = await Promise.all([
     supabase.from("attendance_day_reviews").select("staff_id,review_date,status").gte("review_date", from).lte("review_date", to),
     supabase.from("attendance_correction_requests").select("id").eq("status", "pending").gte("attendance_date", from).lte("attendance_date", to),
-    supabase.from("clock_events").select("staff_id,recorded_date").gte("recorded_date", from).lte("recorded_date", to),
+    supabase.rpc("get_effective_attendance_day_summaries", { start_date: from, end_date: to, target_staff_id: null }),
+    supabase.rpc("get_manager_attendance_exceptions", { range_start: from, range_end: to, requested_status: null, requested_type: null, requested_staff_id: null }),
   ]);
-  if (reviews.error || requests.error || eventDays.error) throw new Error("Attendance review readiness could not be loaded.");
+  if (reviews.error || requests.error || eventDays.error || exceptions.error) throw new Error("Attendance review readiness could not be loaded.");
   const reviewed = new Set((reviews.data ?? []).map((row) => `${row.staff_id}:${row.review_date}`));
-  const workedDays = new Set((eventDays.data ?? []).map((row) => `${row.staff_id}:${row.recorded_date}`));
+  const workedDays = new Set(((eventDays.data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => `${String(row.staff_id)}:${String(row.operational_date)}`));
   return {
     unresolved: [...workedDays].filter((key) => !reviewed.has(key)).length,
     pendingRequests: requests.data?.length ?? 0,
+    openExceptions: ((exceptions.data ?? []) as Array<Record<string, unknown>>)
+      .filter((issue) => ["open", "under_review"].includes(String(issue.status))).length,
   };
 }
 

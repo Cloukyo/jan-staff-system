@@ -40,7 +40,7 @@ export async function GET(request: Request) {
   ]);
   if (
     payrollModeIncludesClocked(hoursMode) &&
-    (readiness.unresolved > 0 || readiness.pendingRequests > 0) &&
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0 || readiness.openExceptions > 0) &&
     !confirmUnreviewed
   ) {
     return NextResponse.json(
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
   );
   const unreviewedPrefix =
     payrollModeIncludesClocked(hoursMode) &&
-    (readiness.unresolved > 0 || readiness.pendingRequests > 0)
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0 || readiness.openExceptions > 0)
       ? "unreviewed-"
       : "";
   return new NextResponse(new Uint8Array(workbook), {

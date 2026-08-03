@@ -18,8 +18,8 @@ describe("staff self-service", () => {
   });
 
   it("loads only the signed-in staff member's clock events", () => {
-    expect(server).toContain('supabase.from("clock_events")');
-    expect(server).toContain('.eq("staff_id", account.staffId)');
+    expect(server).toContain('supabase.rpc("get_own_effective_clock_events"');
+    expect(server).toContain('await requireAccount(["staff"])');
     expect(server).not.toContain('supabase.from("staff_profiles")');
   });
 

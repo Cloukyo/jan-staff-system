@@ -19,7 +19,10 @@ export function mapDashboardSummary(row: Record<string, unknown>): ProductionDas
     currentlyClockedIn: numberValue(row, "currently_clocked_in"),
     todayScheduledShifts: numberValue(row, "today_scheduled_shifts"),
     todayAttendanceExceptions: numberValue(row, "today_attendance_exceptions"),
+    unresolvedAttendanceIssues: numberValue(row, "unresolved_attendance_issues"),
     missingClockOuts: numberValue(row, "missing_clock_outs"),
+    longRunningShifts: numberValue(row, "long_running_shifts"),
+    pendingCorrections: numberValue(row, "pending_corrections"),
     pendingLeaveRequests: numberValue(row, "pending_leave_requests"),
     approvedLeaveRotaConflicts: numberValue(row, "approved_leave_rota_conflicts"),
     expiredCertificates: numberValue(row, "expired_certificates"),
@@ -60,9 +63,15 @@ export function mapDashboardSummary(row: Record<string, unknown>): ProductionDas
 
 export async function loadProductionDashboard(referenceDate: string): Promise<ProductionDashboardSummary> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("get_manager_dashboard_summary", { reference_date: referenceDate });
-  if (error || !data || Array.isArray(data) || typeof data !== "object") {
+  const [summary, attendance] = await Promise.all([
+    supabase.rpc("get_manager_dashboard_summary", { reference_date: referenceDate }),
+    supabase.rpc("get_manager_attendance_dashboard", { reference_date: referenceDate }),
+  ]);
+  if (summary.error || attendance.error || !summary.data || Array.isArray(summary.data) || typeof summary.data !== "object" || !attendance.data || Array.isArray(attendance.data) || typeof attendance.data !== "object") {
     throw new Error("Live dashboard data could not be loaded from Supabase.");
   }
-  return mapDashboardSummary(data as Record<string, unknown>);
+  return mapDashboardSummary({
+    ...(summary.data as Record<string, unknown>),
+    ...(attendance.data as Record<string, unknown>),
+  });
 }

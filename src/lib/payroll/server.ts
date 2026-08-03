@@ -1,7 +1,5 @@
-import { addDays, format, parseISO } from "date-fns";
 import { getAppMode } from "@/lib/app-mode";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
-import { londonDateStartUtc } from "@/lib/dates/format";
 import type {
   PayArrangement,
   PayrollAttendanceReview,
@@ -69,22 +67,35 @@ export async function loadProductionStaffRows(): Promise<ProductionStaffRow[]> {
 
 export async function loadProductionClockEvents(periodStart: string, periodEnd: string): Promise<ProductionClockEvent[]> {
   const supabase = await createSupabaseServerClient();
-  const start = londonDateStartUtc(periodStart).toISOString();
-  const dayAfterEnd = format(addDays(parseISO(periodEnd), 1), "yyyy-MM-dd");
-  const end = londonDateStartUtc(dayAfterEnd).toISOString();
-  const { data, error } = await supabase.from("clock_events")
-    .select("id,staff_id,event_type,event_timestamp,recorded_date,manager_correction")
-    .gte("event_timestamp", start).lt("event_timestamp", end)
-    .order("event_timestamp");
-  if (error) throw new Error("Production clock events could not be loaded.");
-  return (data ?? []).map((row) => ({
+  const [originals, effective] = await Promise.all([
+    supabase.from("clock_events")
+      .select("id,staff_id,event_type,event_timestamp,recorded_date,manager_correction")
+      .gte("recorded_date", periodStart).lte("recorded_date", periodEnd)
+      .order("event_timestamp"),
+    supabase.rpc("get_manager_effective_clock_events", {
+      range_start: periodStart, range_end: periodEnd, target_staff_id: null,
+    }),
+  ]);
+  if (originals.error || effective.error) throw new Error("Production clock events could not be loaded.");
+  const originalRows: ProductionClockEvent[] = (originals.data ?? []).map((row) => ({
     id: row.id,
     staffId: row.staff_id,
     eventType: row.event_type,
     eventTimestamp: row.event_timestamp,
     recordedDate: row.recorded_date,
     managerCorrection: row.manager_correction,
+    ledger: "original",
   }));
+  const effectiveRows: ProductionClockEvent[] = ((effective.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.event_id),
+    staffId: String(row.staff_id),
+    eventType: String(row.event_type) as ProductionClockEvent["eventType"],
+    eventTimestamp: String(row.event_timestamp),
+    recordedDate: String(row.recorded_date),
+    managerCorrection: row.source === "manager_correction" || row.source === "legacy_manager",
+    ledger: "effective",
+  }));
+  return [...originalRows, ...effectiveRows];
 }
 
 export async function loadPayrollAttendanceReviews(periodStart: string, periodEnd: string): Promise<PayrollAttendanceReview[]> {
