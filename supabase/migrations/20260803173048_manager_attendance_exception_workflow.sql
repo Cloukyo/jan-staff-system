@@ -692,3 +692,47 @@ revoke all on function public.get_manager_attendance_dashboard(date)
 from public, anon, authenticated;
 grant execute on function public.get_manager_attendance_dashboard(date)
 to authenticated;
+
+create or replace function public.get_manager_kiosk_statuses(
+  reference_date date default null
+)
+returns table (
+  staff_id text,
+  current_status text
+)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  manager_account public.staff_accounts;
+  evaluated_at timestamptz;
+begin
+  manager_account := public.current_staff_account();
+  if manager_account.id is null or manager_account.role <> 'manager' then
+    raise exception 'Manager access required';
+  end if;
+  evaluated_at := case
+    when reference_date is null
+      or reference_date = (now() at time zone 'Europe/London')::date
+      then now()
+    else (reference_date + time '12:00') at time zone 'Europe/London'
+  end;
+  return query
+  select profile.id,
+    case when state.value ->> 'state' = 'clocked_in'
+      then 'clocked_in' else 'clocked_out' end
+  from public.staff_profiles profile
+  cross join lateral (
+    select public.get_attendance_state(profile.id, evaluated_at) as value
+  ) state
+  where profile.active = true
+  order by profile.full_name, profile.id;
+end;
+$$;
+
+revoke all on function public.get_manager_kiosk_statuses(date)
+from public, anon, authenticated;
+grant execute on function public.get_manager_kiosk_statuses(date)
+to authenticated;

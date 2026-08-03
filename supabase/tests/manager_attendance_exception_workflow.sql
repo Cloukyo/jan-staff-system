@@ -95,6 +95,12 @@ begin
   );
 
   perform set_config('request.jwt.claim.sub', manager_user_id::text, true);
+  perform pg_temp.assert_true(
+    (select current_status = 'clocked_out'
+      from public.get_manager_kiosk_statuses('2026-08-03')
+      where staff_id = test_staff_id),
+    'a previous-day unmatched clock-in must not appear currently clocked in'
+  );
   begin
     perform public.resolve_attendance_exception(
       exception_id, plan, 'Stale manager correction must not be saved',
