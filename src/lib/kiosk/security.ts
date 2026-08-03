@@ -26,6 +26,10 @@ export function kioskResultMessage(code: string): string {
     not_clocked_in: "You cannot clock out because no open shift was found.",
     too_soon: "Please wait a few seconds before trying again.",
     invalid_event: "That clock action is not valid.",
+    invalid_transition: "Attendance has changed. Please review the latest status.",
+    state_conflict: "Attendance changed while this screen was open. Please check the latest status.",
+    idempotency_conflict: "This request could not be safely repeated. Please start again.",
+    stale_shift_requires_review: "A previous shift needs manager review before it can be clocked out.",
     recorded: "Attendance recorded.",
   };
   return messages[code] ?? "The kiosk request could not be completed.";

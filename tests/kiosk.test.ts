@@ -84,6 +84,8 @@ describe("device-specific kiosk access", () => {
   const middleware = readFileSync(resolve("middleware.ts"), "utf8");
   const kioskServer = readFileSync(resolve("src/lib/kiosk/server.ts"), "utf8");
   const kioskActions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+  const stateMigration = readFileSync(resolve("supabase/migrations/20260803160623_attendance_state_machine.sql"), "utf8");
+  const verificationMigration = readFileSync(resolve("supabase/migrations/20260803162518_kiosk_attendance_state_response.sql"), "utf8");
 
   it("stores only token hashes and supports expiry and revocation", () => {
     expect(migration).toContain("token_hash bytea not null unique");
@@ -98,7 +100,10 @@ describe("device-specific kiosk access", () => {
     expect(migration).toContain("revoke execute on function public.verify_kiosk_pin(text, text) from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.record_kiosk_clock_event(text, text, text, text) from anon, authenticated");
     expect(kioskServer).toContain("get_device_kiosk_roster");
-    expect(kioskActions).toContain("record_device_kiosk_clock_event");
+    expect(kioskActions).toContain("perform_device_kiosk_attendance_action");
+    expect(stateMigration).toContain("idempotency_key uuid primary key");
+    expect(verificationMigration).toContain("'attendanceState', attendance_state");
+    expect(verificationMigration).not.toMatch(/jsonb_build_object[\s\S]*pin_hash/i);
   });
 
   it("keeps the device token in an HttpOnly cookie and redirects manager routes", () => {
