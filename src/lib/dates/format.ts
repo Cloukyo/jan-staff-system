@@ -34,6 +34,39 @@ export function londonDateStartUtc(date: string): Date {
   return new Date(result);
 }
 
+export function londonLocalDateTimeToIso(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new RangeError("Choose a valid London date and time.");
+  const [, year, month, day, hour, minute] = match;
+  const intended = Date.UTC(
+    Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute),
+  );
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hourCycle: "h23", timeZone: TIME_ZONE,
+  });
+  const offsetAt = (instant: number) => {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
+    );
+    return Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second),
+    ) - instant;
+  };
+  let instant = intended - offsetAt(intended);
+  instant = intended - offsetAt(instant);
+  const localParts = Object.fromEntries(
+    formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]),
+  );
+  const roundTrip = `${localParts.year}-${localParts.month}-${localParts.day}T${localParts.hour}:${localParts.minute}`;
+  if (roundTrip !== value) {
+    throw new RangeError("That London date and time does not exist.");
+  }
+  return new Date(instant).toISOString();
+}
+
 export function formatDateUk(date: string | Date): string {
   const value = typeof date === "string" ? parseISO(date) : date;
   return format(value, "dd/MM/yyyy");

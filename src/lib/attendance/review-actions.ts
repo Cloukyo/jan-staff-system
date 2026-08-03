@@ -4,6 +4,25 @@ import { revalidatePath } from "next/cache";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import type { AttendanceReviewStatus } from "@/lib/attendance/review-server";
+import {
+  buildAttendanceExceptionResolutionPlan,
+  type AttendanceExceptionResolutionKind,
+} from "@/lib/attendance/exceptions-server";
+import { londonLocalDateTimeToIso } from "@/lib/dates/format";
+
+type AttendanceDecisionState = { ok: boolean; message: string; conflict?: boolean };
+
+function exceptionActionError(error: { code?: string; message?: string } | null): AttendanceDecisionState {
+  const message = error?.message ?? "";
+  if (error?.code === "40001" || /changed after|no longer available|already used/i.test(message)) {
+    return {
+      ok: false,
+      conflict: true,
+      message: "Attendance changed while you were reviewing it. Reload the latest issue before trying again.",
+    };
+  }
+  return { ok: false, message: "The attendance decision could not be saved." };
+}
 
 export async function saveAttendanceReviewAction(_state: { ok: boolean; message: string }, formData: FormData) {
   const account = await requireAccount(["manager"]);
@@ -70,4 +89,87 @@ export async function resolveAttendanceCorrectionRequestAction(_state: { ok: boo
   revalidatePath("/attendance");
   revalidatePath("/payroll");
   return { ok: true, message: status === "resolved" ? "Staff request resolved." : "Staff request rejected." };
+}
+
+export async function resolveAttendanceExceptionAction(
+  _state: AttendanceDecisionState,
+  formData: FormData,
+): Promise<AttendanceDecisionState> {
+  await requireAccount(["manager"]);
+  const exceptionId = String(formData.get("exceptionId") ?? "");
+  const staffId = String(formData.get("staffId") ?? "");
+  const operationalDate = String(formData.get("operationalDate") ?? "");
+  const expectedRevision = String(formData.get("expectedRevision") ?? "");
+  const resolutionKind = String(formData.get("resolutionKind") ?? "") as AttendanceExceptionResolutionKind;
+  const reason = String(formData.get("reason") ?? "").trim();
+  const localTimestamp = String(formData.get("eventTimestamp") ?? "");
+  if (!exceptionId || !staffId || !expectedRevision
+    || !/^\d{4}-\d{2}-\d{2}$/.test(operationalDate)
+    || !["add_missing_clock_in", "add_missing_clock_out", "correct_clock_in", "correct_clock_out"].includes(resolutionKind)
+    || reason.length < 5) {
+    return { ok: false, message: "Choose a correction and enter a clear reason of at least five characters." };
+  }
+
+  let eventTimestamp: string;
+  try {
+    eventTimestamp = londonLocalDateTimeToIso(localTimestamp);
+  } catch {
+    return { ok: false, message: "Choose a valid correction date and time in London." };
+  }
+
+  let correctionPlan: ReturnType<typeof buildAttendanceExceptionResolutionPlan>;
+  try {
+    correctionPlan = buildAttendanceExceptionResolutionPlan({
+      operationId: exceptionId,
+      staffId,
+      operationalDate,
+      resolutionKind,
+      eventTimestamp,
+      effectiveEventId: String(formData.get("effectiveEventId") ?? "") || undefined,
+      originalEventId: String(formData.get("originalEventId") ?? "") || null,
+      correctionId: String(formData.get("correctionId") ?? "") || null,
+    });
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Choose a valid correction." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("resolve_attendance_exception", {
+    target_exception_id: exceptionId,
+    correction_plan: correctionPlan,
+    reason,
+    expected_revision: expectedRevision,
+    operation_id: exceptionId,
+  });
+  if (error) return exceptionActionError(error);
+  revalidatePath("/attendance");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  revalidatePath("/my-attendance");
+  return { ok: true, message: "Attendance issue resolved and correction recorded." };
+}
+
+export async function dismissAttendanceExceptionAction(
+  _state: AttendanceDecisionState,
+  formData: FormData,
+): Promise<AttendanceDecisionState> {
+  await requireAccount(["manager"]);
+  const exceptionId = String(formData.get("exceptionId") ?? "");
+  const expectedRevision = String(formData.get("expectedRevision") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!exceptionId || !expectedRevision || reason.length < 5) {
+    return { ok: false, message: "Enter a clear reason of at least five characters." };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("dismiss_attendance_exception", {
+    target_exception_id: exceptionId,
+    reason,
+    expected_revision: expectedRevision,
+    operation_id: exceptionId,
+  });
+  if (error) return exceptionActionError(error);
+  revalidatePath("/attendance");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  return { ok: true, message: "Attendance issue dismissed with no attendance change." };
 }
