@@ -153,31 +153,6 @@ export async function changeTemporaryKioskPinAction(input: {
   return rpcResult((data as RpcResult[] | null)?.[0]);
 }
 
-export async function recordKioskEventAction(input: {
-  staffId: string;
-  pin: string;
-  eventType: "clock_in" | "clock_out";
-  deviceId?: string;
-}): Promise<KioskActionResult> {
-  if (!input.staffId || !/^\d{4,6}$/.test(input.pin)) return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
-  const deviceToken = await getKioskDeviceToken();
-  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
-  const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("record_device_kiosk_clock_event", {
-    device_token: deviceToken,
-    target_staff_id: input.staffId,
-    candidate_pin: input.pin,
-    requested_event_type: input.eventType,
-  });
-  if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
-  const result = rpcResult((data as RpcResult[] | null)?.[0]);
-  if (result.ok) {
-    revalidatePath("/clock");
-    revalidatePath("/attendance");
-  }
-  return result;
-}
-
 export async function saveKioskSettingsAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {
   await requireAccount(["manager"]);
   const staffId = String(formData.get("staffId") ?? "");

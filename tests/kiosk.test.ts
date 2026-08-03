@@ -189,7 +189,7 @@ describe("kiosk PIN safety", () => {
     expect(temporaryPinMigration).toContain("perform public.require_kiosk_device(device_token)");
     expect(temporaryPinMigration).not.toMatch(/returns table[\\s\\S]{0,300}pin_hash/i);
     expect(actions).toContain("changeTemporaryKioskPinAction");
-    expect(kiosk).toContain('setMode("change")');
+    expect(kiosk).toContain('dispatch({ type: "change_required" })');
     expect(kiosk).toContain("<PinKeypad");
     expect(manager).not.toContain("pinResetRequired");
     expect(manager).not.toContain('name="requireChange"');

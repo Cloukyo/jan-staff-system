@@ -1,26 +1,29 @@
 "use client";
 
-import { CheckCircle2, Clock3, LogIn, LogOut } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { CheckCircle2, Clock3 } from "lucide-react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { PinKeypad } from "@/components/kiosk/pin-keypad";
 import { ServiceWorkerRegistration } from "@/components/kiosk/service-worker-registration";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
-import { changeTemporaryKioskPinAction, recordKioskEventAction, verifyKioskPinAction } from "@/lib/kiosk/actions";
+import {
+  changeTemporaryKioskPinAction,
+  performKioskAttendanceAction,
+  verifyKioskPinAction,
+} from "@/lib/kiosk/actions";
 import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
+import { initialKioskFlowState, kioskFlowReducer } from "@/lib/kiosk/flow";
+import { kioskActionPresentation } from "@/lib/kiosk/presentation";
 import { formatDateUk, formatHours } from "@/lib/dates/format";
-
-type Mode = "select" | "pin" | "change" | "action" | "success";
 
 export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterEntry[] }) {
   const [roster, setRoster] = useState(initialRoster);
   const [selected, setSelected] = useState<KioskRosterEntry | null>(null);
-  const [pin, setPin] = useState("");
+  const [flow, dispatch] = useReducer(kioskFlowReducer, initialKioskFlowState);
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [changeStep, setChangeStep] = useState<"new" | "confirm">("new");
-  const [mode, setMode] = useState<Mode>("select");
   const [message, setMessage] = useState("");
   const [weeklyHours, setWeeklyHours] = useState<{
     weekStartDate: string;
@@ -29,34 +32,40 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     openShiftInProgress: boolean;
   } | null>(null);
   const [pending, startTransition] = useTransition();
+  const submissionKey = useRef<string | null>(null);
 
   function reset() {
     setSelected(null);
-    setPin("");
+    dispatch({ type: "cancel" });
+    submissionKey.current = null;
     setNewPin("");
     setConfirmPin("");
     setChangeStep("new");
     setMessage("");
     setWeeklyHours(null);
-    setMode("select");
   }
 
   function verify() {
     if (!selected) return;
     startTransition(async () => {
-      const result = await verifyKioskPinAction(selected.staffId, pin);
+      const result = await verifyKioskPinAction(selected.staffId, flow.pin);
       setMessage(result.message);
       if (result.ok && result.code === "change_required") {
         if (result.currentStatus) setSelected({ ...selected, currentStatus: result.currentStatus });
         if (result.weeklyHours) setWeeklyHours(result.weeklyHours);
-        setMode("change");
+        dispatch({ type: "change_required" });
         return;
       }
-      if (result.ok && result.currentStatus) {
-        setSelected({ ...selected, currentStatus: result.currentStatus });
+      if (result.ok && result.attendanceState) {
+        const currentStatus = result.attendanceState.state === "clocked_in"
+          ? "clocked_in"
+          : "clocked_out";
+        setSelected({ ...selected, currentStatus });
         setWeeklyHours(result.weeklyHours ?? null);
-        setMode("action");
+        dispatch({ type: "verified", attendanceState: result.attendanceState });
+        return;
       }
+      dispatch({ type: "invalid" });
     });
   }
 
@@ -65,33 +74,79 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     startTransition(async () => {
       const result = await changeTemporaryKioskPinAction({
         staffId: selected.staffId,
-        temporaryPin: pin,
+        temporaryPin: flow.pin,
         newPin,
         confirmation: confirmPin,
       });
       setMessage(result.message);
       if (!result.ok) return;
-      setPin(newPin);
+      const replacementPin = newPin;
       setNewPin("");
       setConfirmPin("");
       setSelected({ ...selected, currentStatus: result.currentStatus ?? selected.currentStatus, pinReady: true });
-      setWeeklyHours(result.weeklyHours ?? null);
-      setMode("action");
+      const verification = await verifyKioskPinAction(selected.staffId, replacementPin);
+      setMessage(verification.message);
+      if (!verification.ok || !verification.attendanceState) {
+        dispatch({ type: "invalid" });
+        return;
+      }
+      dispatch({ type: "pin_changed", pin: replacementPin });
+      dispatch({ type: "verified", attendanceState: verification.attendanceState });
+      setWeeklyHours(verification.weeklyHours ?? null);
     });
   }
 
-  function record(eventType: "clock_in" | "clock_out") {
-    if (!selected) return;
+  function record() {
+    if (!selected || !flow.attendanceState) return;
+    if (!flow.pin) {
+      dispatch({ type: "invalid" });
+      setMessage("Enter your PIN again to continue with the latest attendance status.");
+      return;
+    }
+    const action = flow.attendanceState.allowedActions[0];
+    if (!action || submissionKey.current) return;
+    const before = flow.attendanceState;
+    const key = crypto.randomUUID();
+    submissionKey.current = key;
+    dispatch({ type: "submit", idempotencyKey: key });
     startTransition(async () => {
-      const result = await recordKioskEventAction({ staffId: selected.staffId, pin, eventType });
-      setMessage(result.ok ? `${eventType === "clock_in" ? "Clock in" : "Clock out"} recorded for ${selected.displayName}.` : result.message);
-      if (!result.ok) return;
-      const currentStatus = result.currentStatus ?? (eventType === "clock_in" ? "clocked_in" : "clocked_out");
+      const result = await performKioskAttendanceAction({
+        staffId: selected.staffId,
+        pin: flow.pin,
+        action,
+        expectedRevision: before.revision,
+        idempotencyKey: key,
+      });
+      submissionKey.current = null;
+      setMessage(result.message);
+      if (result.code === "state_conflict" && result.attendanceState) {
+        dispatch({ type: "conflict", latest: result.attendanceState });
+        return;
+      }
+      if (!result.ok || !result.recordedAt) {
+        dispatch({ type: "invalid" });
+        return;
+      }
+      const currentStatus = result.attendanceState?.state === "clocked_in"
+        ? "clocked_in"
+        : "clocked_out";
       setRoster((current) => current.map((person) => person.staffId === selected.staffId ? { ...person, currentStatus } : person));
-      setMode("success");
-      window.setTimeout(reset, 4000);
+      const completedMinutes = action === "clock_out" && before.currentEvent
+        ? Math.max(0, Math.floor((new Date(result.recordedAt).getTime()
+          - new Date(before.currentEvent.eventTimestamp).getTime()) / 60_000))
+        : null;
+      setMessage(action === "clock_out" ? "Clocked out" : "Clocked in");
+      dispatch({ type: "succeeded", recordedAt: result.recordedAt, completedMinutes });
+      window.setTimeout(() => {
+        dispatch({ type: "timeout" });
+        reset();
+      }, 4000);
     });
   }
+
+  const presentation = flow.attendanceState
+    ? kioskActionPresentation(flow.attendanceState, new Date().toISOString())
+    : null;
 
   return (
     <main className="min-h-screen bg-purple-950 p-4 text-white">
@@ -108,7 +163,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Remove Staff Clock access from this browser</button>
         </form>
 
-        {mode === "select" ? (
+        {flow.mode === "select" ? (
           <>
             <h1 className="mt-8 text-center text-4xl font-black">Staff Clock</h1>
             <p className="mt-3 text-center font-semibold text-slate-600">Choose your name to clock in or clock out.</p>
@@ -120,7 +175,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
                   className="min-h-28 rounded-lg bg-white p-5 text-left shadow-soft ring-1 ring-purple-100 transition hover:ring-purple-500 focus:outline-purple-700"
                   onClick={() => {
                     setSelected(person);
-                    setMode("pin");
+                    dispatch({ type: "choose" });
                     setMessage(person.pinReady ? "" : "A manager must set your Staff Clock PIN before you can clock in.");
                   }}
                 >
@@ -135,7 +190,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           </>
         ) : null}
 
-        {mode === "change" && selected ? (
+        {flow.mode === "change" && selected ? (
           <KioskPanel title="Choose your own PIN" message={message}>
             <div className="mx-auto grid max-w-sm gap-4">
               {changeStep === "new"
@@ -152,20 +207,20 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           </KioskPanel>
         ) : null}
 
-        {mode === "pin" && selected ? (
+        {flow.mode === "pin" && selected ? (
           <KioskPanel title={`Enter PIN for ${selected.displayName}`} message={message}>
             <div className="mx-auto max-w-sm">
-              <PinKeypad value={pin} onChange={setPin} label="Enter your PIN" />
+              <PinKeypad value={flow.pin} onChange={(value) => dispatch({ type: "pin_changed", pin: value })} label="Enter your PIN" />
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <Button variant="secondary" onClick={reset}>Cancel</Button>
-                <Button disabled={pending || pin.length < 4 || !selected.pinReady} onClick={verify}>{pending ? "Checking" : "Continue"}</Button>
+                <Button disabled={pending || flow.pin.length < 4 || !selected.pinReady} onClick={verify}>{pending ? "Checking" : "Continue"}</Button>
               </div>
             </div>
           </KioskPanel>
         ) : null}
 
-        {mode === "action" && selected ? (
-          <KioskPanel title={`Hello ${selected.displayName}`} message={`You are currently ${selected.currentStatus === "clocked_in" ? "clocked in" : "clocked out"}.`}>
+        {flow.mode === "confirm" && selected && presentation ? (
+          <KioskPanel title={`${presentation.heading}, ${selected.displayName}`} message={presentation.body}>
             <div className="mx-auto max-w-xl">
               {weeklyHours ? (
                 <div className="mb-5 rounded-lg bg-white p-5 text-center shadow-soft ring-1 ring-purple-100">
@@ -177,19 +232,20 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
                   {weeklyHours.openShiftInProgress ? <p className="mt-2 text-sm font-bold text-amber-700">Current shift in progress is not included yet.</p> : null}
                 </div>
               ) : null}
-              {selected.currentStatus === "clocked_in" ? (
-                <button disabled={pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-lg bg-purple-700 p-6 text-2xl font-black text-white disabled:opacity-60" onClick={() => record("clock_out")}><LogOut className="h-8 w-8" /> Clock out</button>
-              ) : (
-                <button disabled={pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-lg bg-green-700 p-6 text-2xl font-black text-white disabled:opacity-60" onClick={() => record("clock_in")}><LogIn className="h-8 w-8" /> Clock in</button>
-              )}
+              {presentation.primaryLabel ? (
+                <button disabled={pending || flow.pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-lg bg-green-700 p-6 text-2xl font-black text-white disabled:opacity-60" onClick={record}>
+                  <Clock3 className="h-8 w-8" /> {pending || flow.pending ? "Recording" : presentation.primaryLabel}
+                </button>
+              ) : null}
               <Button variant="secondary" className="mt-5 w-full" onClick={reset}>Cancel</Button>
             </div>
           </KioskPanel>
         ) : null}
 
-        {mode === "success" ? (
-          <KioskPanel title="Recorded" message={message}>
+        {flow.mode === "success" ? (
+          <KioskPanel title="Recorded" message={`${message}${flow.recordedAt ? ` at ${new Date(flow.recordedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}` : ""}.`}>
             <CheckCircle2 className="mx-auto h-24 w-24 text-green-600" />
+            {flow.completedMinutes !== null ? <p className="mt-4 text-center text-lg font-bold">Shift duration: {formatHours(flow.completedMinutes)}</p> : null}
             <Button className="mx-auto mt-6 flex" onClick={reset}>Done</Button>
           </KioskPanel>
         ) : null}

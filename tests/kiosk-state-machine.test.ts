@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mapKioskActionResponse } from "@/lib/kiosk/actions";
 import { kioskActionPresentation } from "@/lib/kiosk/presentation";
 import type { AttendanceStateResult } from "@/lib/attendance/types";
+import {
+  initialKioskFlowState,
+  kioskFlowReducer,
+} from "@/lib/kiosk/flow";
 
 function attendanceState(
   overrides: Partial<AttendanceStateResult> = {},
@@ -105,5 +109,60 @@ describe("kiosk attendance RPC mapping", () => {
     expect(result.code).toBe("state_conflict");
     expect(result.attendanceState).toEqual(latest);
     expect(result.attendanceState?.allowedActions).toEqual(["clock_out"]);
+  });
+});
+
+describe("kiosk confirmation flow", () => {
+  it.each(["invalid", "cancel", "timeout"] as const)(
+    "clears the PIN after %s",
+    (reason) => {
+      const started = { ...initialKioskFlowState, mode: "confirm" as const, pin: "4826" };
+      const result = kioskFlowReducer(started, { type: reason });
+      expect(result.pin).toBe("");
+    },
+  );
+
+  it("clears the PIN after success", () => {
+    const started = { ...initialKioskFlowState, mode: "confirm" as const, pin: "4826" };
+    const result = kioskFlowReducer(started, {
+      type: "succeeded",
+      recordedAt: "2026-08-03T17:05:00+01:00",
+      completedMinutes: 485,
+    });
+    expect(result.pin).toBe("");
+    expect(result.mode).toBe("success");
+    expect(result.recordedAt).toBe("2026-08-03T17:05:00+01:00");
+    expect(result.completedMinutes).toBe(485);
+  });
+
+  it("does not replace a pending submission key on a double tap", () => {
+    const first = kioskFlowReducer(
+      { ...initialKioskFlowState, mode: "confirm", pin: "4826" },
+      { type: "submit", idempotencyKey: "first-key" },
+    );
+    const second = kioskFlowReducer(first, {
+      type: "submit",
+      idempotencyKey: "second-key",
+    });
+    expect(second.pending).toBe(true);
+    expect(second.idempotencyKey).toBe("first-key");
+  });
+
+  it("returns a state conflict to confirmation with the latest state", () => {
+    const latest = attendanceState({ state: "clocked_in", allowedActions: ["clock_out"] });
+    const result = kioskFlowReducer(
+      {
+        ...initialKioskFlowState,
+        mode: "confirm",
+        pin: "4826",
+        pending: true,
+        idempotencyKey: "first-key",
+      },
+      { type: "conflict", latest },
+    );
+    expect(result.mode).toBe("confirm");
+    expect(result.attendanceState).toEqual(latest);
+    expect(result.pin).toBe("");
+    expect(result.pending).toBe(false);
   });
 });
