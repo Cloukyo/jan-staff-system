@@ -12,7 +12,7 @@ import {
 } from "@/lib/kiosk/offline/types";
 
 export const OFFLINE_DB_NAME = "jan-staff-clock";
-export const OFFLINE_DB_VERSION = 1;
+export const OFFLINE_DB_VERSION = 2;
 
 const stores = {
   metadata: "metadata",
@@ -142,6 +142,33 @@ export async function deleteOfflineDatabase(): Promise<void> {
       reject(new Error("Offline database deletion is blocked")),
     );
   });
+}
+
+export async function resetOfflineDatabaseSafely(input: {
+  managerAuthorised: boolean;
+  reason: string;
+  diagnosticExportConfirmed?: boolean;
+}): Promise<
+  | { status: "reset"; pendingCount: number }
+  | { status: "blocked"; pendingCount: number; reason: "manager_required" | "reason_required" | "diagnostic_export_required" }
+> {
+  const actions = await listPendingActions({ includeDefinitive: true });
+  const pendingCount = actions.filter((action) =>
+    ["pending", "syncing", "conflicted"].includes(action.status),
+  ).length;
+  if (pendingCount > 0) {
+    if (!input.managerAuthorised) {
+      return { status: "blocked", pendingCount, reason: "manager_required" };
+    }
+    if (input.reason.trim().length < 5) {
+      return { status: "blocked", pendingCount, reason: "reason_required" };
+    }
+    if (!input.diagnosticExportConfirmed) {
+      return { status: "blocked", pendingCount, reason: "diagnostic_export_required" };
+    }
+  }
+  await deleteOfflineDatabase();
+  return { status: "reset", pendingCount };
 }
 
 export async function replaceRosterAtomically(

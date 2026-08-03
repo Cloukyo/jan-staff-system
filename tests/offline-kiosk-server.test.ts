@@ -5,6 +5,7 @@ import {
   OFFLINE_DEFINITIVE_QUEUE_RETENTION_DAYS,
   OFFLINE_PIN_MAX_FAILURES,
   OFFLINE_RECEIPT_RETENTION_DAYS,
+  dispositionForSyncOutcome,
   resolveOfflineCapability,
 } from "@/lib/kiosk/offline/types";
 
@@ -22,6 +23,10 @@ describe("offline kiosk capability policy", () => {
       resolveOfflineCapability({
         offlineEnabled: false,
         hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "2026-07-31T09:00:00Z",
@@ -35,6 +40,10 @@ describe("offline kiosk capability policy", () => {
       resolveOfflineCapability({
         offlineEnabled: true,
         hardwareVerifiedAt: null,
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "2026-07-31T09:00:00Z",
@@ -48,6 +57,10 @@ describe("offline kiosk capability policy", () => {
       resolveOfflineCapability({
         offlineEnabled: true,
         hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "2026-07-30T08:59:59Z",
@@ -64,6 +77,10 @@ describe("offline kiosk capability policy", () => {
       resolveOfflineCapability({
         offlineEnabled: true,
         hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "2026-07-30T09:00:00Z",
@@ -72,18 +89,22 @@ describe("offline kiosk capability policy", () => {
     ).toBe("expired");
   });
 
-  it("returns the server-issued authorisation when every gate passes", () => {
+  it("returns an active server-issued authorisation when every gate passes", () => {
     expect(
       resolveOfflineCapability({
         offlineEnabled: true,
         hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "2026-07-31T09:00:00Z",
         now: "2026-07-30T09:00:00Z",
       }),
     ).toEqual({
-      status: "ready",
+      status: "active",
       authorisationId: "authorisation-1",
       rosterVersion: "roster-1",
       expiresAt: "2026-07-31T09:00:00Z",
@@ -95,11 +116,63 @@ describe("offline kiosk capability policy", () => {
       resolveOfflineCapability({
         offlineEnabled: true,
         hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+        revokedAt: null,
+        refreshRequired: false,
+        clientSchemaVersion: 1,
+        acceptedSchemaVersion: 1,
         authorisationId: "authorisation-1",
         rosterVersion: "roster-1",
         expiresAt: "not-a-date",
         now: "2026-07-30T09:00:00Z",
       }),
     ).toThrow(/valid timestamp/i);
+  });
+
+  it("warns when an otherwise active authorisation is within two hours of expiry", () => {
+    expect(resolveOfflineCapability({
+      offlineEnabled: true,
+      hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+      revokedAt: null,
+      refreshRequired: false,
+      clientSchemaVersion: 1,
+      acceptedSchemaVersion: 1,
+      authorisationId: "authorisation-1",
+      rosterVersion: "roster-1",
+      expiresAt: "2026-07-30T10:30:00Z",
+      now: "2026-07-30T09:00:00Z",
+    })).toEqual(expect.objectContaining({ status: "expiring" }));
+  });
+
+  it.each([
+    [{ revokedAt: "2026-07-30T08:30:00Z" }, "revoked"],
+    [{ refreshRequired: true }, "refresh_required"],
+    [{ clientSchemaVersion: 2 }, "schema_incompatible"],
+  ] as const)("returns %s lifecycle state", (override, expected) => {
+    expect(resolveOfflineCapability({
+      offlineEnabled: true,
+      hardwareVerifiedAt: "2026-07-30T08:00:00Z",
+      revokedAt: null,
+      refreshRequired: false,
+      clientSchemaVersion: 1,
+      acceptedSchemaVersion: 1,
+      authorisationId: "authorisation-1",
+      rosterVersion: "roster-1",
+      expiresAt: "2026-07-31T09:00:00Z",
+      now: "2026-07-30T09:00:00Z",
+      ...override,
+    }).status).toBe(expected);
+  });
+});
+
+describe("offline sync result policy", () => {
+  it.each([
+    ["accepted", { complete: true, retry: false, managerReview: false, blocksStaffStream: false }],
+    ["accepted_with_warning", { complete: true, retry: false, managerReview: true, blocksStaffStream: false }],
+    ["state_conflict", { complete: true, retry: false, managerReview: true, blocksStaffStream: true }],
+    ["roster_outdated", { complete: false, retry: true, managerReview: false, blocksStaffStream: true, refreshRoster: true }],
+    ["device_revoked", { complete: true, retry: false, managerReview: true, blocksStaffStream: true, reprovision: true }],
+    ["retryable_failure", { complete: false, retry: true, managerReview: false, blocksStaffStream: true }],
+  ] as const)("defines durable handling for %s", (outcome, expected) => {
+    expect(dispositionForSyncOutcome(outcome)).toEqual(expect.objectContaining(expected));
   });
 });

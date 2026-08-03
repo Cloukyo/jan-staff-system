@@ -13,6 +13,7 @@ import type {
   OfflineSyncTrigger,
   PendingAttendanceAction,
 } from "@/lib/kiosk/offline/types";
+import { dispositionForSyncOutcome } from "@/lib/kiosk/offline/types";
 
 type OfflineSyncTransport = (
   action: PendingAttendanceAction,
@@ -30,6 +31,8 @@ function emptySummary(trigger: OfflineSyncTrigger): OfflineSyncSummary {
     conflicted: 0,
     rejected: 0,
     retryableFailures: 0,
+    rosterRefreshRequired: false,
+    reprovisionRequired: false,
     leaseUnavailable: false,
   };
 }
@@ -78,8 +81,10 @@ export function createOfflineSyncWorker(input: {
             left.occurredAtDevice.localeCompare(right.occurredAtDevice) ||
             left.queueCreatedAt.localeCompare(right.queueCreatedAt),
         );
+      const blockedStaff = new Set<string>();
 
       for (const action of actions) {
+        if (blockedStaff.has(action.staffId)) continue;
         summary.attempted += 1;
         await markPendingActionSyncing(action.idempotencyKey);
 
@@ -92,16 +97,8 @@ export function createOfflineSyncWorker(input: {
             "network_or_server",
           );
           summary.retryableFailures += 1;
-          break;
-        }
-
-        if (response.outcome === "retryable_failure") {
-          await markPendingActionRetryable(
-            action.idempotencyKey,
-            "retryable_response",
-          );
-          summary.retryableFailures += 1;
-          break;
+          blockedStaff.add(action.staffId);
+          continue;
         }
 
         if (
@@ -113,13 +110,22 @@ export function createOfflineSyncWorker(input: {
             "invalid_response_identity",
           );
           summary.retryableFailures += 1;
-          break;
+          blockedStaff.add(action.staffId);
+          continue;
         }
 
-        if (
-          response.outcome === "synced" ||
-          response.outcome === "already_processed"
-        ) {
+        const disposition = dispositionForSyncOutcome(response.outcome);
+        summary.rosterRefreshRequired ||= disposition.refreshRoster;
+        summary.reprovisionRequired ||= disposition.reprovision;
+
+        if (!disposition.complete) {
+          await markPendingActionRetryable(action.idempotencyKey, response.outcome);
+          if (disposition.retry) summary.retryableFailures += 1;
+          if (disposition.blocksStaffStream) blockedStaff.add(action.staffId);
+          continue;
+        }
+
+        if (["accepted", "accepted_with_warning", "already_processed"].includes(response.outcome)) {
           await persistSyncReceipt({
             actionId: action.idempotencyKey,
             definitiveStatus: "synced",
@@ -130,7 +136,7 @@ export function createOfflineSyncWorker(input: {
           continue;
         }
 
-        if (response.outcome === "conflicted") {
+        if (disposition.managerReview) {
           await persistSyncReceipt({
             actionId: action.idempotencyKey,
             definitiveStatus: "conflicted",
@@ -138,6 +144,7 @@ export function createOfflineSyncWorker(input: {
             trustedState: response.trustedState,
           });
           summary.conflicted += 1;
+          if (disposition.blocksStaffStream) blockedStaff.add(action.staffId);
           continue;
         }
 

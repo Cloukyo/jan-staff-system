@@ -57,14 +57,18 @@ function action(
 function response(
   idempotencyKey: string,
   staffId: string,
-  outcome: OfflineSyncResponse["outcome"] = "synced",
+  outcome: OfflineSyncResponse["outcome"] = "accepted",
 ): OfflineSyncResponse {
   return {
     outcome,
     receipt: {
       schemaVersion: 1,
       idempotencyKey,
-      outcome: outcome === "conflicted" ? "conflicted" : "synced",
+      outcome: ["state_conflict", "clock_drift_conflict", "invalid_sequence"].includes(outcome)
+        ? "conflicted"
+        : outcome === "accepted" || outcome === "accepted_with_warning" || outcome === "already_processed"
+          ? "synced"
+          : "rejected",
       receivedAtServer: "2026-07-30T09:01:00Z",
       retainedUntil: "2026-08-29T09:01:00Z",
     },
@@ -167,22 +171,23 @@ describe("offline kiosk synchronisation worker", () => {
     ]);
   });
 
-  it("stops after network loss and leaves that action and later actions pending", async () => {
+  it("keeps a failed staff stream pending while another staff member can progress", async () => {
     const first = await enqueueAttendanceAction(action("staff-a"));
     const second = await enqueueAttendanceAction(action("staff-b"));
     const third = await enqueueAttendanceAction(action("staff-a"));
     const send = vi
       .fn()
       .mockResolvedValueOnce(response(first.idempotencyKey, "staff-a"))
-      .mockRejectedValueOnce(new TypeError("network offline"));
+      .mockRejectedValueOnce(new TypeError("request failed"))
+      .mockResolvedValueOnce(response(third.idempotencyKey, "staff-a"));
     const worker = createOfflineSyncWorker({ send, ownerId: "worker-1" });
 
     const summary = await worker.sync("online");
 
     expect(summary).toEqual(
-      expect.objectContaining({ synced: 1, retryableFailures: 1 }),
+      expect.objectContaining({ synced: 2, retryableFailures: 1 }),
     );
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
     expect(
       (await listPendingActions({ includeDefinitive: true })).map(
         (queued) => [queued.idempotencyKey, queued.status],
@@ -190,7 +195,7 @@ describe("offline kiosk synchronisation worker", () => {
     ).toEqual([
       [first.idempotencyKey, "synced"],
       [second.idempotencyKey, "pending"],
-      [third.idempotencyKey, "pending"],
+      [third.idempotencyKey, "synced"],
     ]);
   });
 
@@ -245,13 +250,17 @@ describe("offline kiosk synchronisation worker", () => {
   it("continues another staff stream after preserving a conflict", async () => {
     const conflicted = await enqueueAttendanceAction(action("staff-a"));
     const accepted = await enqueueAttendanceAction(action("staff-b"));
+    const blockedLater = await enqueueAttendanceAction(action("staff-a", {
+      action: "clock_out",
+      priorPendingActionId: conflicted.idempotencyKey,
+    }));
     const worker = createOfflineSyncWorker({
       ownerId: "worker-1",
       send: async (queued) =>
         response(
           queued.idempotencyKey,
           queued.staffId,
-          queued.staffId === "staff-a" ? "conflicted" : "synced",
+          queued.staffId === "staff-a" ? "state_conflict" : "accepted",
         ),
     });
 
@@ -267,6 +276,22 @@ describe("offline kiosk synchronisation worker", () => {
     ).toEqual([
       [conflicted.idempotencyKey, "conflicted"],
       [accepted.idempotencyKey, "synced"],
+      [blockedLater.idempotencyKey, "pending"],
+    ]);
+  });
+
+  it("keeps roster-outdated actions retryable and requests a refresh", async () => {
+    const queued = await enqueueAttendanceAction(action("staff-a"));
+    const worker = createOfflineSyncWorker({
+      ownerId: "worker-1",
+      send: async () => response(queued.idempotencyKey, "staff-a", "roster_outdated"),
+    });
+
+    const summary = await worker.sync("manual");
+
+    expect(summary).toEqual(expect.objectContaining({ retryableFailures: 1, rosterRefreshRequired: true }));
+    expect(await listPendingActions()).toEqual([
+      expect.objectContaining({ status: "pending", lastErrorCategory: "roster_outdated" }),
     ]);
   });
 });

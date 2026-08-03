@@ -17,6 +17,8 @@ import {
   putOfflinePinVerifier,
   putTrustedState,
   replaceRosterAtomically,
+  resetOfflineDatabaseSafely,
+  OFFLINE_DB_VERSION,
   saveDeviceKeys,
 } from "@/lib/kiosk/offline/database";
 import {
@@ -98,6 +100,28 @@ afterEach(async () => {
 });
 
 describe("offline kiosk IndexedDB", () => {
+  it("uses schema version 2 and preserves a version 1 pending action during upgrade", async () => {
+    expect(OFFLINE_DB_VERSION).toBe(2);
+    const legacy = pending();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("jan-staff-clock", 1);
+      request.addEventListener("upgradeneeded", () => {
+        request.result.createObjectStore("metadata", { keyPath: "key" });
+        request.result.createObjectStore("pendingActions", { keyPath: "idempotencyKey" })
+          .add({ ...legacy, schemaVersion: 1, deviceSequence: 1, queueCreatedAt: "2026-07-30T08:31:00Z", status: "pending", retryCount: 0, lastErrorCategory: null });
+      });
+      request.addEventListener("success", () => {
+        request.result.close();
+        resolve();
+      });
+      request.addEventListener("error", () => reject(request.error));
+    });
+
+    expect(await listPendingActions()).toEqual([
+      expect.objectContaining({ idempotencyKey: legacy.idempotencyKey, schemaVersion: 1, status: "pending" }),
+    ]);
+  });
+
   it("keeps the old roster active when replacement fails atomically", async () => {
     await replaceRosterAtomically(
       roster("roster-1", [
@@ -263,6 +287,20 @@ describe("offline kiosk IndexedDB", () => {
         (action) => action.idempotencyKey,
       ),
     ).toEqual([pendingAction.idempotencyKey, conflictAction.idempotencyKey]);
+  });
+
+  it("refuses a normal local reset while unsynchronised evidence exists", async () => {
+    const queued = await enqueueAttendanceAction(pending());
+
+    const result = await resetOfflineDatabaseSafely({
+      managerAuthorised: false,
+      reason: "",
+    });
+
+    expect(result).toEqual(expect.objectContaining({ status: "blocked", pendingCount: 1 }));
+    expect(await listPendingActions()).toEqual([
+      expect.objectContaining({ idempotencyKey: queued.idempotencyKey }),
+    ]);
   });
 
   it("stores no PIN, PIN hash, hourly rate, or salary fields in roster and actions", async () => {

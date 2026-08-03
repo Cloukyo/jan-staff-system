@@ -5,6 +5,7 @@ export const OFFLINE_CLOCK_DRIFT_SECONDS = 5 * 60;
 export const OFFLINE_PIN_MAX_FAILURES = 3;
 export const OFFLINE_RECEIPT_RETENTION_DAYS = 30;
 export const OFFLINE_DEFINITIVE_QUEUE_RETENTION_DAYS = 7;
+export const OFFLINE_EXPIRING_WARNING_MINUTES = 2 * 60;
 
 export type OfflineCapability =
   | {
@@ -16,7 +17,22 @@ export type OfflineCapability =
       expiresAt: string;
     }
   | {
-      status: "ready";
+      status: "revoked";
+      revokedAt: string;
+    }
+  | {
+      status: "refresh_required";
+      authorisationId: string;
+      rosterVersion: string;
+      expiresAt: string;
+    }
+  | {
+      status: "schema_incompatible";
+      clientSchemaVersion: number;
+      acceptedSchemaVersion: number;
+    }
+  | {
+      status: "active" | "expiring";
       authorisationId: string;
       rosterVersion: string;
       expiresAt: string;
@@ -25,6 +41,10 @@ export type OfflineCapability =
 export type OfflineCapabilityInput = {
   offlineEnabled: boolean;
   hardwareVerifiedAt: string | null;
+  revokedAt: string | null;
+  refreshRequired: boolean;
+  clientSchemaVersion: number;
+  acceptedSchemaVersion: number;
   authorisationId: string;
   rosterVersion: string;
   expiresAt: string;
@@ -96,12 +116,29 @@ export type OfflineSyncReceipt = {
 };
 
 export type OfflineSyncOutcome =
-  | "synced"
+  | "accepted"
+  | "accepted_with_warning"
   | "already_processed"
-  | "unauthorised"
-  | "conflicted"
+  | "state_conflict"
+  | "clock_drift_conflict"
+  | "authorisation_expired"
+  | "device_revoked"
+  | "staff_not_authorised"
+  | "roster_outdated"
+  | "schema_incompatible"
+  | "invalid_signature"
+  | "invalid_sequence"
   | "retryable_failure"
   | "permanently_invalid";
+
+export type OfflineSyncDisposition = {
+  complete: boolean;
+  retry: boolean;
+  managerReview: boolean;
+  blocksStaffStream: boolean;
+  refreshRoster: boolean;
+  reprovision: boolean;
+};
 
 export type OfflineSyncResponse = {
   outcome: OfflineSyncOutcome;
@@ -124,6 +161,8 @@ export type OfflineSyncSummary = {
   conflicted: number;
   rejected: number;
   retryableFailures: number;
+  rosterRefreshRequired: boolean;
+  reprovisionRequired: boolean;
   leaseUnavailable: boolean;
 };
 
@@ -185,6 +224,17 @@ export function resolveOfflineCapability(
   }
 
   timestamp(input.hardwareVerifiedAt);
+  if (input.clientSchemaVersion !== input.acceptedSchemaVersion) {
+    return {
+      status: "schema_incompatible",
+      clientSchemaVersion: input.clientSchemaVersion,
+      acceptedSchemaVersion: input.acceptedSchemaVersion,
+    };
+  }
+  if (input.revokedAt) {
+    timestamp(input.revokedAt);
+    return { status: "revoked", revokedAt: input.revokedAt };
+  }
   const now = timestamp(input.now);
   const expiresAt = timestamp(input.expiresAt);
   if (now >= expiresAt) {
@@ -194,10 +244,54 @@ export function resolveOfflineCapability(
     throw new TypeError("Offline capability requires server-issued identifiers");
   }
 
+  if (input.refreshRequired) {
+    return {
+      status: "refresh_required",
+      authorisationId: input.authorisationId,
+      rosterVersion: input.rosterVersion,
+      expiresAt: input.expiresAt,
+    };
+  }
+
   return {
-    status: "ready",
+    status:
+      expiresAt - now <= OFFLINE_EXPIRING_WARNING_MINUTES * 60_000
+        ? "expiring"
+        : "active",
     authorisationId: input.authorisationId,
     rosterVersion: input.rosterVersion,
     expiresAt: input.expiresAt,
   };
+}
+
+export function dispositionForSyncOutcome(
+  outcome: OfflineSyncOutcome,
+): OfflineSyncDisposition {
+  const base = {
+    refreshRoster: false,
+    reprovision: false,
+  };
+  switch (outcome) {
+    case "accepted":
+    case "already_processed":
+      return { ...base, complete: true, retry: false, managerReview: false, blocksStaffStream: false };
+    case "accepted_with_warning":
+      return { ...base, complete: true, retry: false, managerReview: true, blocksStaffStream: false };
+    case "state_conflict":
+    case "clock_drift_conflict":
+    case "invalid_sequence":
+      return { ...base, complete: true, retry: false, managerReview: true, blocksStaffStream: true };
+    case "roster_outdated":
+      return { ...base, complete: false, retry: true, managerReview: false, blocksStaffStream: true, refreshRoster: true };
+    case "retryable_failure":
+      return { ...base, complete: false, retry: true, managerReview: false, blocksStaffStream: true };
+    case "schema_incompatible":
+      return { ...base, complete: false, retry: false, managerReview: false, blocksStaffStream: true, reprovision: true };
+    case "authorisation_expired":
+    case "device_revoked":
+    case "staff_not_authorised":
+    case "invalid_signature":
+    case "permanently_invalid":
+      return { ...base, complete: true, retry: false, managerReview: true, blocksStaffStream: true, reprovision: outcome === "device_revoked" };
+  }
 }
