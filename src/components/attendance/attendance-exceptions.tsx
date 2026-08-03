@@ -67,8 +67,9 @@ function CorrectionForm({ issue, kind, target, label }: {
   target?: EffectiveAttendanceEvent;
   label: string;
 }) {
-  const fallback = `${issue.operationalDate}T${kind.includes("clock_in") ? "08:30" : "17:00"}:00+01:00`;
-  const suggested = issue.suggestedResolutionAt ?? fallback;
+  const defaultDateTime = target?.eventTimestamp || issue.suggestedResolutionAt
+    ? localDateTimeValue(target?.eventTimestamp ?? issue.suggestedResolutionAt!)
+    : `${issue.operationalDate}T${kind.includes("clock_in") ? "08:30" : "17:00"}`;
   return <ProductionActionForm action={resolveAttendanceExceptionAction} submitLabel={label} className="rounded-lg border border-purple-100 p-4">
     <input type="hidden" name="exceptionId" value={issue.id} />
     <input type="hidden" name="staffId" value={issue.staffId} />
@@ -79,7 +80,7 @@ function CorrectionForm({ issue, kind, target, label }: {
     <input type="hidden" name="originalEventId" value={target?.originalEventId ?? ""} />
     <input type="hidden" name="correctionId" value={target?.correctionId ?? ""} />
     <div className="grid gap-3">
-      <Field label="Correction date and time (London)"><input className={inputClassName()} type="datetime-local" name="eventTimestamp" defaultValue={localDateTimeValue(target?.eventTimestamp ?? suggested)} required /></Field>
+      <Field label="Correction date and time (London)"><input className={inputClassName()} type="datetime-local" name="eventTimestamp" defaultValue={defaultDateTime} required /></Field>
       {issue.suggestedResolutionAt && !target ? <p className="text-xs font-semibold text-purple-700">Suggested from the published rota: {formatTimeUk(issue.suggestedResolutionAt)}. This is a suggestion, not recorded attendance.</p> : null}
       <Field label="Manager reason"><input className={inputClassName()} name="reason" minLength={5} required /></Field>
     </div>

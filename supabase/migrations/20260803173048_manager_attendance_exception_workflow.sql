@@ -439,7 +439,11 @@ begin
   ) shifts on true
   left join lateral (
     select min(
-      (issue.operational_date + shift.end_time)::timestamp
+      (issue.operational_date + case
+        when issue.exception_type in ('missing_clock_in', 'unmatched_clock_out')
+          then shift.start_time
+        else shift.end_time
+      end)::timestamp
         at time zone 'Europe/London'
     ) as suggested_at
     from public.rota_shifts shift
