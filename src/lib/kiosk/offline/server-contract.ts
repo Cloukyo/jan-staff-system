@@ -170,5 +170,35 @@ export const offlineSyncResponseSchema = z.object({
   }).strict(),
 }).strict();
 
+export const offlineHealthReportSchema = z.object({
+  authorisationId: z.uuid(),
+  pendingCount: z.number().int().min(0).max(10_000),
+  oldestPendingActionAt: timestamp.nullable(),
+  storagePersisted: z.boolean(),
+  storageEstimateBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  appVersion: z.string().trim().min(1).max(40),
+}).strict().superRefine((value, context) => {
+  if ((value.pendingCount === 0) !== (value.oldestPendingActionAt === null)) {
+    context.addIssue({ code: "custom", message: "Pending count and oldest action must agree" });
+  }
+});
+
+export const offlineHealthContextSchema = z.object({
+  deviceId: z.uuid(),
+  active: z.boolean(),
+  revokedAt: timestamp.nullable(),
+  offlineEnabled: z.boolean(),
+  hardwareVerifiedAt: timestamp.nullable(),
+  reprovisionRequired: z.boolean(),
+  acceptedSchemaVersion: z.number().int().positive(),
+  authorisation: z.object({
+    id: z.uuid(),
+    expiresAt: timestamp,
+    revokedAt: timestamp.nullable(),
+    rosterVersion: z.string().min(1).max(128),
+  }).strict().nullable(),
+  serverTime: timestamp,
+}).strict();
+
 export type OfflineProvisionRequest = z.infer<typeof offlineProvisionRequestSchema>;
 export type OfflineProvisioningPackage = z.infer<typeof offlineProvisioningPackageSchema>;

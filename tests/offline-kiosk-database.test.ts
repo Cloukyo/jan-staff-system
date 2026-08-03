@@ -6,6 +6,8 @@ import {
   deleteOfflineDatabase,
   enqueueAttendanceAction,
   getActiveRoster,
+  getOfflineProvisioningPackage,
+  getOfflineQueueSummary,
   getDeviceKeys,
   getOfflinePinLockout,
   getOfflinePinVerifier,
@@ -17,6 +19,7 @@ import {
   putOfflinePinVerifier,
   putTrustedState,
   replaceRosterAtomically,
+  installOfflineProvisioningPackage,
   resetOfflineDatabaseSafely,
   OFFLINE_DB_VERSION,
   saveDeviceKeys,
@@ -26,7 +29,13 @@ import {
   createOfflinePinLockout,
   enrolOfflinePin,
   signOfflinePayload,
+  importSigningPublicKey,
+  verifyOfflinePayload,
 } from "@/lib/kiosk/offline/crypto";
+import { enqueueSignedAttendanceAction } from "@/lib/kiosk/offline/queue";
+import { toOfflineSyncRequest } from "@/lib/kiosk/offline/sync";
+import { payloadForOfflineSignature } from "@/lib/kiosk/offline/server-contract";
+import type { OfflineProvisioningPackage } from "@/lib/kiosk/offline/server-contract";
 import { buildProvisionalState } from "@/lib/kiosk/offline/projection";
 import type {
   OfflineRosterSnapshot,
@@ -100,6 +109,40 @@ afterEach(async () => {
 });
 
 describe("offline kiosk IndexedDB", () => {
+  it("installs the minimum provisioned roster and trusted states atomically", async () => {
+    const provisioned: OfflineProvisioningPackage = {
+      schemaVersion: 1,
+      featureEnabled: true,
+      device: { id: "746cbd28-b1fa-4765-b874-4631b8b0cf47", name: "Front tablet" },
+      authorisation: {
+        id: "4053cc19-27ec-4274-9a26-3d8dcf5b788e",
+        issuedAt: "2026-08-03T19:00:00.000Z",
+        expiresAt: "2026-08-04T19:00:00.000Z",
+        rosterVersion: "fb15c29e3f4b15f597781b085a71e466f6f95bb751e9729aa9041f328b57e211",
+      },
+      server: { time: "2026-08-03T19:00:00.000Z", timezone: "Europe/London", operationalDayStart: "00:00" },
+      roster: [{
+        staffId: "staff-a",
+        displayName: "Areeg",
+        employmentRole: "Practitioner",
+        pinVersion: "pin-v1",
+        trustedState: trustedState().state,
+      }],
+    };
+
+    await installOfflineProvisioningPackage(provisioned);
+
+    expect(await getOfflineProvisioningPackage()).toEqual(provisioned);
+    expect(await getActiveRoster()).toEqual(expect.objectContaining({
+      authorisationId: provisioned.authorisation.id,
+      entries: [expect.objectContaining({ staffId: "staff-a", pinVersion: "pin-v1" })],
+    }));
+    expect(await getTrustedState("staff-a")).toEqual(expect.objectContaining({
+      rosterVersion: provisioned.authorisation.rosterVersion,
+      state: provisioned.roster[0].trustedState,
+    }));
+  });
+
   it("uses schema version 2 and preserves a version 1 pending action during upgrade", async () => {
     expect(OFFLINE_DB_VERSION).toBe(2);
     const legacy = pending();
@@ -228,6 +271,34 @@ describe("offline kiosk IndexedDB", () => {
     ).toEqual([first.idempotencyKey, third.idempotencyKey]);
   });
 
+  it("reserves a sequence and signs the final immutable queue evidence", async () => {
+    const keys = await createDeviceKeys();
+    const pendingEvidence = pending({
+      authorisationId: "57dd448a-2480-4122-aa2e-3293155b7a1e",
+      rosterVersion: "fb15c29e3f4b15f597781b085a71e466f6f95bb751e9729aa9041f328b57e211",
+      deviceId: "e2619d08-63aa-44ba-957a-71f149a0783a",
+    });
+    const evidence = Object.fromEntries(
+      Object.entries(pendingEvidence).filter(([key]) => key !== "signature"),
+    ) as Omit<UnsignedPendingAction, "signature">;
+
+    const queued = await enqueueSignedAttendanceAction({
+      evidence,
+      signingPrivateKey: keys.signingPrivateKey,
+      now: () => "2026-07-30T08:31:00.000Z",
+    });
+    const submission = toOfflineSyncRequest(queued);
+    const publicKey = await importSigningPublicKey(keys.signingPublicJwk);
+
+    await expect(verifyOfflinePayload(
+      payloadForOfflineSignature(submission),
+      submission.signature,
+      publicKey,
+    )).resolves.toBe(true);
+    expect(queued.deviceSequence).toBe(1);
+    expect(queued.queueCreatedAt).toBe("2026-07-30T08:31:00.000Z");
+  });
+
   it("commits receipt, trusted state, and definitive queue status together", async () => {
     const queued = await enqueueAttendanceAction(pending());
     const nextTrusted = trustedState("staff-a", "clocked_in");
@@ -307,6 +378,17 @@ describe("offline kiosk IndexedDB", () => {
     expect(await listPendingActions()).toEqual([
       expect.objectContaining({ idempotencyKey: queued.idempotencyKey }),
     ]);
+  });
+
+  it("summarises pending and conflicted evidence for kiosk health", async () => {
+    const queued = await enqueueAttendanceAction(pending());
+
+    expect(await getOfflineQueueSummary()).toEqual({
+      pendingCount: 1,
+      conflictCount: 0,
+      oldestPendingActionAt: queued.queueCreatedAt,
+      lastSuccessfulSyncAt: null,
+    });
   });
 
   it("stores no PIN, PIN hash, hourly rate, or salary fields in roster and actions", async () => {

@@ -99,3 +99,18 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirstStatic(request));
   }
 });
+
+self.addEventListener("sync", (event) => {
+  if (event.tag !== "jan-staff-clock-sync") {
+    return;
+  }
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: "OFFLINE_SYNC_REQUESTED" });
+        }
+      }),
+  );
+});

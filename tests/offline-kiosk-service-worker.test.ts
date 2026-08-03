@@ -36,6 +36,7 @@ function workerHarness(options?: { fetchRejects?: boolean }) {
         throw new TypeError("offline");
       })
     : vi.fn(async () => new Response("network", { status: 200 }));
+  const foregroundClient = { postMessage: vi.fn() };
   const worker = {
     location: { origin: "https://staff-clock.test" },
     addEventListener: vi.fn(
@@ -44,7 +45,10 @@ function workerHarness(options?: { fetchRejects?: boolean }) {
       },
     ),
     skipWaiting: vi.fn(async () => undefined),
-    clients: { claim: vi.fn(async () => undefined) },
+    clients: {
+      claim: vi.fn(async () => undefined),
+      matchAll: vi.fn(async () => [foregroundClient]),
+    },
   };
 
   new Function("self", "caches", "fetch", source)(
@@ -53,7 +57,7 @@ function workerHarness(options?: { fetchRejects?: boolean }) {
     fetchMock,
   );
 
-  return { listeners, cache, caches, fetchMock, worker };
+  return { listeners, cache, caches, fetchMock, worker, foregroundClient };
 }
 
 describe("offline kiosk service worker", () => {
@@ -175,5 +179,21 @@ describe("offline kiosk service worker", () => {
     );
     expect(registration).toContain('scope: "/clock"');
     expect(registration).not.toContain(".sync.register");
+  });
+
+  it("uses Background Sync only to wake a foreground queue worker", async () => {
+    const { listeners, worker, foregroundClient } = workerHarness();
+    let completion = Promise.resolve();
+
+    listeners.sync({
+      tag: "jan-staff-clock-sync",
+      waitUntil(value: Promise<void>) {
+        completion = value;
+      },
+    });
+    await completion;
+
+    expect(worker.clients.matchAll).toHaveBeenCalledWith({ type: "window", includeUncontrolled: true });
+    expect(foregroundClient.postMessage).toHaveBeenCalledWith({ type: "OFFLINE_SYNC_REQUESTED" });
   });
 });

@@ -4,6 +4,8 @@ import { CheckCircle2, Clock3 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { PinKeypad } from "@/components/kiosk/pin-keypad";
 import { ServiceWorkerRegistration } from "@/components/kiosk/service-worker-registration";
+import { OfflineStatus } from "@/components/kiosk/offline-status";
+import { useOfflineKiosk } from "@/components/kiosk/use-offline-kiosk";
 import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import {
@@ -16,6 +18,12 @@ import type { KioskRosterEntry } from "@/lib/kiosk/types";
 import { initialKioskFlowState, kioskFlowReducer } from "@/lib/kiosk/flow";
 import { kioskActionPresentation } from "@/lib/kiosk/presentation";
 import { formatDateUk, formatHours } from "@/lib/dates/format";
+import {
+  enrolVerifiedOfflinePin,
+  queueProvisionalAttendanceAction,
+  verifyStoredOfflinePin,
+} from "@/lib/kiosk/offline/provisioning";
+import { buildProvisionalState } from "@/lib/kiosk/offline/projection";
 
 export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterEntry[] }) {
   const [roster, setRoster] = useState(initialRoster);
@@ -25,6 +33,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   const [confirmPin, setConfirmPin] = useState("");
   const [changeStep, setChangeStep] = useState<"new" | "confirm">("new");
   const [message, setMessage] = useState("");
+  const [localSuccess, setLocalSuccess] = useState(false);
   const [weeklyHours, setWeeklyHours] = useState<{
     weekStartDate: string;
     weekEndDate: string;
@@ -33,30 +42,93 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   } | null>(null);
   const [pending, startTransition] = useTransition();
   const submissionKey = useRef<string | null>(null);
+  const verifiedPin = useRef("");
+  const verifiedOffline = useRef(false);
+  const offline = useOfflineKiosk();
+  const rosterStatus = new Map(roster.map((person) => [person.staffId, person.currentStatus]));
+  const displayRoster = offline.runtime.package
+    ? offline.runtime.package.roster.map((person) => ({
+      staffId: person.staffId,
+      displayName: person.displayName,
+      fullName: person.displayName,
+      employmentRole: person.employmentRole,
+      currentStatus: rosterStatus.get(person.staffId)
+        ?? (person.trustedState.state === "clocked_in" ? "clocked_in" : "clocked_out"),
+      pinReady: true,
+    })) satisfies KioskRosterEntry[]
+    : roster;
 
   function reset() {
     setSelected(null);
     dispatch({ type: "cancel" });
     submissionKey.current = null;
+    verifiedPin.current = "";
+    verifiedOffline.current = false;
     setNewPin("");
     setConfirmPin("");
     setChangeStep("new");
     setMessage("");
+    setLocalSuccess(false);
     setWeeklyHours(null);
   }
 
   function verify() {
     if (!selected) return;
     startTransition(async () => {
-      const result = await verifyKioskPinAction(selected.staffId, flow.pin);
+      const enteredPin = flow.pin;
+      dispatch({ type: "pin_changed", pin: "" });
+      if (offline.connection === "offline") {
+        if (!offline.offlineUsable) {
+          setMessage("Offline clocking is unavailable until this device reconnects.");
+          dispatch({ type: "invalid" });
+          return;
+        }
+        const offlineResult = await verifyStoredOfflinePin({
+          staffId: selected.staffId,
+          pin: enteredPin,
+          now: new Date().toISOString(),
+        });
+        if (offlineResult.status !== "verified") {
+          setMessage(offlineResult.status === "unavailable"
+            ? "Offline PIN is not ready for this person. Reconnect and use the PIN once online."
+            : offlineResult.status === "locked"
+              ? "Offline PIN is locked. Reconnect and ask a manager for help."
+              : "PIN not recognised.");
+          dispatch({ type: "invalid" });
+          return;
+        }
+        const attendanceState = await buildProvisionalState(selected.staffId);
+        verifiedOffline.current = true;
+        setSelected({ ...selected, currentStatus: attendanceState.state === "clocked_in" ? "clocked_in" : "clocked_out" });
+        setWeeklyHours(null);
+        setMessage("Offline PIN accepted. Confirm the action to save it on this device.");
+        dispatch({ type: "verified", attendanceState });
+        return;
+      }
+      let result;
+      try {
+        result = await verifyKioskPinAction(selected.staffId, enteredPin);
+      } catch {
+        setMessage("The server could not be reached. Wait for the Offline status before trying again.");
+        dispatch({ type: "invalid" });
+        return;
+      }
       setMessage(result.message);
       if (result.ok && result.code === "change_required") {
+        verifiedPin.current = enteredPin;
         if (result.currentStatus) setSelected({ ...selected, currentStatus: result.currentStatus });
         if (result.weeklyHours) setWeeklyHours(result.weeklyHours);
         dispatch({ type: "change_required" });
         return;
       }
       if (result.ok && result.attendanceState) {
+        verifiedPin.current = enteredPin;
+        verifiedOffline.current = false;
+        await enrolVerifiedOfflinePin({
+          staffId: selected.staffId,
+          pin: enteredPin,
+          now: new Date().toISOString(),
+        });
         const currentStatus = result.attendanceState.state === "clocked_in"
           ? "clocked_in"
           : "clocked_out";
@@ -74,13 +146,14 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     startTransition(async () => {
       const result = await changeTemporaryKioskPinAction({
         staffId: selected.staffId,
-        temporaryPin: flow.pin,
+        temporaryPin: verifiedPin.current,
         newPin,
         confirmation: confirmPin,
       });
       setMessage(result.message);
       if (!result.ok) return;
       const replacementPin = newPin;
+      verifiedPin.current = "";
       setNewPin("");
       setConfirmPin("");
       setSelected({ ...selected, currentStatus: result.currentStatus ?? selected.currentStatus, pinReady: true });
@@ -90,7 +163,12 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
         dispatch({ type: "invalid" });
         return;
       }
-      dispatch({ type: "pin_changed", pin: replacementPin });
+      verifiedPin.current = replacementPin;
+      await enrolVerifiedOfflinePin({
+        staffId: selected.staffId,
+        pin: replacementPin,
+        now: new Date().toISOString(),
+      });
       dispatch({ type: "verified", attendanceState: verification.attendanceState });
       setWeeklyHours(verification.weeklyHours ?? null);
     });
@@ -98,7 +176,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
 
   function record() {
     if (!selected || !flow.attendanceState) return;
-    if (!flow.pin) {
+    if (!verifiedOffline.current && !verifiedPin.current) {
       dispatch({ type: "invalid" });
       setMessage("Enter your PIN again to continue with the latest attendance status.");
       return;
@@ -110,15 +188,46 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     submissionKey.current = key;
     dispatch({ type: "submit", idempotencyKey: key });
     startTransition(async () => {
+      if (verifiedOffline.current) {
+        try {
+          const recordedAt = new Date().toISOString();
+          const queued = await queueProvisionalAttendanceAction({
+            staffId: selected.staffId,
+            action,
+            expectedRevision: before.revision,
+            occurredAt: recordedAt,
+            unresolvedOlderException: before.unresolvedExceptions.some(
+              (issue) => issue.operationalDate < before.operationalDate,
+            ),
+          });
+          submissionKey.current = null;
+          verifiedOffline.current = false;
+          await offline.queueChanged();
+          const provisional = await buildProvisionalState(selected.staffId);
+          const currentStatus = provisional.state === "clocked_in" ? "clocked_in" : "clocked_out";
+          setRoster((current) => current.map((person) => person.staffId === selected.staffId ? { ...person, currentStatus } : person));
+          const actionName = action === "clock_out" ? "Clock-out" : "Clock-in";
+          setMessage(`${actionName} saved on this device at ${new Date(queued.occurredAtDevice).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}. Pending synchronisation.`);
+          setLocalSuccess(true);
+          dispatch({ type: "succeeded", recordedAt, completedMinutes: null });
+        } catch (error) {
+          submissionKey.current = null;
+          setMessage(error instanceof Error ? error.message : "The action could not be saved on this device.");
+          dispatch({ type: "invalid" });
+        }
+        return;
+      }
       const result = await performKioskAttendanceAction({
         staffId: selected.staffId,
-        pin: flow.pin,
+        pin: verifiedPin.current,
         action,
         expectedRevision: before.revision,
         idempotencyKey: key,
       });
       submissionKey.current = null;
+      verifiedPin.current = "";
       setMessage(result.message);
+      setLocalSuccess(false);
       if (result.code === "state_conflict" && result.attendanceState) {
         dispatch({ type: "conflict", latest: result.attendanceState });
         return;
@@ -159,6 +268,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
             <LiveTime />
           </div>
         </div>
+        <OfflineStatus connection={offline.connection} runtime={offline.runtime} onSync={() => void offline.syncNow()} />
         <form action={exitKioskModeAction} className="mt-3 self-end">
           <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Remove Staff Clock access from this browser</button>
         </form>
@@ -167,9 +277,9 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           <>
             <h1 className="mt-8 text-center text-4xl font-black">Staff Clock</h1>
             <p className="mt-3 text-center font-semibold text-slate-600">Choose your name to clock in or clock out.</p>
-            {!roster.length ? <p className="mt-8 text-center font-bold text-red-700">No active Staff Clock users could be loaded. Please ask a manager for help.</p> : null}
+            {!displayRoster.length ? <p className="mt-8 text-center font-bold text-red-700">No active Staff Clock users could be loaded. Please ask a manager for help.</p> : null}
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {roster.map((person) => (
+              {displayRoster.map((person) => (
                 <button
                   key={person.staffId}
                   className="min-h-28 rounded-lg bg-white p-5 text-left shadow-soft ring-1 ring-purple-100 transition hover:ring-purple-500 focus:outline-purple-700"
@@ -243,7 +353,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
         ) : null}
 
         {flow.mode === "success" ? (
-          <KioskPanel title="Recorded" message={`${message}${flow.recordedAt ? ` at ${new Date(flow.recordedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}` : ""}.`}>
+          <KioskPanel title={localSuccess ? "Saved on this device" : "Recorded"} message={localSuccess ? message : `${message}${flow.recordedAt ? ` at ${new Date(flow.recordedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}` : ""}.`}>
             <CheckCircle2 className="mx-auto h-24 w-24 text-green-600" />
             {flow.completedMinutes !== null ? <p className="mt-4 text-center text-lg font-bold">Shift duration: {formatHours(flow.completedMinutes)}</p> : null}
             <Button className="mx-auto mt-6 flex" onClick={reset}>Done</Button>

@@ -92,6 +92,7 @@ export type OfflineRosterEntry = {
   displayName: string;
   employmentRole: string;
   offlineReady: boolean;
+  pinVersion?: string;
 };
 
 export type OfflineRosterSnapshot = {

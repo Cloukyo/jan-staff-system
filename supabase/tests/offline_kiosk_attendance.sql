@@ -30,6 +30,9 @@ begin
     or has_function_privilege('authenticated', 'public.perform_offline_kiosk_attendance_action(text,uuid,text,text,text,uuid,bigint,timestamptz,text,date,timestamptz,text,uuid,text,bigint,text,boolean)', 'execute') then
     raise exception 'offline attendance RPC is exposed to browser roles';
   end if;
+  if has_function_privilege('anon', 'public.report_kiosk_sync_health(text,uuid,integer,timestamptz,boolean,bigint,text)', 'execute') then
+    raise exception 'kiosk health RPC is exposed to browser roles';
+  end if;
 end;
 $$;
 
@@ -53,9 +56,13 @@ declare
   device_id constant uuid := '10000000-0000-4000-8000-000000000003';
   device_token constant text := 'offline-kiosk-fictional-device-token-00000000000000000001';
   operation_id constant uuid := '10000000-0000-4000-8000-000000000004';
+  second_operation_id constant uuid := '10000000-0000-4000-8000-000000000005';
+  duplicate_sequence_operation_id constant uuid := '10000000-0000-4000-8000-000000000006';
   provisioned jsonb;
   synced jsonb;
   replayed jsonb;
+  second_synced jsonb;
+  duplicate_sequence jsonb;
   authorisation_id uuid;
   roster_version text;
   expected_revision text;
@@ -161,6 +168,31 @@ begin
       where event.offline_authorisation_id = authorisation_id
         and event.offline_device_sequence = 1) = 1,
     'idempotent replay must not create a duplicate event'
+  );
+
+  second_synced := public.perform_offline_kiosk_attendance_action(
+    device_token, authorisation_id, test_staff_id, 'clock_out', expected_revision,
+    second_operation_id, 2, occurred_at + interval '1 minute', 'Europe/London',
+    public.attendance_operational_date(occurred_at), occurred_at + interval '61 seconds',
+    roster_version, operation_id, 'anchored', 120000,
+    repeat('b', 64), true
+  );
+  perform pg_temp.assert_true(
+    second_synced ->> 'outcome' = 'accepted',
+    'a queued action must follow its accepted prior action for the same staff member'
+  );
+
+  duplicate_sequence := public.perform_offline_kiosk_attendance_action(
+    device_token, authorisation_id, test_staff_id, 'clock_in',
+    second_synced -> 'trustedState' -> 'state' ->> 'revision',
+    duplicate_sequence_operation_id, 2, occurred_at + interval '2 minutes',
+    'Europe/London', public.attendance_operational_date(occurred_at),
+    occurred_at + interval '121 seconds', roster_version, second_operation_id,
+    'anchored', 180000, repeat('c', 64), true
+  );
+  perform pg_temp.assert_true(
+    duplicate_sequence ->> 'outcome' = 'invalid_sequence',
+    'a reused sequence must return a durable typed result'
   );
 end;
 $$;

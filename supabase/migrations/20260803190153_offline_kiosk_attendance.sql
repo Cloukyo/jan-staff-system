@@ -429,6 +429,7 @@ declare
   device public.kiosk_devices%rowtype;
   authorisation public.kiosk_offline_authorisations%rowtype;
   existing_request public.attendance_action_requests%rowtype;
+  prior_request public.attendance_action_requests%rowtype;
   current_state jsonb;
   trusted_state_value jsonb;
   response_value jsonb;
@@ -442,6 +443,8 @@ declare
   create_exception boolean := false;
   exception_type_value text := 'offline_sync_conflict';
   existing_sequence uuid;
+  chained_revision_matches boolean := false;
+  stored_device_sequence bigint;
 begin
   perform public.check_kiosk_offline_rate_limit(device_token, 'sync', 240, 900);
   select * into device
@@ -490,6 +493,20 @@ begin
   where request.offline_authorisation_id = target_authorisation_id
     and request.device_sequence = perform_offline_kiosk_attendance_action.device_sequence;
 
+  if prior_pending_action_id is not null then
+    select * into prior_request
+    from public.attendance_action_requests request
+    where request.idempotency_key = prior_pending_action_id;
+    chained_revision_matches := found
+      and prior_request.offline_authorisation_id = target_authorisation_id
+      and prior_request.kiosk_device_id = device.id
+      and prior_request.staff_id = target_staff_id
+      and prior_request.device_sequence < device_sequence
+      and prior_request.result_code in ('accepted', 'accepted_with_warning', 'already_processed')
+      and prior_request.safe_response -> 'trustedState' -> 'state' ->> 'revision'
+        = current_state ->> 'revision';
+  end if;
+
   select encode(extensions.digest(
     profile.id || ':' || coalesce(settings.pin_updated_at::text, 'none'), 'sha256'
   ), 'hex') into current_pin_version
@@ -508,7 +525,7 @@ begin
   elsif requested_action not in ('clock_in', 'clock_out', 'start_new_shift')
     or device_sequence is null or device_sequence < 1
     or existing_sequence is not null
-    or (prior_pending_action_id is not null and prior_pending_action_id = idempotency_key) then
+    or (prior_pending_action_id is not null and not chained_revision_matches) then
     outcome_value := 'invalid_sequence';
     local_receipt_outcome := 'conflicted';
     create_exception := true;
@@ -576,7 +593,8 @@ begin
         exception_type_value := 'device_clock_drift';
       end if;
 
-      if current_state ->> 'revision' is distinct from expected_revision then
+      if current_state ->> 'revision' is distinct from expected_revision
+        and not chained_revision_matches then
         outcome_value := 'state_conflict';
         local_receipt_outcome := 'conflicted';
         create_exception := true;
@@ -656,6 +674,11 @@ begin
     'trustedState', trusted_state_value
   );
 
+  stored_device_sequence := case
+    when existing_sequence is null then device_sequence
+    else null
+  end;
+
   insert into public.attendance_action_requests (
     idempotency_key, staff_id, kiosk_device_id, action, expected_revision,
     completed_at, result_code, resulting_state, resulting_event_id,
@@ -668,7 +691,7 @@ begin
     idempotency_key, target_staff_id, device.id, requested_action,
     expected_revision, clock_timestamp(), outcome_value,
     current_state ->> 'state', resulting_event_id, response_value,
-    target_authorisation_id, device_sequence, occurred_at_device,
+    target_authorisation_id, stored_device_sequence, occurred_at_device,
     received_at_value, clock_confidence, roster_version, payload_digest, 1,
     device_timezone, operational_date_at_device, queue_created_at,
     clock_timestamp(), resulting_event_at, clock_drift_value,
@@ -713,4 +736,106 @@ to service_role;
 grant execute on function public.perform_offline_kiosk_attendance_action(
   text, uuid, text, text, text, uuid, bigint, timestamptz, text, date,
   timestamptz, text, uuid, text, bigint, text, boolean
+) to service_role;
+
+create or replace function public.get_kiosk_offline_health_context(
+  device_token text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  device public.kiosk_devices%rowtype;
+  authorisation public.kiosk_offline_authorisations%rowtype;
+begin
+  select * into device from public.kiosk_devices candidate
+  where candidate.token_hash = extensions.digest(device_token, 'sha256');
+  if not found then
+    raise exception using errcode = '42501', message = 'Kiosk device access required';
+  end if;
+  select * into authorisation
+  from public.kiosk_offline_authorisations candidate
+  where candidate.kiosk_device_id = device.id
+  order by candidate.issued_at desc
+  limit 1;
+  return jsonb_build_object(
+    'deviceId', device.id,
+    'active', device.active,
+    'revokedAt', device.revoked_at,
+    'offlineEnabled', device.offline_enabled,
+    'hardwareVerifiedAt', device.hardware_verified_at,
+    'reprovisionRequired', device.reprovision_required,
+    'acceptedSchemaVersion', device.offline_schema_version,
+    'authorisation', case when authorisation.id is null then null else jsonb_build_object(
+      'id', authorisation.id,
+      'expiresAt', authorisation.expires_at,
+      'revokedAt', authorisation.revoked_at,
+      'rosterVersion', authorisation.roster_version
+    ) end,
+    'serverTime', clock_timestamp()
+  );
+end;
+$$;
+
+create or replace function public.report_kiosk_sync_health(
+  device_token text,
+  target_authorisation_id uuid,
+  pending_count integer,
+  oldest_pending_action_at timestamptz,
+  storage_persisted boolean,
+  storage_estimate_bytes bigint,
+  client_app_version text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  device_id uuid;
+begin
+  device_id := public.check_kiosk_offline_rate_limit(device_token, 'health', 120, 900);
+  if pending_count < 0 or pending_count > 10000
+    or (pending_count = 0 and oldest_pending_action_at is not null)
+    or (pending_count > 0 and oldest_pending_action_at is null)
+    or storage_estimate_bytes < 0
+    or length(client_app_version) not between 1 and 40
+    or not exists (
+      select 1 from public.kiosk_offline_authorisations authorisation
+      where authorisation.id = target_authorisation_id
+        and authorisation.kiosk_device_id = device_id
+    ) then
+    raise exception using errcode = '22023', message = 'Invalid kiosk health report';
+  end if;
+  insert into public.kiosk_sync_health (
+    kiosk_device_id, last_contact_at, last_reported_pending_count,
+    oldest_pending_action_at, last_health_report_at, storage_persisted,
+    storage_estimate_bytes, app_version, updated_at
+  ) values (
+    device_id, clock_timestamp(), pending_count, oldest_pending_action_at,
+    clock_timestamp(), storage_persisted, storage_estimate_bytes,
+    client_app_version, clock_timestamp()
+  ) on conflict (kiosk_device_id) do update set
+    last_contact_at = excluded.last_contact_at,
+    last_reported_pending_count = excluded.last_reported_pending_count,
+    oldest_pending_action_at = excluded.oldest_pending_action_at,
+    last_health_report_at = excluded.last_health_report_at,
+    storage_persisted = excluded.storage_persisted,
+    storage_estimate_bytes = excluded.storage_estimate_bytes,
+    app_version = excluded.app_version,
+    updated_at = excluded.updated_at;
+end;
+$$;
+
+revoke all on function public.get_kiosk_offline_health_context(text)
+from public, anon, authenticated;
+revoke all on function public.report_kiosk_sync_health(
+  text, uuid, integer, timestamptz, boolean, bigint, text
+) from public, anon, authenticated;
+grant execute on function public.get_kiosk_offline_health_context(text)
+to service_role;
+grant execute on function public.report_kiosk_sync_health(
+  text, uuid, integer, timestamptz, boolean, bigint, text
 ) to service_role;

@@ -10,6 +10,7 @@ import {
   type TrustedAttendanceState,
   type UnsignedPendingAction,
 } from "@/lib/kiosk/offline/types";
+import type { OfflineProvisioningPackage } from "@/lib/kiosk/offline/server-contract";
 
 export const OFFLINE_DB_NAME = "jan-staff-clock";
 export const OFFLINE_DB_VERSION = 2;
@@ -249,9 +250,68 @@ export async function getActiveRoster(): Promise<OfflineRosterSnapshot | null> {
         displayName: entry.displayName,
         employmentRole: entry.employmentRole,
         offlineReady: entry.offlineReady,
+        ...(entry.pinVersion ? { pinVersion: entry.pinVersion } : {}),
       }))
       .sort((left, right) => left.staffId.localeCompare(right.staffId)),
   };
+}
+
+export async function installOfflineProvisioningPackage(
+  packageValue: OfflineProvisioningPackage,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(
+    [stores.metadata, stores.rosters, stores.trustedStates],
+    "readwrite",
+  );
+  const metadata = transaction.objectStore(stores.metadata);
+  const rosters = transaction.objectStore(stores.rosters);
+  const trustedStates = transaction.objectStore(stores.trustedStates);
+  rosters.clear();
+  trustedStates.clear();
+  for (const entry of packageValue.roster) {
+    rosters.add({
+      staffId: entry.staffId,
+      displayName: entry.displayName,
+      employmentRole: entry.employmentRole,
+      offlineReady: false,
+      pinVersion: entry.pinVersion,
+      rosterVersion: packageValue.authorisation.rosterVersion,
+    });
+    trustedStates.add({
+      staffId: entry.staffId,
+      rosterVersion: packageValue.authorisation.rosterVersion,
+      state: structuredClone(entry.trustedState) as TrustedAttendanceState["state"],
+      trustedAt: packageValue.server.time,
+    } satisfies TrustedAttendanceState);
+  }
+  metadata.put({
+    key: "activeRoster",
+    value: {
+      schemaVersion: 1,
+      rosterVersion: packageValue.authorisation.rosterVersion,
+      authorisationId: packageValue.authorisation.id,
+      issuedAt: packageValue.authorisation.issuedAt,
+      expiresAt: packageValue.authorisation.expiresAt,
+      serverTime: packageValue.server.time,
+    },
+  } satisfies MetadataRecord);
+  metadata.put({
+    key: "offlineProvisioningPackage",
+    value: structuredClone(packageValue),
+  } satisfies MetadataRecord);
+  await transactionDone(transaction);
+}
+
+export async function getOfflineProvisioningPackage(): Promise<OfflineProvisioningPackage | null> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readonly");
+  const request = transaction.objectStore(stores.metadata).get("offlineProvisioningPackage");
+  const [record] = await Promise.all([
+    requestResult<MetadataRecord | undefined>(request),
+    transactionDone(transaction),
+  ]);
+  return (record?.value as OfflineProvisioningPackage | undefined) ?? null;
 }
 
 export async function putTrustedState(
@@ -386,6 +446,32 @@ export async function enqueueAttendanceAction(
   transaction.objectStore(stores.pendingActions).add(action);
   await transactionDone(transaction);
   return action;
+}
+
+export async function reserveOfflineDeviceSequence(): Promise<number> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.metadata, "readwrite");
+  const metadata = transaction.objectStore(stores.metadata);
+  const sequenceRecord = await requestResult<MetadataRecord | undefined>(
+    metadata.get("nextDeviceSequence"),
+  );
+  const deviceSequence =
+    typeof sequenceRecord?.value === "number" ? sequenceRecord.value : 1;
+  metadata.put({
+    key: "nextDeviceSequence",
+    value: deviceSequence + 1,
+  } satisfies MetadataRecord);
+  await transactionDone(transaction);
+  return deviceSequence;
+}
+
+export async function storePreparedPendingAction(
+  action: PendingAttendanceAction,
+): Promise<void> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(stores.pendingActions, "readwrite");
+  transaction.objectStore(stores.pendingActions).add(structuredClone(action));
+  await transactionDone(transaction);
 }
 
 export async function listPendingActions(
@@ -559,6 +645,50 @@ export async function getSyncReceipt(
     transactionDone(transaction),
   ]);
   return receipt ?? null;
+}
+
+export async function getOfflineQueueSummary(): Promise<{
+  pendingCount: number;
+  conflictCount: number;
+  oldestPendingActionAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+}> {
+  const database = await openOfflineDatabase();
+  const transaction = database.transaction(
+    [stores.pendingActions, stores.syncReceipts],
+    "readonly",
+  );
+  const [actions, receipts] = await Promise.all([
+    requestResult<PendingAttendanceAction[]>(
+      transaction.objectStore(stores.pendingActions).getAll(),
+    ),
+    requestResult<OfflineSyncReceipt[]>(
+      transaction.objectStore(stores.syncReceipts).getAll(),
+    ),
+    transactionDone(transaction),
+  ]);
+  const unresolved = actions.filter((action) =>
+    ["pending", "syncing", "conflicted"].includes(action.status),
+  );
+  let oldestPendingActionAt: string | null = null;
+  for (const action of unresolved) {
+    if (!oldestPendingActionAt || action.queueCreatedAt < oldestPendingActionAt) {
+      oldestPendingActionAt = action.queueCreatedAt;
+    }
+  }
+  let lastSuccessfulSyncAt: string | null = null;
+  for (const receipt of receipts) {
+    if (receipt.outcome === "synced"
+      && (!lastSuccessfulSyncAt || receipt.receivedAtServer > lastSuccessfulSyncAt)) {
+      lastSuccessfulSyncAt = receipt.receivedAtServer;
+    }
+  }
+  return {
+    pendingCount: unresolved.length,
+    conflictCount: unresolved.filter((action) => action.status === "conflicted").length,
+    oldestPendingActionAt,
+    lastSuccessfulSyncAt,
+  };
 }
 
 export async function cleanupOfflineData(now: string): Promise<void> {
