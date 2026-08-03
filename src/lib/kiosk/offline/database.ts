@@ -61,7 +61,7 @@ export function openOfflineDatabase(): Promise<IDBDatabase> {
   databasePromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
 
-    request.addEventListener("upgradeneeded", () => {
+    request.addEventListener("upgradeneeded", (event) => {
       const database = request.result;
       if (!database.objectStoreNames.contains(stores.metadata)) {
         database.createObjectStore(stores.metadata, { keyPath: "key" });
@@ -104,6 +104,21 @@ export function openOfflineDatabase(): Promise<IDBDatabase> {
         database.createObjectStore(stores.localAudit, {
           keyPath: "id",
           autoIncrement: true,
+        });
+      }
+      if ((event as IDBVersionChangeEvent).oldVersion < 2 && database.objectStoreNames.contains(stores.pendingActions)) {
+        const pendingActions = request.transaction!.objectStore(stores.pendingActions);
+        const cursorRequest = pendingActions.openCursor();
+        cursorRequest.addEventListener("success", () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const action = cursor.value as Partial<PendingAttendanceAction>;
+          cursor.update({
+            ...action,
+            clockConfidence: action.clockConfidence ?? "uncertain",
+            elapsedSinceAuthorisationMs: action.elapsedSinceAuthorisationMs ?? null,
+          });
+          cursor.continue();
         });
       }
     });
@@ -354,6 +369,8 @@ export async function enqueueAttendanceAction(
     typeof sequenceRecord?.value === "number" ? sequenceRecord.value : 1;
   const action: PendingAttendanceAction = {
     ...structuredClone(input),
+    clockConfidence: input.clockConfidence ?? "uncertain",
+    elapsedSinceAuthorisationMs: input.elapsedSinceAuthorisationMs ?? null,
     schemaVersion: 1,
     deviceSequence,
     queueCreatedAt: new Date().toISOString(),

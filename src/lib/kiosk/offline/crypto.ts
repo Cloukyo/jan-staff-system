@@ -127,8 +127,12 @@ function canonicalValue(value: unknown): unknown {
   return value;
 }
 
+export function canonicalOfflinePayload(payload: unknown): string {
+  return JSON.stringify(canonicalValue(payload));
+}
+
 function canonicalBytes(payload: unknown): Uint8Array {
-  return encoder.encode(JSON.stringify(canonicalValue(payload)));
+  return encoder.encode(canonicalOfflinePayload(payload));
 }
 
 function lockoutPayload(

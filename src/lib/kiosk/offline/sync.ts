@@ -14,6 +14,7 @@ import type {
   PendingAttendanceAction,
 } from "@/lib/kiosk/offline/types";
 import { dispositionForSyncOutcome } from "@/lib/kiosk/offline/types";
+import type { OfflineSyncRequest } from "@/lib/kiosk/offline/server-contract";
 
 type OfflineSyncTransport = (
   action: PendingAttendanceAction,
@@ -44,12 +45,37 @@ async function defaultTransport(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify(action),
+    body: JSON.stringify(toOfflineSyncRequest(action)),
   });
   if (!response.ok) {
     throw new Error(`Offline sync failed with status ${response.status}`);
   }
   return (await response.json()) as OfflineSyncResponse;
+}
+
+export function toOfflineSyncRequest(
+  action: PendingAttendanceAction,
+): OfflineSyncRequest {
+  return {
+    schemaVersion: action.schemaVersion,
+    idempotencyKey: action.idempotencyKey,
+    authorisationId: action.authorisationId,
+    rosterVersion: action.rosterVersion,
+    deviceId: action.deviceId,
+    staffId: action.staffId,
+    action: action.action,
+    occurredAtDevice: action.occurredAtDevice,
+    deviceTimezone: action.deviceTimezone as "Europe/London",
+    operationalDateAtDevice: action.operationalDateAtDevice,
+    deviceSequence: action.deviceSequence,
+    queueCreatedAt: action.queueCreatedAt,
+    trustedSnapshotRevision: action.trustedSnapshotRevision,
+    priorPendingActionId: action.priorPendingActionId,
+    unresolvedOlderException: action.unresolvedOlderException,
+    clockConfidence: action.clockConfidence,
+    elapsedSinceAuthorisationMs: action.elapsedSinceAuthorisationMs,
+    signature: action.signature,
+  };
 }
 
 export function createOfflineSyncWorker(input: {

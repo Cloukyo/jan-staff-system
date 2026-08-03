@@ -118,7 +118,13 @@ describe("offline kiosk IndexedDB", () => {
     });
 
     expect(await listPendingActions()).toEqual([
-      expect.objectContaining({ idempotencyKey: legacy.idempotencyKey, schemaVersion: 1, status: "pending" }),
+      expect.objectContaining({
+        idempotencyKey: legacy.idempotencyKey,
+        schemaVersion: 1,
+        status: "pending",
+        clockConfidence: "uncertain",
+        elapsedSinceAuthorisationMs: null,
+      }),
     ]);
   });
 

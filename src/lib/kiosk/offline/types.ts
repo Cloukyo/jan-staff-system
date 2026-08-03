@@ -67,6 +67,8 @@ export type PendingAttendanceAction = {
   trustedSnapshotRevision: string;
   priorPendingActionId: string | null;
   unresolvedOlderException: boolean;
+  clockConfidence: "anchored" | "uncertain";
+  elapsedSinceAuthorisationMs: number | null;
   status: "pending" | "syncing" | "synced" | "conflicted" | "rejected";
   retryCount: number;
   lastErrorCategory: string | null;
@@ -81,7 +83,9 @@ export type UnsignedPendingAction = Omit<
   | "status"
   | "retryCount"
   | "lastErrorCategory"
->;
+  | "clockConfidence"
+  | "elapsedSinceAuthorisationMs"
+> & Partial<Pick<PendingAttendanceAction, "clockConfidence" | "elapsedSinceAuthorisationMs">>;
 
 export type OfflineRosterEntry = {
   staffId: string;
