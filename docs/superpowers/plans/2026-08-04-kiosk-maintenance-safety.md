@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep the kiosk online while offline clocking is disabled and make the PIN-verification RPC compatible with both the pre-state-machine and current application response contracts.
+**Goal:** Keep the kiosk online while offline clocking is disabled and make the application tolerant of both PIN-verification response shapes without changing the production database contract.
 
-**Architecture:** Add an explicit build-time gate which defaults the offline client runtime to disabled, so a dormant feature performs no health polling or provisioning. Replace the PIN response mapper with one dual-shape mapper, then change the database RPC to return a table row containing both legacy fields and the authoritative attendance state so old and new application builds can coexist.
+**Architecture:** Add an explicit build-time gate which defaults the offline client runtime to disabled, so a dormant feature performs no health polling or provisioning. Replace the PIN response mapper with one dual-shape mapper. Keep production's authoritative JSON RPC response unchanged so both the new build and the approved current-production rollback SHA remain compatible.
 
 **Tech Stack:** Next.js 16, React 19, TypeScript, Vitest, Supabase PostgreSQL/PostgREST, Vercel.
 
@@ -14,7 +14,7 @@
 - Preserve every original `clock_events` row and keep manager corrections separate.
 - Do not enable offline clocking globally or on any device.
 - Do not expose salary, pay-rate, PIN or service-role information.
-- Apply the application compatibility change before the RPC migration.
+- Do not change the production PIN RPC contract during this maintenance release.
 - Do not deploy unless there are zero open shifts and no recent kiosk activity.
 
 ---
@@ -132,47 +132,26 @@ Run: `npm test -- tests/offline-kiosk-feature.test.ts tests/offline-kiosk-ui.tes
 
 Expected: PASS.
 
-### Task 3: Database rollback-compatible PIN contract
+### Task 3: Rollback contract audit
 
 **Files:**
-- Create: `supabase/migrations/<generated>_restore_kiosk_pin_rollback_compatibility.sql`
-- Modify: `tests/kiosk.test.ts`
 - Modify: `docs/attendance-state-machine-rollout.md`
 
 **Interfaces:**
-- Consumes: `verify_kiosk_pin(text,text)` and `get_attendance_state(text,timestamptz)`.
-- Produces: `verify_device_kiosk_pin(text,text,text)` as a PostgREST row array with legacy status/hours fields plus `attendance_state jsonb`.
+- Consumes: the deployed `verify_device_kiosk_pin(text,text,text)` JSON response and exact source of candidate rollback builds.
+- Produces: an explicit allowlist of database-compatible application rollback SHAs.
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [ ] **Step 1: Compare each rollback build's mapper with the deployed JSON response**
 
-```ts
-expect(compatibilityMigration).toMatch(/returns table[\s\S]*current_status text/i);
-expect(compatibilityMigration).toMatch(/returns table[\s\S]*attendance_state jsonb/i);
-expect(compatibilityMigration).toContain("public.get_attendance_state");
-expect(compatibilityMigration).toContain("to anon, authenticated");
-```
+Confirm SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522` consumes the JSON response and SHA `3090800c50f8ea1125ded10660af4b84db87aad5` does not.
 
-- [ ] **Step 2: Run the focused test and verify it fails because the migration is absent**
+- [ ] **Step 2: Verify no database response can safely support both historical builds**
 
-Run: `npm test -- tests/kiosk.test.ts`
+The row response expected by SHA `3090800c50f8ea1125ded10660af4b84db87aad5` loses authoritative state in SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522`. Do not add a compatibility migration.
 
-Expected: FAIL because the generated compatibility migration cannot be read.
+- [ ] **Step 3: Document the approved application-only rollback path**
 
-- [ ] **Step 3: Generate and implement the migration**
-
-Run: `supabase migration new restore_kiosk_pin_rollback_compatibility`
-
-The migration must revoke, drop and recreate only `verify_device_kiosk_pin(text,text,text)`. It must not update or delete attendance tables, and it must revoke `PUBLIC` before granting execute only to `anon` and `authenticated`.
-
-- [ ] **Step 4: Update the rollout document with the incident constraint**
-
-Record that SHA `3090800c50f8ea1125ded10660af4b84db87aad5` and deployment `dpl_Do3ZUnFuCJ6CmKVQL3dGXcsAafhW` are unsafe rollback targets until this compatibility migration is installed. Require app-first, migration-second rollout order.
-
-- [ ] **Step 5: Run the focused test and verify it passes**
-
-Run: `npm test -- tests/kiosk.test.ts tests/kiosk-state-machine.test.ts`
-
-Expected: PASS.
+Keep production's JSON RPC contract unchanged. Record SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522` as the approved rollback target and permanently exclude SHA `3090800c50f8ea1125ded10660af4b84db87aad5`.
 
 ### Task 4: Verification and controlled rollout
 
@@ -192,14 +171,14 @@ Expected: all commands exit zero.
 - [ ] **Step 2: Commit and push the branch**
 
 ```bash
-git add docs src tests supabase/migrations
+git add docs src tests
 git commit -m "fix: make kiosk maintenance rollback safe"
 git push -u origin codex/kiosk-maintenance-safety
 ```
 
-- [ ] **Step 3: Apply the one new migration to preview and verify both RPC shapes**
+- [ ] **Step 3: Verify the existing JSON RPC contract in preview**
 
-Verify that the preview RPC returns an array with `attendance_state`, no clock-event count changes, no offline-enabled devices and no offline authorisations.
+Verify that the preview RPC returns authoritative JSON, no clock-event count changes, no offline-enabled devices and no offline authorisations.
 
 - [ ] **Step 4: Verify the preview application**
 
@@ -209,9 +188,9 @@ Confirm the preview build SHA, `/clock` response, zero recurring disabled-offlin
 
 Confirm zero open shifts, no kiosk activity in the last ten minutes, current counts and hashes, backup status, and offline disabled globally and per device. Stop if any check fails.
 
-- [ ] **Step 6: Merge and let the application deploy before applying the compatibility migration**
+- [ ] **Step 6: Merge and deploy the application-only repair**
 
-Verify the deployed SHA first. Apply exactly the single new compatibility migration, then verify both the current and legacy PIN response consumers against a safe non-payroll profile only. If no safe profile exists, do not perform a write smoke test.
+Verify the deployed SHA and confirm the production migration list and RPC definition are unchanged. Verify PIN handling against a safe non-payroll profile only. If no safe profile exists, do not perform a write smoke test.
 
 - [ ] **Step 7: Run post-deploy diagnostics**
 

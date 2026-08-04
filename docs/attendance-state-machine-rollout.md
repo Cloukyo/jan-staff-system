@@ -22,15 +22,14 @@ The first six files reconcile migration history already applied in production. T
 | `20260803162518_kiosk_attendance_state_response.sql` | Extends kiosk response contract with authoritative state | Apply second | Short function replacement lock | Depends on the attendance state machine; its JSON object response is not compatible with application SHA `3090800c50f8ea1125ded10660af4b84db87aad5` |
 | `20260803173048_manager_attendance_exception_workflow.sql` | Manager exception queries, audited resolution/dismissal and effective-event readers | Apply third | Brief table/index/trigger/function DDL locks | Additive; depends on state-machine and correction-chain objects; retain audit rows on rollback |
 | `20260803190153_offline_kiosk_attendance.sql` | Dormant per-device authorisations, signed sync boundary, conflict metadata and kiosk health | Apply fourth | Table scans for new indexes on attendance tables plus brief DDL locks; apply in a quiet window | Additive and disabled by default; retain all audit columns/tables if the app is rolled back |
-| `20260804190945_restore_kiosk_pin_rollback_compatibility.sql` | Restores a PostgREST row response containing both legacy fields and authoritative state | Apply only after deploying an application which maps both response shapes | Short function replacement lock; no attendance-table writes | Makes the pre-state-machine and current PIN consumers coexist; retain on app rollback |
 
-The migrations do not delete `clock_events`, rewrite original event timestamps, fabricate clock-outs or modify historical attendance rows. Inserts into `clock_events` occur only inside guarded runtime functions after deployment. The original four-migration release required the database changes before the application deployment. The rollback-compatibility repair has the opposite order: deploy the dual-shape application mapper first, verify it against the JSON response, and only then apply `20260804190945_restore_kiosk_pin_rollback_compatibility.sql`.
+The migrations do not delete `clock_events`, rewrite original event timestamps, fabricate clock-outs or modify historical attendance rows. Inserts into `clock_events` occur only inside guarded runtime functions after deployment. The original four-migration release required the database changes before the application deployment. The 4 August maintenance repair is application-only and must not change the production database contract.
 
 ## 4 August 2026 rollback compatibility incident
 
 Do not restore application SHA `3090800c50f8ea1125ded10660af4b84db87aad5` or deployment `dpl_Do3ZUnFuCJ6CmKVQL3dGXcsAafhW` while `verify_device_kiosk_pin(text,text,text)` returns a JSON object. That application reads the RPC result as a PostgREST row array, so valid PINs reach the database but the application reports `request_failed` and records no attendance action.
 
-Before the compatibility migration is installed, the approved application rollback target is SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522`. After the compatibility migration is installed and verified, both the legacy row consumer and the current dual-shape consumer can read the PIN response. Never infer database compatibility solely from a migration being additive; verify every RPC response contract used by the rollback build.
+The approved application rollback target is SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522`, which consumes the existing JSON response. There is no single database response shape that safely supports both that build and SHA `3090800c50f8ea1125ded10660af4b84db87aad5`: changing the RPC to a PostgREST row would remove the authoritative state as interpreted by the current build. Keep the JSON contract, deploy the dual-shape application mapper only, and never use SHA `3090800c50f8ea1125ded10660af4b84db87aad5` as a rollback target. Never infer database compatibility solely from a migration being additive; verify every RPC response contract used by the rollback build.
 
 ## Pre-deployment evidence
 
@@ -94,7 +93,7 @@ Stop the rollout and begin rollback if any of the following occurs:
 
 1. Confirm `offline_enabled = false` for every device and leave it false.
 2. Stop further controlled testing. Record affected staff, operation UUIDs, event IDs, exception IDs, timestamps and the deployed commit without copying PINs or credentials.
-3. Re-deploy only a previously recorded application commit whose RPC response contracts were verified against the current schema. Never use SHA `3090800c50f8ea1125ded10660af4b84db87aad5` before `20260804190945_restore_kiosk_pin_rollback_compatibility.sql` is installed.
+3. Re-deploy only a previously recorded application commit whose RPC response contracts were verified against the current schema. For the 4 August maintenance release, use SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522`; never use SHA `3090800c50f8ea1125ded10660af4b84db87aad5`.
 4. Do not run a database reset, reverse migration, `DELETE`, `TRUNCATE` or destructive repair.
 5. Keep every newly written `clock_events` row, correction, exception, idempotency request, offline authorisation, receipt and health record.
 6. If an RPC itself must be disabled, apply a separately reviewed forward migration that rejects new affected operations while preserving stored idempotent responses and audit evidence.
