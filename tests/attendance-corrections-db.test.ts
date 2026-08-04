@@ -22,7 +22,7 @@ import {
 } from "./helpers/attendance-corrections-db";
 
 const migration = readFileSync(
-  resolve("supabase/migrations/202607280001_clock_event_corrections.sql"),
+  resolve("supabase/migrations/20260728230702_clock_event_corrections.sql"),
   "utf8",
 );
 

@@ -16,8 +16,8 @@ import {
 import { planManualCorrectionConsequences } from "@/lib/attendance/manual-correction-plan";
 
 const date = "2026-07-28";
-const migrationPath = "supabase/migrations/202607280001_clock_event_corrections.sql";
-const removalMigrationPath = "supabase/migrations/20260729002614_attendance_remove_and_reset.sql";
+const migrationPath = "supabase/migrations/20260728230702_clock_event_corrections.sql";
+const removalMigrationPath = "supabase/migrations/20260729015320_attendance_remove_and_reset.sql";
 
 function migrationSql() {
   return readFileSync(resolve(migrationPath), "utf8");

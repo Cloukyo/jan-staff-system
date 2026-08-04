@@ -2,7 +2,7 @@ export type TestRow = Record<string, unknown>;
 
 export type QueryTrace = {
   table: string;
-  filters: Array<{ operation: "eq" | "gte" | "lte" | "lt"; column: string; value: unknown }>;
+  filters: Array<{ operation: "eq" | "gte" | "lte" | "lt" | "in"; column: string; value: unknown }>;
   orders: string[];
   range: [number, number] | null;
 };
@@ -52,6 +52,11 @@ class PagedPostgrestQuery implements PromiseLike<QueryResult> {
     return this;
   }
 
+  in(column: string, values: unknown[]): this {
+    this.filters.push({ operation: "in", column, value: values });
+    return this;
+  }
+
   order(column: string): this {
     this.orders.push(column);
     return this;
@@ -83,6 +88,9 @@ class PagedPostgrestQuery implements PromiseLike<QueryResult> {
       if (filter.operation === "eq") return actual === filter.value;
       if (filter.operation === "gte") return String(actual) >= String(filter.value);
       if (filter.operation === "lte") return String(actual) <= String(filter.value);
+      if (filter.operation === "in") {
+        return Array.isArray(filter.value) && filter.value.includes(actual);
+      }
       return String(actual) < String(filter.value);
     }));
     const ordered = [...filtered].sort((left, right) => {

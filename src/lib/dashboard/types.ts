@@ -7,7 +7,10 @@ export type ProductionDashboardSummary = {
   currentlyClockedIn: number;
   todayScheduledShifts: number;
   todayAttendanceExceptions: number;
+  unresolvedAttendanceIssues: number;
   missingClockOuts: number;
+  longRunningShifts: number;
+  pendingCorrections: number;
   pendingLeaveRequests: number;
   approvedLeaveRotaConflicts: number;
   expiredCertificates: number;

@@ -9,8 +9,8 @@ function source(path: string): string {
 }
 
 describe("staff lifecycle database operation", () => {
-  const migration = source("supabase/migrations/202607230001_staff_lifecycle_management.sql");
-  const enforcementMigrationPath = "supabase/migrations/202607230002_enforce_staff_lifecycle_paths.sql";
+  const migration = source("supabase/migrations/20260723162038_staff_lifecycle_management.sql");
+  const enforcementMigrationPath = "supabase/migrations/20260723162052_enforce_staff_lifecycle_paths.sql";
   const enforcementMigration = existsSync(resolve(enforcementMigrationPath)) ? source(enforcementMigrationPath) : "";
 
   it("restricts profile lifecycle changes to managers", () => {

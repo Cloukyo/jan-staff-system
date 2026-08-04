@@ -84,23 +84,88 @@ export type KioskDeviceRow = {
   lastUsedAt: string | null;
   activatedAt: string;
   revokedAt: string | null;
+  offlineEnabled: boolean;
+  hardwareVerifiedAt: string | null;
+  reprovisionRequired: boolean;
+  schemaVersion: number;
+  lastContactAt: string | null;
+  lastRosterRefreshAt: string | null;
+  authorisationExpiresAt: string | null;
+  rosterVersion: string | null;
+  appVersion: string | null;
+  lastClockDriftSeconds: number | null;
+  lastSuccessfulSyncAt: string | null;
+  lastSyncFailureAt: string | null;
+  lastSyncFailureCategory: string | null;
+  pendingCount: number;
+  oldestPendingActionAt: string | null;
+  unresolvedConflictCount: number;
 };
 
 export async function loadKioskDevices(): Promise<KioskDeviceRow[]> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("kiosk_devices")
-    .select("id,device_name,active,expires_at,last_used_at,activated_at,revoked_at")
-    .order("activated_at", { ascending: false });
-  if (error) throw new Error("Kiosk devices could not be loaded.");
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    deviceName: row.device_name,
-    active: row.active,
-    expiresAt: row.expires_at,
-    lastUsedAt: row.last_used_at,
-    activatedAt: row.activated_at,
-    revokedAt: row.revoked_at,
-  }));
+  const [devices, health, authorisations, conflicts] = await Promise.all([
+    supabase.from("kiosk_devices")
+      .select("id,device_name,active,expires_at,last_used_at,activated_at,revoked_at,offline_enabled,hardware_verified_at,reprovision_required,offline_schema_version")
+      .order("activated_at", { ascending: false }),
+    supabase.from("kiosk_sync_health")
+      .select("kiosk_device_id,last_contact_at,last_roster_refresh_at,offline_authorisation_expires_at,roster_version,app_version,schema_version,last_clock_drift_seconds,last_successful_sync_at,last_sync_failure_at,last_sync_failure_category,last_reported_pending_count,oldest_pending_action_at"),
+    supabase.from("kiosk_offline_authorisations")
+      .select("kiosk_device_id,expires_at,roster_version,issued_at,revoked_at")
+      .order("issued_at", { ascending: false }),
+    supabase.from("attendance_exceptions")
+      .select("kiosk_device_id")
+      .eq("source", "offline_sync")
+      .in("status", ["open", "under_review"]),
+  ]);
+  if (devices.error || health.error || authorisations.error || conflicts.error) {
+    throw new Error("Kiosk devices could not be loaded.");
+  }
+  const healthByDevice = new Map((health.data ?? []).map((row) => [row.kiosk_device_id, row]));
+  const authorisationByDevice = new Map<string, (typeof authorisations.data)[number]>();
+  for (const row of authorisations.data ?? []) {
+    if (!authorisationByDevice.has(row.kiosk_device_id)) {
+      authorisationByDevice.set(row.kiosk_device_id, row);
+    }
+  }
+  const conflictCounts = new Map<string, number>();
+  for (const row of conflicts.data ?? []) {
+    if (row.kiosk_device_id) {
+      conflictCounts.set(
+        row.kiosk_device_id,
+        (conflictCounts.get(row.kiosk_device_id) ?? 0) + 1,
+      );
+    }
+  }
+  return (devices.data ?? []).map((row) => {
+    const report = healthByDevice.get(row.id);
+    const authorisation = authorisationByDevice.get(row.id);
+    return {
+      id: row.id,
+      deviceName: row.device_name,
+      active: row.active,
+      expiresAt: row.expires_at,
+      lastUsedAt: row.last_used_at,
+      activatedAt: row.activated_at,
+      revokedAt: row.revoked_at,
+      offlineEnabled: row.offline_enabled,
+      hardwareVerifiedAt: row.hardware_verified_at,
+      reprovisionRequired: row.reprovision_required,
+      schemaVersion: row.offline_schema_version,
+      lastContactAt: report?.last_contact_at ?? null,
+      lastRosterRefreshAt: report?.last_roster_refresh_at ?? null,
+      authorisationExpiresAt: report?.offline_authorisation_expires_at ?? authorisation?.expires_at ?? null,
+      rosterVersion: report?.roster_version ?? authorisation?.roster_version ?? null,
+      appVersion: report?.app_version ?? null,
+      lastClockDriftSeconds: report?.last_clock_drift_seconds ?? null,
+      lastSuccessfulSyncAt: report?.last_successful_sync_at ?? null,
+      lastSyncFailureAt: report?.last_sync_failure_at ?? null,
+      lastSyncFailureCategory: report?.last_sync_failure_category ?? null,
+      pendingCount: report?.last_reported_pending_count ?? 0,
+      oldestPendingActionAt: report?.oldest_pending_action_at ?? null,
+      unresolvedConflictCount: conflictCounts.get(row.id) ?? 0,
+    };
+  });
 }
 
 export type ManagerKioskRow = KioskRosterEntry & {

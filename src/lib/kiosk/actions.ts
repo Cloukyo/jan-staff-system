@@ -6,7 +6,15 @@ import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { createPublicKioskClient } from "@/lib/kiosk/server";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { kioskResultMessage, validateKioskPin } from "@/lib/kiosk/security";
-import type { KioskActionResult, KioskStatus } from "@/lib/kiosk/types";
+import type {
+  KioskActionResult,
+  KioskStatus,
+  PerformKioskAttendanceActionInput,
+} from "@/lib/kiosk/types";
+import {
+  mapKioskActionResponse,
+  type KioskActionRpcResponse,
+} from "@/lib/kiosk/rpc-mapping";
 
 type RpcResult = {
   ok: boolean;
@@ -56,7 +64,39 @@ export async function verifyKioskPinAction(staffId: string, pin: string): Promis
   const supabase = createPublicKioskClient();
   const { data, error } = await supabase.rpc("verify_device_kiosk_pin", { device_token: deviceToken, target_staff_id: staffId, candidate_pin: pin });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
-  return rpcResult((data as RpcResult[] | null)?.[0]);
+  if (Array.isArray(data)) return rpcResult((data as RpcResult[])[0]);
+  return mapKioskActionResponse(data as KioskActionRpcResponse | null);
+}
+export async function performKioskAttendanceAction(
+  input: PerformKioskAttendanceActionInput,
+): Promise<KioskActionResult> {
+  if (
+    !input.staffId
+    || !/^\d{4,6}$/.test(input.pin)
+    || !["clock_in", "clock_out", "start_new_shift"].includes(input.action)
+    || !input.expectedRevision
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.idempotencyKey)
+  ) {
+    return { ok: false, code: "invalid_request", message: kioskResultMessage("invalid_request") };
+  }
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
+  const supabase = createPublicKioskClient();
+  const { data, error } = await supabase.rpc("perform_device_kiosk_attendance_action", {
+    device_token: deviceToken,
+    target_staff_id: input.staffId,
+    candidate_pin: input.pin,
+    requested_action: input.action,
+    expected_revision: input.expectedRevision,
+    idempotency_key: input.idempotencyKey,
+  });
+  if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
+  const result = mapKioskActionResponse(data as KioskActionRpcResponse | null);
+  if (result.ok) {
+    revalidatePath("/clock");
+    revalidatePath("/attendance");
+  }
+  return result;
 }
 
 export async function changeTemporaryKioskPinAction(input: {
@@ -88,31 +128,6 @@ export async function changeTemporaryKioskPinAction(input: {
   });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
   return rpcResult((data as RpcResult[] | null)?.[0]);
-}
-
-export async function recordKioskEventAction(input: {
-  staffId: string;
-  pin: string;
-  eventType: "clock_in" | "clock_out";
-  deviceId?: string;
-}): Promise<KioskActionResult> {
-  if (!input.staffId || !/^\d{4,6}$/.test(input.pin)) return { ok: false, code: "invalid_pin", message: kioskResultMessage("invalid_pin") };
-  const deviceToken = await getKioskDeviceToken();
-  if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
-  const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("record_device_kiosk_clock_event", {
-    device_token: deviceToken,
-    target_staff_id: input.staffId,
-    candidate_pin: input.pin,
-    requested_event_type: input.eventType,
-  });
-  if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
-  const result = rpcResult((data as RpcResult[] | null)?.[0]);
-  if (result.ok) {
-    revalidatePath("/clock");
-    revalidatePath("/attendance");
-  }
-  return result;
 }
 
 export async function saveKioskSettingsAction(_state: KioskActionResult, formData: FormData): Promise<KioskActionResult> {

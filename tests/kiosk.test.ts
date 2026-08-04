@@ -39,7 +39,7 @@ describe("production kiosk migration safeguards", () => {
   const noLockoutMigration = readFileSync(resolve("supabase/migrations/20260618232128_remove_kiosk_pin_lockout.sql"), "utf8");
   const pgcryptoFix = readFileSync(resolve("supabase/migrations/202606110003_kiosk_pgcrypto_search_path.sql"), "utf8");
   const columnSecurity = readFileSync(resolve("supabase/migrations/202606110004_kiosk_pin_hash_column_security.sql"), "utf8");
-  const correctionMigration = readFileSync(resolve("supabase/migrations/202607280001_clock_event_corrections.sql"), "utf8");
+  const correctionMigration = readFileSync(resolve("supabase/migrations/20260728230702_clock_event_corrections.sql"), "utf8");
 
   it("keeps PIN hashes private and verifies them inside security-definer functions", () => {
     expect(migration).toContain("pin_hash text");
@@ -95,6 +95,8 @@ describe("device-specific kiosk access", () => {
   const middleware = readFileSync(resolve("middleware.ts"), "utf8");
   const kioskServer = readFileSync(resolve("src/lib/kiosk/server.ts"), "utf8");
   const kioskActions = readFileSync(resolve("src/lib/kiosk/actions.ts"), "utf8");
+  const stateMigration = readFileSync(resolve("supabase/migrations/20260803160623_attendance_state_machine.sql"), "utf8");
+  const verificationMigration = readFileSync(resolve("supabase/migrations/20260803162518_kiosk_attendance_state_response.sql"), "utf8");
 
   it("stores only token hashes and supports expiry and revocation", () => {
     expect(migration).toContain("token_hash bytea not null unique");
@@ -109,7 +111,10 @@ describe("device-specific kiosk access", () => {
     expect(migration).toContain("revoke execute on function public.verify_kiosk_pin(text, text) from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.record_kiosk_clock_event(text, text, text, text) from anon, authenticated");
     expect(kioskServer).toContain("get_device_kiosk_roster");
-    expect(kioskActions).toContain("record_device_kiosk_clock_event");
+    expect(kioskActions).toContain("perform_device_kiosk_attendance_action");
+    expect(stateMigration).toContain("idempotency_key uuid primary key");
+    expect(verificationMigration).toContain("'attendanceState', attendance_state");
+    expect(verificationMigration).not.toMatch(/jsonb_build_object[\s\S]*pin_hash/i);
   });
 
   it("keeps the device token in an HttpOnly cookie and redirects manager routes", () => {
@@ -200,7 +205,7 @@ describe("kiosk PIN safety", () => {
     expect(temporaryPinMigration).toContain("perform public.require_kiosk_device(device_token)");
     expect(temporaryPinMigration).not.toMatch(/returns table[\\s\\S]{0,300}pin_hash/i);
     expect(actions).toContain("changeTemporaryKioskPinAction");
-    expect(kiosk).toContain('setMode("change")');
+    expect(kiosk).toContain('dispatch({ type: "change_required" })');
     expect(kiosk).toContain("<PinKeypad");
     expect(manager).not.toContain("pinResetRequired");
     expect(manager).not.toContain('name="requireChange"');
@@ -314,5 +319,17 @@ describe("kiosk weekly hours", () => {
 
     expect(summary.completedMinutes).toBe(240);
     expect(summary.hasOpenShift).toBe(true);
+    expect(summary.hasUnresolvedException).toBe(true);
+  });
+
+  it("does not count a shift whose clock-out falls on the next operational day", () => {
+    const summary = summariseCompletedClockMinutes([
+      { staffId: "staff-a", eventType: "clock_in", eventTimestamp: "2026-07-06T23:30:00+01:00" },
+      { staffId: "staff-a", eventType: "clock_out", eventTimestamp: "2026-07-07T00:30:00+01:00" },
+    ], "staff-a", "2026-07-06", "2026-07-12");
+
+    expect(summary.completedMinutes).toBe(0);
+    expect(summary.hasOpenShift).toBe(true);
+    expect(summary.hasUnresolvedException).toBe(true);
   });
 });

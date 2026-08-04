@@ -147,6 +147,10 @@ export function londonLocalDateTimeToUtc(value: string): { recordedDate: string;
   };
 }
 
+export function londonLocalDateTimeToIso(value: string): string {
+  return londonLocalDateTimeToUtc(value).timestamp.toISOString();
+}
+
 export function formatDateUk(date: string | Date): string {
   const value = typeof date === "string" ? parseISO(date) : date;
   return format(value, "dd/MM/yyyy");

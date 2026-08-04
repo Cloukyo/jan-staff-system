@@ -151,12 +151,21 @@ describe("paged attendance data loaders", () => {
         status: "pending",
         attendance_date: date,
       })),
+      attendance_exceptions: Array.from({ length: 1_001 }, (_, index) => ({
+        id: `exception-${String(index).padStart(5, "0")}`,
+        status: "open",
+        operational_date: date,
+      })),
     });
     mocks.createSupabaseServerClient.mockResolvedValue(client);
 
     const readiness = await loadAttendanceReviewReadiness(date, date);
 
-    expect(readiness).toEqual({ unresolved: 2, pendingRequests: 1_001 });
+    expect(readiness).toEqual({
+      unresolved: 2,
+      pendingRequests: 1_001,
+      openExceptions: 1_001,
+    });
     expect(client.rangesFor("attendance_day_reviews")).toEqual([
       [0, 999],
       [1_000, 1_999],
@@ -166,10 +175,18 @@ describe("paged attendance data loaders", () => {
       [0, 999],
       [1_000, 1_999],
     ]);
+    expect(client.rangesFor("attendance_exceptions")).toEqual([
+      [0, 999],
+      [1_000, 1_999],
+    ]);
     expect(client.rangesFor("clock_events")).toEqual([[0, 999], [1_000, 1_999]]);
     expect(client.rangesFor("clock_event_corrections")).toEqual([[0, 999], [1_000, 1_999]]);
     expect(client.ordersFor("attendance_correction_requests")[0]).toEqual([
       "attendance_date",
+      "id",
+    ]);
+    expect(client.ordersFor("attendance_exceptions")[0]).toEqual([
+      "operational_date",
       "id",
     ]);
     expect(client.ordersFor("clock_events")[0]).toEqual(["event_timestamp", "id"]);

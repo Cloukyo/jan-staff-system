@@ -28,7 +28,7 @@ describe("staff self-service", () => {
   });
 
   it("limits the ownership-checked RPC to attendance resolver fields", () => {
-    const migration = source("supabase/migrations/202607280001_clock_event_corrections.sql");
+    const migration = source("supabase/migrations/20260728230702_clock_event_corrections.sql");
     const start = migration.indexOf("create or replace function public.get_own_attendance_records");
     const end = migration.indexOf("\n$$;", start);
     const ownAttendanceRpc = migration.slice(start, end);

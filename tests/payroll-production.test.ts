@@ -161,15 +161,15 @@ describe("production payroll preparation", () => {
     expect(result.warnings).not.toContain("Missing clock-out");
   });
 
-  it("uses the latest duplicate clock-in as the payable start", () => {
+  it("does not invent payable time from an ambiguous duplicate clock-in", () => {
     const result = calculateClockTotals([
       { id: "in-08", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T08:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
       { id: "in-09", staffId: "staff-1", eventType: "clock_in", eventTimestamp: "2026-06-01T09:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
       { id: "out-17", staffId: "staff-1", eventType: "clock_out", eventTimestamp: "2026-06-01T17:00:00Z", recordedDate: "2026-06-01", managerCorrection: false },
     ]);
 
-    expect(result.recordedMinutes).toBe(480);
-    expect(result.warnings).toContain("Duplicate clock-in");
+    expect(result.recordedMinutes).toBe(0);
+    expect(result.warnings).toContain("Overlapping sessions");
   });
 
   it("does not pair a clock-in with a clock-out recorded on the next date", () => {

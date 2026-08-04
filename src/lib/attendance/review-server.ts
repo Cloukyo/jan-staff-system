@@ -272,7 +272,7 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
   };
 }
 
-export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number }> {
+export async function loadAttendanceReviewReadiness(from: string, to: string): Promise<{ unresolved: number; pendingRequests: number; openExceptions: number }> {
   await requireAccount(["manager"]);
   requireAttendanceDateRange(from, to);
   const supabase = await createSupabaseServerClient();
@@ -281,6 +281,7 @@ export async function loadAttendanceReviewReadiness(from: string, to: string): P
     Array<{ id: string }>,
     ClockEventSourceRow[],
     ClockCorrectionSourceRow[],
+    Array<{ id: string; status: string }>,
   ];
   try {
     rows = await Promise.all([
@@ -317,11 +318,20 @@ export async function loadAttendanceReviewReadiness(from: string, to: string): P
         .order("created_at")
         .order("id")
         .range(pageFrom, pageTo)),
+      loadAllPostgrestPages((pageFrom, pageTo) => supabase
+        .from("attendance_exceptions")
+        .select("id,status")
+        .gte("operational_date", from)
+        .lte("operational_date", to)
+        .in("status", ["open", "under_review"])
+        .order("operational_date")
+        .order("id")
+        .range(pageFrom, pageTo)),
     ]);
   } catch {
     throw new Error("Attendance review readiness could not be loaded.");
   }
-  const [reviews, requests, originals, corrections] = rows;
+  const [reviews, requests, originals, corrections, exceptions] = rows;
   const reviewed = new Set(reviews.map((row) => `${row.staff_id}:${row.review_date}`));
   const resolved = resolveEffectiveEvents(
     originals.map(toOriginalClockEvent),
@@ -331,6 +341,7 @@ export async function loadAttendanceReviewReadiness(from: string, to: string): P
   return {
     unresolved: [...workedDays].filter((key) => !reviewed.has(key)).length,
     pendingRequests: requests.length,
+    openExceptions: exceptions.length,
   };
 }
 

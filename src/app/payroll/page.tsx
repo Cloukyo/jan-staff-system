@@ -10,6 +10,7 @@ import { isoDateInLondon } from "@/lib/dates/format";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { loadPayrollAttendanceReviews, loadProductionAttendanceData, loadProductionStaffRows } from "@/lib/payroll/server";
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
+import { loadOfflinePayrollReadiness } from "@/lib/payroll/offline-readiness-server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +37,12 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const includeInactive = params.inactive === "1";
   const includeManagers = params.managers === "1";
   const includeZero = params.zero !== "0";
-  const [staff, attendance, reviews, reviewReadiness] = await Promise.all([
+  const [staff, attendance, reviews, reviewReadiness, offlineReadiness] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionAttendanceData(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
+    loadOfflinePayrollReadiness(periodStart, periodEnd),
   ]);
   const rows = staff
     .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager))
@@ -72,6 +74,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
           includeManagers={includeManagers}
           includeZero={includeZero}
           reviewReadiness={reviewReadiness}
+          offlineReadiness={offlineReadiness}
         />
       </div>
     </AppShell>

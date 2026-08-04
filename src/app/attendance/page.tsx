@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AttendanceScreen } from "@/components/attendance/attendance-screen";
 import { AttendanceReview } from "@/components/attendance/attendance-review";
+import { AttendanceExceptions } from "@/components/attendance/attendance-exceptions";
 import { AttendancePageNav } from "@/components/attendance/attendance-page-nav";
 import {
   AttendanceCorrectionForm,
@@ -21,6 +22,10 @@ import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
 import { loadAttendanceReviewDay } from "@/lib/attendance/review-server";
 import {
+  loadAttendanceExceptions,
+  normaliseAttendanceExceptionFilters,
+} from "@/lib/attendance/exceptions-server";
+import {
   loadAttendanceDay,
   loadMissingEventPage,
   loadStaffHoursList,
@@ -33,9 +38,16 @@ export const dynamic = "force-dynamic";
 export default async function AttendancePage({ searchParams }: { searchParams: Promise<Record<string, unknown>> }) {
   if (getAppMode() === "demo") return <AttendanceScreen />;
   await requireAccount(["manager"]);
-  const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(await searchParams);
+  const rawParams = await searchParams;
+  const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(rawParams);
+  const exceptionFilters = normaliseAttendanceExceptionFilters(Object.fromEntries(
+    Object.entries(rawParams).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value : undefined,
+    ]),
+  ));
   const yesterdayDate = previousLondonDate();
-  const dataset = view === "today" || view === "history"
+  const dataset = view === "today" || view === "history" || view === "needs-attention"
     ? await loadManagerAttendance()
     : null;
   const review = view === "needs-attention"
@@ -43,6 +55,9 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     : view === "today"
       ? await loadAttendanceReviewDay(isoDateInLondon())
       : null;
+  const attendanceExceptions = view === "needs-attention"
+    ? await loadAttendanceExceptions(exceptionFilters)
+    : null;
   const yesterday = view === "yesterday" ? await loadAttendanceDay(yesterdayDate) : null;
   const staffHoursList = view === "hours" && !staffIdProvided ? await loadStaffHoursList(hoursFrom, hoursTo) : null;
   const staffHoursWeek = view === "hours" && staffIdProvided && staffId ? await loadStaffHoursWeek(staffId, hoursFrom, hoursTo) : null;
@@ -98,7 +113,16 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       />
 
       <div className="mt-5">
-        {view === "needs-attention" && review ? <AttendanceReview data={review} /> : null}
+        {view === "needs-attention" && attendanceExceptions && dataset ? (
+          <div className="grid gap-5">
+            <AttendanceExceptions
+              issues={attendanceExceptions}
+              filters={exceptionFilters}
+              staff={dataset.staff}
+            />
+            {review ? <AttendanceReview data={review} /> : null}
+          </div>
+        ) : null}
         {view === "today" && dataset && review ? <AttendanceToday staff={dataset.staff} rows={review.rows} /> : null}
         {view === "yesterday" && yesterday ? <YesterdayAttendance data={yesterday} /> : null}
         {view === "hours" && staffHoursList ? <StaffHoursList data={staffHoursList} /> : null}

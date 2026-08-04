@@ -16,6 +16,7 @@ import {
   loadProductionAttendanceData,
   loadProductionStaffRows,
 } from "@/lib/payroll/server";
+import { loadOfflinePayrollReadiness } from "@/lib/payroll/offline-readiness-server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,16 +39,18 @@ export async function GET(request: Request) {
   const includeZero = params.get("zero") !== "0";
   const confirmUnreviewed = params.get("confirmUnreviewed") === "1";
   const hoursMode = parsePayrollExportHoursMode(params);
-  const [staff, attendance, reviews, readiness, shifts] = await Promise.all([
+  const [staff, attendance, reviews, readiness, shifts, offlineReadiness] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionAttendanceData(periodStart, periodEnd),
     loadPayrollAttendanceReviews(periodStart, periodEnd),
     loadAttendanceReviewReadiness(periodStart, periodEnd),
     loadPayrollRotaShifts(periodStart, periodEnd),
+    loadOfflinePayrollReadiness(periodStart, periodEnd),
   ]);
   if (
     payrollModeIncludesClocked(hoursMode) &&
-    (readiness.unresolved > 0 || readiness.pendingRequests > 0) &&
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0 || readiness.openExceptions > 0
+      || offlineReadiness.status !== "ready") &&
     !confirmUnreviewed
   ) {
     return NextResponse.json(
@@ -108,7 +111,8 @@ export async function GET(request: Request) {
   );
   const unreviewedPrefix =
     payrollModeIncludesClocked(hoursMode) &&
-    (readiness.unresolved > 0 || readiness.pendingRequests > 0)
+    (readiness.unresolved > 0 || readiness.pendingRequests > 0 || readiness.openExceptions > 0
+      || offlineReadiness.status !== "ready")
       ? "unreviewed-"
       : "";
   return new NextResponse(new Uint8Array(workbook), {

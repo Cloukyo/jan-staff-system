@@ -54,6 +54,7 @@ export type ProductionClockEvent = {
   eventTimestamp: string;
   recordedDate: string;
   managerCorrection: boolean;
+  ledger?: "original" | "effective";
 };
 
 export type ProductionClockCorrectionRecord = {

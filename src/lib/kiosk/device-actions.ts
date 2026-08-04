@@ -41,6 +41,32 @@ export async function revokeKioskDeviceAction(_state: PayrollActionState, formDa
   return { ok: true, message: "Kiosk device access revoked." };
 }
 
+export async function requireKioskReprovisionAction(_state: PayrollActionState, formData: FormData): Promise<PayrollActionState> {
+  await requireAccount(["manager"]);
+  const deviceId = String(formData.get("deviceId") ?? "");
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("kiosk_devices")
+    .update({ reprovision_required: true })
+    .eq("id", deviceId)
+    .eq("active", true);
+  if (error) return { ok: false, message: "The kiosk could not be marked for reprovisioning." };
+  revalidatePath("/settings/kiosk");
+  return { ok: true, message: "Reprovisioning is now required. Queued evidence has not been deleted." };
+}
+
+export async function allowKioskReprovisionAction(_state: PayrollActionState, formData: FormData): Promise<PayrollActionState> {
+  await requireAccount(["manager"]);
+  const deviceId = String(formData.get("deviceId") ?? "");
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("kiosk_devices")
+    .update({ reprovision_required: false })
+    .eq("id", deviceId)
+    .eq("active", true);
+  if (error) return { ok: false, message: "Reprovisioning could not be allowed." };
+  revalidatePath("/settings/kiosk");
+  return { ok: true, message: "Reprovisioning is allowed. Reconnect the kiosk and use Sync now." };
+}
+
 export async function exitKioskModeAction() {
   await clearKioskDeviceCookie();
   redirect("/login");

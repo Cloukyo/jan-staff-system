@@ -464,13 +464,13 @@ export async function createAttendanceTestDatabase() {
   await db.exec(prerequisiteSql);
   await db.exec(
     readFileSync(
-      resolve("supabase/migrations/202607280001_clock_event_corrections.sql"),
+      resolve("supabase/migrations/20260728230702_clock_event_corrections.sql"),
       "utf8",
     ),
   );
   await db.exec(
     readFileSync(
-      resolve("supabase/migrations/20260729002614_attendance_remove_and_reset.sql"),
+      resolve("supabase/migrations/20260729015320_attendance_remove_and_reset.sql"),
       "utf8",
     ),
   );

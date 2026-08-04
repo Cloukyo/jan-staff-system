@@ -61,6 +61,7 @@ const event = (
 });
 
 function attendanceData(events: ProductionClockEvent[]): ProductionAttendanceData {
+  const ledgerAware = events.some((item) => item.ledger);
   const correctionRecords: ProductionClockCorrectionRecord[] = events
     .filter((item) => item.managerCorrection)
     .map((item) => ({
@@ -81,9 +82,13 @@ function attendanceData(events: ProductionClockEvent[]): ProductionAttendanceDat
       status: "active",
     }));
   return {
-    effectiveEvents: events,
+    effectiveEvents: ledgerAware
+      ? events.filter((item) => item.ledger === "effective")
+      : events,
     audit: {
-      originalEvents: events.filter((item) => !item.managerCorrection),
+      originalEvents: ledgerAware
+        ? events.filter((item) => item.ledger === "original")
+        : events.filter((item) => !item.managerCorrection),
       correctionRecords,
     },
   };
@@ -154,10 +159,10 @@ describe("payroll export detail calculations", () => {
       reason: "Manager corrected arrival",
     }];
     const events = [
-      event("original-in", "clock_in", "2026-07-01T08:00:00+01:00"),
-      event("manager-in", "clock_in", "2026-07-01T08:15:00+01:00", true),
-      event("original-out", "clock_out", "2026-07-01T16:00:00+01:00"),
-      event("manager-out", "clock_out", "2026-07-01T16:00:00+01:00", true),
+      { ...event("original-in", "clock_in", "2026-07-01T08:00:00+01:00"), ledger: "original" as const },
+      { ...event("original-out", "clock_out", "2026-07-01T16:00:00+01:00"), ledger: "original" as const },
+      { ...event("manager-in", "clock_in", "2026-07-01T08:15:00+01:00", true), ledger: "effective" as const },
+      { ...event("manager-out", "clock_out", "2026-07-01T16:00:00+01:00", true), ledger: "effective" as const },
     ];
 
     const detail = createPayrollExportDetail({
