@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mapKioskActionResponse } from "@/lib/kiosk/rpc-mapping";
+import {
+  mapKioskActionResponse,
+  mapKioskVerificationResponse,
+} from "@/lib/kiosk/rpc-mapping";
 import { kioskActionPresentation } from "@/lib/kiosk/presentation";
 import type { AttendanceStateResult } from "@/lib/attendance/types";
 import {
@@ -109,6 +112,52 @@ describe("kiosk attendance RPC mapping", () => {
     expect(result.code).toBe("state_conflict");
     expect(result.attendanceState).toEqual(latest);
     expect(result.attendanceState?.allowedActions).toEqual(["clock_out"]);
+  });
+
+  it("maps the authoritative JSON PIN response", () => {
+    const latest = attendanceState();
+
+    const result = mapKioskVerificationResponse({
+      ok: true,
+      code: "verified",
+      state: "clocked_out",
+      attendanceState: latest,
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      code: "verified",
+      currentStatus: "clocked_out",
+      attendanceState: latest,
+    }));
+  });
+
+  it("maps a rollback-compatible PostgREST row without losing state or hours", () => {
+    const latest = attendanceState();
+
+    const result = mapKioskVerificationResponse([{
+      ok: true,
+      code: "verified",
+      current_status: "clocked_out",
+      attendance_state: latest,
+      work_week_start_date: "2026-08-03",
+      work_week_end_date: "2026-08-09",
+      completed_minutes: 480,
+      open_shift_in_progress: false,
+    }]);
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      code: "verified",
+      currentStatus: "clocked_out",
+      attendanceState: latest,
+      weeklyHours: {
+        weekStartDate: "2026-08-03",
+        weekEndDate: "2026-08-09",
+        completedMinutes: 480,
+        openShiftInProgress: false,
+      },
+    }));
   });
 });
 

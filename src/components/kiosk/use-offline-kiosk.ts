@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadOfflineRuntimeState, reportOfflineQueueHealth } from "@/lib/kiosk/offline/runtime";
 import { refreshOfflineProvisioning } from "@/lib/kiosk/offline/provisioning";
 import { syncPendingActions } from "@/lib/kiosk/offline/sync";
+import { OFFLINE_KIOSK_RUNTIME_ENABLED } from "@/lib/kiosk/offline/feature";
 import type { OfflineSyncTrigger } from "@/lib/kiosk/offline/types";
 import type { OfflineRuntimeState } from "@/lib/kiosk/offline/runtime";
 
@@ -47,6 +48,11 @@ export function useOfflineKiosk() {
   const maintain = useCallback((trigger: OfflineSyncTrigger) => {
     if (inFlight.current) return inFlight.current;
     const task = (async () => {
+      if (!OFFLINE_KIOSK_RUNTIME_ENABLED) {
+        setConnection("online");
+        await refreshLocal();
+        return;
+      }
       if (trigger === "manual") setConnection("synchronising");
       let healthResponse: Response;
       try {
@@ -101,6 +107,9 @@ export function useOfflineKiosk() {
   }, [refreshLocal]);
 
   useEffect(() => {
+    if (!OFFLINE_KIOSK_RUNTIME_ENABLED) {
+      return;
+    }
     void maintain("launch");
     const online = () => void maintain("online");
     const offline = () => {
@@ -129,13 +138,15 @@ export function useOfflineKiosk() {
 
   const queueChanged = useCallback(async () => {
     const next = await refreshLocal();
-    if (next.pendingCount > 0) await requestBackgroundSync();
+    if (OFFLINE_KIOSK_RUNTIME_ENABLED && next.pendingCount > 0) {
+      await requestBackgroundSync();
+    }
   }, [refreshLocal]);
 
   return {
     connection,
     runtime,
-    offlineUsable: connection === "offline"
+    offlineUsable: OFFLINE_KIOSK_RUNTIME_ENABLED && connection === "offline"
       && ["active", "expiring"].includes(runtime.lifecycle),
     syncNow: () => maintain("manual"),
     queueChanged,
