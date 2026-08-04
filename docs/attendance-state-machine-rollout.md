@@ -19,11 +19,18 @@ The first six files reconcile migration history already applied in production. T
 | `20260728230820_revoke_clock_correction_trigger_execute.sql` | Existing correction trigger permission hardening | Already applied and reconciled | None during this release | Depends on correction-chain functions; do not rerun |
 | `20260729015320_attendance_remove_and_reset.sql` | Existing manager remove/reset operations using correction evidence | Already applied and reconciled | None during this release | Despite its name, it does not delete clock events; do not rerun |
 | `20260803160623_attendance_state_machine.sql` | Operational-day state, authoritative kiosk actions, exceptions, idempotency and reconciliation | Apply first | Brief DDL locks while creating tables, indexes, constraints and replacing functions; apply in a quiet window | Additive; old kiosk RPC is replaced with a rolling-deployment-safe implementation; keep schema on app rollback |
-| `20260803162518_kiosk_attendance_state_response.sql` | Extends kiosk response contract with authoritative state | Apply second | Short function replacement lock | Depends on the attendance state machine; compatible with the old caller shape |
+| `20260803162518_kiosk_attendance_state_response.sql` | Extends kiosk response contract with authoritative state | Apply second | Short function replacement lock | Depends on the attendance state machine; its JSON object response is not compatible with application SHA `3090800c50f8ea1125ded10660af4b84db87aad5` |
 | `20260803173048_manager_attendance_exception_workflow.sql` | Manager exception queries, audited resolution/dismissal and effective-event readers | Apply third | Brief table/index/trigger/function DDL locks | Additive; depends on state-machine and correction-chain objects; retain audit rows on rollback |
 | `20260803190153_offline_kiosk_attendance.sql` | Dormant per-device authorisations, signed sync boundary, conflict metadata and kiosk health | Apply fourth | Table scans for new indexes on attendance tables plus brief DDL locks; apply in a quiet window | Additive and disabled by default; retain all audit columns/tables if the app is rolled back |
+| `20260804190945_restore_kiosk_pin_rollback_compatibility.sql` | Restores a PostgREST row response containing both legacy fields and authoritative state | Apply only after deploying an application which maps both response shapes | Short function replacement lock; no attendance-table writes | Makes the pre-state-machine and current PIN consumers coexist; retain on app rollback |
 
-The migrations do not delete `clock_events`, rewrite original event timestamps, fabricate clock-outs or modify historical attendance rows. Inserts into `clock_events` occur only inside guarded runtime functions after deployment. Existing code can coexist while the database changes are applied because legacy online kiosk entry points remain available. The new application requires the migrations, so database changes must finish before the application deployment.
+The migrations do not delete `clock_events`, rewrite original event timestamps, fabricate clock-outs or modify historical attendance rows. Inserts into `clock_events` occur only inside guarded runtime functions after deployment. The original four-migration release required the database changes before the application deployment. The rollback-compatibility repair has the opposite order: deploy the dual-shape application mapper first, verify it against the JSON response, and only then apply `20260804190945_restore_kiosk_pin_rollback_compatibility.sql`.
+
+## 4 August 2026 rollback compatibility incident
+
+Do not restore application SHA `3090800c50f8ea1125ded10660af4b84db87aad5` or deployment `dpl_Do3ZUnFuCJ6CmKVQL3dGXcsAafhW` while `verify_device_kiosk_pin(text,text,text)` returns a JSON object. That application reads the RPC result as a PostgREST row array, so valid PINs reach the database but the application reports `request_failed` and records no attendance action.
+
+Before the compatibility migration is installed, the approved application rollback target is SHA `c20371f98b50cd7ff9a3ba445369d7a0bc3c3522`. After the compatibility migration is installed and verified, both the legacy row consumer and the current dual-shape consumer can read the PIN response. Never infer database compatibility solely from a migration being additive; verify every RPC response contract used by the rollback build.
 
 ## Pre-deployment evidence
 
@@ -87,7 +94,7 @@ Stop the rollout and begin rollback if any of the following occurs:
 
 1. Confirm `offline_enabled = false` for every device and leave it false.
 2. Stop further controlled testing. Record affected staff, operation UUIDs, event IDs, exception IDs, timestamps and the deployed commit without copying PINs or credentials.
-3. Re-deploy the previously recorded application commit through the existing hosting rollback mechanism.
+3. Re-deploy only a previously recorded application commit whose RPC response contracts were verified against the current schema. Never use SHA `3090800c50f8ea1125ded10660af4b84db87aad5` before `20260804190945_restore_kiosk_pin_rollback_compatibility.sql` is installed.
 4. Do not run a database reset, reverse migration, `DELETE`, `TRUNCATE` or destructive repair.
 5. Keep every newly written `clock_events` row, correction, exception, idempotency request, offline authorisation, receipt and health record.
 6. If an RPC itself must be disabled, apply a separately reviewed forward migration that rejects new affected operations while preserving stored idempotent responses and audit evidence.
@@ -95,7 +102,7 @@ Stop the rollout and begin rollback if any of the following occurs:
 8. Reconcile attendance, weekly hours, manager hours, dashboard and payroll before reopening normal use.
 9. Preserve logs and SQL outputs with the incident record, then investigate on a new branch and preview database.
 
-The additive schema intentionally remains after application rollback so earlier application code can coexist and no attendance evidence is destroyed.
+The additive schema intentionally remains after application rollback so no attendance evidence is destroyed. Earlier application code may coexist only when its exact RPC response contracts have been verified against the retained schema.
 
 ## Later offline pilot gate
 

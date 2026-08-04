@@ -13,6 +13,7 @@ import type {
 } from "@/lib/kiosk/types";
 import {
   mapKioskActionResponse,
+  mapKioskVerificationResponse,
   type KioskActionRpcResponse,
 } from "@/lib/kiosk/rpc-mapping";
 
@@ -64,8 +65,7 @@ export async function verifyKioskPinAction(staffId: string, pin: string): Promis
   const supabase = createPublicKioskClient();
   const { data, error } = await supabase.rpc("verify_device_kiosk_pin", { device_token: deviceToken, target_staff_id: staffId, candidate_pin: pin });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
-  if (Array.isArray(data)) return rpcResult((data as RpcResult[])[0]);
-  return mapKioskActionResponse(data as KioskActionRpcResponse | null);
+  return mapKioskVerificationResponse(data as KioskActionRpcResponse | KioskActionRpcResponse[] | null);
 }
 export async function performKioskAttendanceAction(
   input: PerformKioskAttendanceActionInput,

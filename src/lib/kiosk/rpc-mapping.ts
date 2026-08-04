@@ -13,7 +13,18 @@ export type KioskActionRpcResponse = {
   recorded_at?: string;
   attendance_state?: AttendanceStateResult;
   weeklyHours?: KioskActionResult["weeklyHours"];
+  current_status?: string | null;
+  work_week_start_date?: string | null;
+  work_week_end_date?: string | null;
+  completed_minutes?: number | null;
+  open_shift_in_progress?: boolean | null;
 };
+
+export type KioskVerificationRpcValue =
+  | KioskActionRpcResponse
+  | KioskActionRpcResponse[]
+  | null
+  | undefined;
 
 export function mapKioskActionResponse(
   row: KioskActionRpcResponse | null | undefined,
@@ -32,4 +43,27 @@ export function mapKioskActionResponse(
     attendanceState: row?.attendanceState ?? row?.attendance_state,
     weeklyHours: row?.weeklyHours,
   };
+}
+
+export function mapKioskVerificationResponse(
+  value: KioskVerificationRpcValue,
+): KioskActionResult {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row) return mapKioskActionResponse(null);
+  const weeklyHours = row.weeklyHours ?? (
+    row.work_week_start_date && row.work_week_end_date
+      ? {
+          weekStartDate: row.work_week_start_date,
+          weekEndDate: row.work_week_end_date,
+          completedMinutes: row.completed_minutes ?? 0,
+          openShiftInProgress: Boolean(row.open_shift_in_progress),
+        }
+      : undefined
+  );
+  return mapKioskActionResponse({
+    ...row,
+    state: row.state ?? row.current_status ?? undefined,
+    attendanceState: row.attendanceState ?? row.attendance_state,
+    weeklyHours,
+  });
 }
