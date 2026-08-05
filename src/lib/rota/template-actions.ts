@@ -5,6 +5,7 @@ import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import type { RotaActionState } from "@/lib/rota/actions";
 import type { RotaTemplateApplyMode } from "@/lib/rota/template-types";
+import { workAreaPayload } from "@/lib/platform/work-areas";
 import { shiftDurationMinutes } from "@/lib/rota/validation";
 
 const success = (message: string): RotaActionState => ({ ok: true, message });
@@ -78,7 +79,7 @@ export async function saveRotaTemplateShiftAction(_state: RotaActionState, formD
     start_time: startTime,
     end_time: endTime,
     break_minutes: breakMinutes,
-    room_or_area: text(formData, "roomOrArea"),
+    ...workAreaPayload(formData.get("workArea") ?? formData.get("roomOrArea")),
     role_on_shift: text(formData, "roleOnShift"),
     notes: text(formData, "notes"),
     sort_order: Number(text(formData, "sortOrder") ?? "0"),
@@ -125,7 +126,7 @@ export async function duplicateRotaTemplateShiftAction(_state: RotaActionState, 
     start_time: data.start_time,
     end_time: data.end_time,
     break_minutes: data.break_minutes,
-    room_or_area: data.room_or_area,
+    ...workAreaPayload(data.work_area ?? data.room_or_area),
     role_on_shift: data.role_on_shift,
     notes: data.notes,
     sort_order: data.sort_order,
@@ -169,7 +170,7 @@ export async function copyRotaTemplateStaffPatternAction(_state: RotaActionState
     end_time: shift.end_time,
     break_minutes: shift.break_minutes,
     break_unspecified: shift.break_unspecified,
-    room_or_area: shift.room_or_area,
+    ...workAreaPayload(shift.work_area ?? shift.room_or_area),
     role_on_shift: shift.role_on_shift,
     notes: shift.notes,
     sort_order: shift.sort_order,

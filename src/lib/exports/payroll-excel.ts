@@ -8,6 +8,7 @@ import {
   type PayrollExportHoursMode,
 } from "@/lib/exports/payroll-options";
 import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/types";
+import { getExportIdentity } from "@/lib/exports/identity";
 
 const decimalHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
 
@@ -51,7 +52,8 @@ export async function createPayrollPreparationWorkbook(
   options: PayrollWorkbookOptions = { hours: "both" },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Jan Pre-School Staff System";
+  const identity = getExportIdentity();
+  workbook.creator = identity.productName;
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
   const includePlanned = payrollModeIncludesPlanned(options.hours);
@@ -60,10 +62,10 @@ export async function createPayrollPreparationWorkbook(
     includeClocked && (reviewState.unresolved > 0 || reviewState.pendingRequests > 0);
   const workbookLabel =
     options.hours === "planned"
-      ? "Jan Pre-School planned hours export"
+      ? `${identity.siteDisplayName} planned hours export`
       : isUnreviewed
         ? "UNREVIEWED PAYROLL PREPARATION"
-        : "Jan Pre-School payroll preparation";
+        : `${identity.siteDisplayName} payroll preparation`;
   workbook.subject = workbookLabel;
   if (includeClocked) {
     const sheet = workbook.addWorksheet("Pay Summary", {

@@ -7,6 +7,7 @@ import {
   formatHours,
   formatTimeUk,
 } from "@/lib/dates/format";
+import { getExportIdentity } from "@/lib/exports/identity";
 
 type CellValue = string | number;
 type WorkbookRow = Record<string, CellValue>;
@@ -104,7 +105,7 @@ export function createPayWorkbook(
   });
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Jan Pre-School Staff System";
+  workbook.creator = getExportIdentity().productName;
   addSheet(workbook, "Pay Summary", payRows);
   addSheet(workbook, "Attendance Detail", attendanceRows);
   return workbook;
@@ -125,7 +126,7 @@ export async function exportPayWorkbook(
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `jan-staff-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`;
+  anchor.download = `${getExportIdentity().siteSlug}-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

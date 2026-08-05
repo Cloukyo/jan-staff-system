@@ -118,9 +118,10 @@ describe("device-specific kiosk access", () => {
   });
 
   it("keeps the device token in an HttpOnly cookie and redirects manager routes", () => {
-    expect(KIOSK_DEVICE_COOKIE).toBe("jan_kiosk_device");
+    expect(KIOSK_DEVICE_COOKIE).toBe("workforce_clocking_device");
     const deviceSession = readFileSync(resolve("src/lib/kiosk/device-session.ts"), "utf8");
     expect(deviceSession).toContain("httpOnly: true");
+    expect(deviceSession).toContain("LEGACY_KIOSK_DEVICE_COOKIES");
     expect(deviceSession).not.toContain("localStorage");
     expect(middleware).toContain('url.pathname = "/clock"');
   });

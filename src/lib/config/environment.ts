@@ -69,9 +69,17 @@ export function validateEnvironment(
   const appEnvironment = configuredEnvironment(env, issues);
   const appModeValue = value(env, "APP_MODE");
   const appMode: ValidatedAppMode = appModeValue === "production" ? "production" : "demo";
+  const industryProfile = value(env, "NEXT_PUBLIC_INDUSTRY_PROFILE");
 
   if (appModeValue && !["demo", "production"].includes(appModeValue)) {
     issues.push("APP_MODE must be demo or production.");
+  }
+  if (industryProfile && !["nursery", "care_home", "tuition_centre", "clinic"].includes(industryProfile)) {
+    issues.push("NEXT_PUBLIC_INDUSTRY_PROFILE must be nursery, care_home, tuition_centre or clinic.");
+  }
+  const logoPath = value(env, "NEXT_PUBLIC_PRODUCT_LOGO_PATH");
+  if (logoPath && !logoPath.startsWith("/")) {
+    issues.push("NEXT_PUBLIC_PRODUCT_LOGO_PATH must be an application-relative path beginning with /.");
   }
   if (commercialEnvironments.has(appEnvironment) && appMode !== "production") {
     issues.push(`${appEnvironment} requires APP_MODE=production.`);

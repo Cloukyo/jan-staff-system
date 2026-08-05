@@ -1,5 +1,5 @@
 import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
-import type { NurserySettings } from "@/types";
+import type { PlatformSettings } from "@/types";
 import { isoDate, weekStart } from "@/lib/dates/format";
 
 export interface AppClock {
@@ -25,6 +25,6 @@ export function createDemoClock(demoToday: string): AppClock {
   };
 }
 
-export function createAppClock(settings: Pick<NurserySettings, "demoToday">): AppClock {
+export function createAppClock(settings: Pick<PlatformSettings, "demoToday">): AppClock {
   return settings.demoToday ? createDemoClock(settings.demoToday) : createSystemClock();
 }

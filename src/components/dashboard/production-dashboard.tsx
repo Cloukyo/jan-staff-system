@@ -55,7 +55,7 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
       <div className="dashboard-page__header mb-6">
         <h1 className="text-3xl font-black text-purple-950">Home</h1>
         <p className="mt-2 text-slate-600">
-          Nursery staffing and records for {formatDateUk(data.referenceDate)}.
+          Staffing and records for {formatDateUk(data.referenceDate)}.
         </p>
       </div>
 
@@ -165,7 +165,7 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
               <table className="w-full min-w-[560px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-purple-100">
-                    <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Room or role</th><th className="p-2">Rota</th>
+                    <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Work area or role</th><th className="p-2">Rota</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -174,7 +174,7 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
                       <td className="p-2">{formatDateUk(shift.shiftDate)}</td>
                       <td className="p-2 font-bold text-purple-950">{shift.displayName}</td>
                       <td className="p-2">{shift.startTime} to {shift.endTime}</td>
-                      <td className="p-2">{shift.roomOrArea || shift.roleOnShift || "-"}</td>
+                      <td className="p-2">{shift.workArea || shift.roomOrArea || shift.roleOnShift || "-"}</td>
                       <td className="p-2"><StatusPill tone={shift.rotaStatus === "published" ? "green" : "amber"}>{shift.rotaStatus}</StatusPill></td>
                     </tr>
                   ))}

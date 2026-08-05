@@ -23,6 +23,8 @@ import type { ManagerKioskRow } from "@/lib/kiosk/server";
 import { isPayDetailsReady } from "@/lib/payroll/calculations";
 import type { ProductionStaffRow } from "@/lib/payroll/types";
 import type { StaffRecordSection } from "@/lib/staff/record-sections";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
 
 const checklist = [
   ["appointment_induction", "Appointment and induction"],
@@ -55,6 +57,9 @@ export function ProductionComplianceDetail({
   payPerson: ProductionStaffRow | null;
 }) {
   const { staff, centralRecord } = record;
+  const compliancePack = getCompliancePackForIndustry(getActiveIndustryProfile().id);
+  const includesDbs = compliancePack.requirements.some((item) => item.kind === "dbs");
+  const includesCentralRecord = compliancePack.requirements.some((item) => item.kind === "central_record");
   const central = centralRecordCompletion(centralRecord, record.centralItems);
   const loginReady = (!staff.email && !record.account?.email)
     || Boolean(record.account?.active && record.account.authUserId);
@@ -148,8 +153,8 @@ export function ProductionComplianceDetail({
               {[
                 ["qualifications", "Qualifications"],
                 ["training-certificates", "Training and certificates"],
-                ["dbs-suitability", "DBS and suitability"],
-                ["central-record", "Central-record checklist"],
+                ...(includesDbs ? [["dbs-suitability", "DBS and suitability"]] : []),
+                ...(includesCentralRecord ? [["central-record", "Central-record checklist"]] : []),
                 ["references", "References"],
                 ["import-warnings", "Import warnings"],
               ].map(([id, label]) => (
@@ -212,7 +217,7 @@ export function ProductionComplianceDetail({
           </div>
         </Panel>
 
-        <Panel>
+        {includesDbs ? <Panel>
           <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
           <ProductionActionForm action={saveCentralRecordAction}>
@@ -228,9 +233,9 @@ export function ProductionComplianceDetail({
             <LegacyChecklistHidden record={centralRecord} />
             <Field label="Manager notes"><textarea className={inputClassName("mt-3 min-h-20 w-full")} name="notes" defaultValue={centralRecord?.notes ?? ""} /></Field>
           </ProductionActionForm>
-        </Panel>
+        </Panel> : null}
 
-        <Panel>
+        {includesCentralRecord ? <Panel>
           <h2 id="central-record" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Central-record checklist</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {checklist.map(([key, label]) => {
@@ -246,7 +251,7 @@ export function ProductionComplianceDetail({
               );
             })}
           </div>
-        </Panel>
+        </Panel> : null}
 
         <Panel>
           <h2 id="references" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">References</h2>

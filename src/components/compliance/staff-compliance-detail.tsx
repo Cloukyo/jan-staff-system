@@ -10,6 +10,9 @@ import { centralRecordCompletion, certificateStatus, certificateStatusLabel, cer
 import { createDemoComplianceState, demoComplianceStorageKey, type DemoComplianceState } from "@/lib/compliance/demo-data";
 import { formatDateUk } from "@/lib/dates/format";
 import type { EvidenceStatus, StaffCertificate, StaffQualification, StaffReferenceCheck } from "@/types";
+import { browserIdentifiers, migrateStoredValue } from "@/lib/platform/browser-identifiers";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
 
 const checklist = [
   ["appointmentInductionCompleted", "Appointment and induction"],
@@ -28,7 +31,7 @@ const checklist = [
 
 function loadState(): DemoComplianceState {
   if (typeof window === "undefined") return createDemoComplianceState();
-  const saved = window.localStorage.getItem(demoComplianceStorageKey);
+  const saved = migrateStoredValue(window.localStorage, browserIdentifiers.complianceStorage);
   if (!saved) return createDemoComplianceState();
   try {
     return { ...createDemoComplianceState(), ...JSON.parse(saved) };
@@ -50,6 +53,9 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
   const [message, setMessage] = useState("");
   const [dirty, setDirty] = useState(false);
   const [showDbs, setShowDbs] = useState(false);
+  const compliancePack = getCompliancePackForIndustry(getActiveIndustryProfile().id);
+  const includesDbs = compliancePack.requirements.some((item) => item.kind === "dbs");
+  const includesCentralRecord = compliancePack.requirements.some((item) => item.kind === "central_record");
   const staff = state.staff.find((person) => person.id === staffId);
   const qualifications = state.qualifications.filter((item) => item.staffId === staffId && !item.archivedAt);
   const certificates = state.certificates.filter((item) => item.staffId === staffId && !item.archivedAt);
@@ -191,7 +197,7 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
         <EditableQualificationList qualifications={qualifications} blank={blankQualification} onSave={upsertQualification} onArchive={(id) => archiveRecord("qualification", id)} />
         <EditableCertificateList certificates={certificates} blank={blankCertificate} onSave={upsertCertificate} onArchive={(id) => archiveRecord("certificate", id)} />
 
-        <Panel>
+        {includesDbs ? <Panel>
           <h2 className="text-xl font-black text-purple-950">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central-record completion: {central.completed}/{central.total}</p>
           {centralRecord && (
@@ -204,9 +210,9 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
               <Field label="Last checked"><input className={inputClassName()} type="date" value={centralRecord.dbsLastCheckedAt ?? ""} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsLastCheckedAt: e.target.value || null } : record) }, "DBS checked date saved.")} /></Field>
             </div>
           )}
-        </Panel>
+        </Panel> : null}
 
-        <Panel>
+        {includesCentralRecord ? <Panel>
           <h2 className="text-xl font-black text-purple-950">Central-record checklist</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {centralRecord && checklist.map(([key, label]) => (
@@ -216,7 +222,7 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
               </label>
             ))}
           </div>
-        </Panel>
+        </Panel> : null}
 
         <ReferenceList staffId={staffId} references={references} onSave={(reference) => {
           const exists = state.references.some((item) => item.id === reference.id);

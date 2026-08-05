@@ -8,6 +8,7 @@ import type {
   TemplateApplicationPreview,
 } from "@/lib/rota/template-types";
 import { buildTemplateApplicationPreview } from "@/lib/rota/template-validation";
+import { readWorkArea } from "@/lib/platform/work-areas";
 
 function mapTemplate(row: Record<string, unknown>): RotaTemplate {
   return {
@@ -22,6 +23,7 @@ function mapTemplate(row: Record<string, unknown>): RotaTemplate {
 }
 
 function mapTemplateShift(row: Record<string, unknown>): RotaTemplateShift {
+  const workArea = readWorkArea(row);
   return {
     id: String(row.id),
     templateId: String(row.template_id),
@@ -30,7 +32,8 @@ function mapTemplateShift(row: Record<string, unknown>): RotaTemplateShift {
     startTime: String(row.start_time).slice(0, 5),
     endTime: String(row.end_time).slice(0, 5),
     breakMinutes: row.break_minutes === null ? null : Number(row.break_minutes),
-    roomOrArea: row.room_or_area ? String(row.room_or_area) : null,
+    workArea,
+    roomOrArea: workArea,
     roleOnShift: row.role_on_shift ? String(row.role_on_shift) : null,
     notes: row.notes ? String(row.notes) : null,
     sortOrder: Number(row.sort_order),

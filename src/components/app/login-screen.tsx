@@ -6,10 +6,12 @@ import { signInAction, resetPasswordAction, type AuthActionState } from "@/lib/a
 import { BrandMark } from "@/components/ui/brand";
 import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
 import { PasswordInput } from "@/components/ui/password-input";
+import { getPlatformBranding } from "@/lib/platform/branding";
 
 const initialState: AuthActionState = { message: "" };
 
 export function LoginScreen({ notice }: { notice?: string }) {
+  const branding = getPlatformBranding();
   const [loginState, loginFormAction, loginPending] = useActionState(signInAction, initialState);
   const [resetState, resetFormAction, resetPending] = useActionState(resetPasswordAction, initialState);
 
@@ -18,7 +20,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
       <Panel className="w-full max-w-md">
         <BrandMark />
         <h1 className="mt-8 text-3xl font-black text-purple-950">Staff login</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Sign in with the email address linked to your Jan Pre-School staff account.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Sign in with the email address linked to your {branding.siteDisplayName.toLowerCase()} staff account.</p>
         {notice ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{notice}</p> : null}
         <form className="mt-6 grid gap-4" action={loginFormAction}>
           <Field label="Email">

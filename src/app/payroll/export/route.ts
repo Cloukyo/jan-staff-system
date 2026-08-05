@@ -118,7 +118,7 @@ export async function GET(request: Request) {
   return new NextResponse(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="jan-${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
+      "Content-Disposition": `attachment; filename="${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
       "Cache-Control": "private, no-store",
     },
   });

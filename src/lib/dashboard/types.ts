@@ -42,6 +42,7 @@ export type ProductionDashboardSummary = {
     displayName: string;
     startTime: string;
     endTime: string;
+    workArea: string | null;
     roomOrArea: string | null;
     roleOnShift: string | null;
     rotaStatus: DashboardRotaStatus;

@@ -15,7 +15,7 @@ export function ProductionProfileScreen({ data }: { data: ProductionProfile }) {
         <dl className="grid gap-4 sm:grid-cols-2">
           <div><dt className="text-sm font-bold text-slate-500">Name</dt><dd className="mt-1 font-black text-purple-950">{data.profile.fullName}</dd></div>
           <div><dt className="text-sm font-bold text-slate-500">Email</dt><dd className="mt-1 font-black text-purple-950">{data.account.email}</dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">Nursery role</dt><dd className="mt-1 font-black text-purple-950">{data.profile.employmentRole}</dd></div>
+          <div><dt className="text-sm font-bold text-slate-500">Job role</dt><dd className="mt-1 font-black text-purple-950">{data.profile.employmentRole}</dd></div>
           <div><dt className="text-sm font-bold text-slate-500">System role</dt><dd className="mt-1 capitalize font-black text-purple-950">{data.account.role}</dd></div>
           <div><dt className="text-sm font-bold text-slate-500">Account</dt><dd className="mt-1"><StatusPill tone={data.account.active ? "green" : "grey"}>{data.account.active ? "Active" : "Inactive"}</StatusPill></dd></div>
           <div><dt className="text-sm font-bold text-slate-500">Staff profile</dt><dd className="mt-1"><StatusPill tone={data.profile.active ? "green" : "grey"}>{data.profile.active ? "Active" : "Inactive"}</StatusPill></dd></div>

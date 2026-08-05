@@ -21,6 +21,7 @@ import {
   replaceRosterAtomically,
   installOfflineProvisioningPackage,
   resetOfflineDatabaseSafely,
+  OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
   saveDeviceKeys,
 } from "@/lib/kiosk/offline/database";
@@ -144,6 +145,7 @@ describe("offline kiosk IndexedDB", () => {
   });
 
   it("uses schema version 2 and preserves a version 1 pending action during upgrade", async () => {
+    expect(OFFLINE_DB_NAME).toBe("workforce-platform-clock");
     expect(OFFLINE_DB_VERSION).toBe(2);
     const legacy = pending();
     await new Promise<void>((resolve, reject) => {

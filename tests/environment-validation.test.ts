@@ -33,6 +33,14 @@ describe("commercial environment validation", () => {
     });
   });
 
+  it("rejects an unknown industry profile and a non-relative logo path", () => {
+    expect(() => validateEnvironment({
+      NODE_ENV: "development",
+      NEXT_PUBLIC_INDUSTRY_PROFILE: "unknown",
+      NEXT_PUBLIC_PRODUCT_LOGO_PATH: "https://example.com/logo.png",
+    })).toThrow("NEXT_PUBLIC_INDUSTRY_PROFILE must be nursery, care_home, tuition_centre or clinic");
+  });
+
   it("allows an explicit local production mode with the local Supabase stack", () => {
     expect(
       validateEnvironment({

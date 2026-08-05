@@ -69,7 +69,7 @@ export function ProductionRota({
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-purple-950">Weekly rota</h1>
-          <p className="mt-2 text-slate-600">Compare each employee&apos;s week and daily nursery coverage in one schedule.</p>
+          <p className="mt-2 text-slate-600">Compare each employee&apos;s week and daily staffing coverage in one schedule.</p>
           <ManagerHelpLink taskId="edit-rota" />
         </div>
         {data.week ? <StatusPill tone={data.week.status === "published" ? "green" : "amber"}>{data.week.status}</StatusPill> : null}

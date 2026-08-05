@@ -14,10 +14,16 @@ import {
 import { quickUpdateStaffProfileAction } from "@/lib/compliance/actions";
 import type { ComplianceDataset } from "@/lib/compliance/repository";
 import { formatDateUk } from "@/lib/dates/format";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
 
 export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }) {
   const today = new Date();
-  const counts = complianceDashboardCounts(data.staff, data.certificates, data.centralRecords, today, data.centralItems);
+  const compliancePack = getCompliancePackForIndustry(getActiveIndustryProfile().id);
+  const counts = complianceDashboardCounts(data.staff, data.certificates, data.centralRecords, today, data.centralItems, compliancePack);
+  const certificateRequirements = compliancePack.requirements.filter((item) => item.kind === "certificate").slice(0, 2);
+  const includesDbs = compliancePack.requirements.some((item) => item.kind === "dbs");
+  const includesCentralRecord = compliancePack.requirements.some((item) => item.kind === "central_record");
   return (
     <AppShell>
       <div className="mb-6">
@@ -31,24 +37,36 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
           ["Expiring 0 to 30 days", counts.expiring30, "amber"],
           ["Expiring 31 to 60 days", counts.expiring60, "amber"],
           ["Expiring 61 to 90 days", counts.expiring90, "amber"],
-          ["Missing first aid", counts.missingFirstAid, "red"],
-          ["Missing safeguarding", counts.missingSafeguarding, "red"],
-          ["Incomplete central records", counts.incompleteCentralRecords, "amber"],
+          ...Object.entries(counts.missingRequirements).map(([requirementId, value]) => [
+            `Missing ${compliancePack.requirements.find((item) => item.id === requirementId)?.label.toLowerCase() ?? requirementId}`,
+            value,
+            "red",
+          ]),
         ].map(([label, value, tone]) => <Panel key={label as string}><p className="text-sm font-bold text-slate-500">{label}</p><p className="mt-2 text-3xl font-black text-purple-950">{value}</p><StatusPill tone={tone as "purple" | "red" | "amber"}>Live</StatusPill></Panel>)}
       </div>
       <Panel className="mt-4">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-sm">
-            <thead><tr>{["Staff", "Quick role/qualification edit", "First aid", "Safeguarding", "DBS", "Central", "Next expiry", "Login", "Overall", "View"].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
+            <thead><tr>{[
+              "Staff",
+              "Quick role/qualification edit",
+              ...certificateRequirements.map((item) => item.label),
+              ...(includesDbs ? ["DBS"] : []),
+              ...(includesCentralRecord ? ["Central"] : []),
+              "Next expiry",
+              "Login",
+              "Overall",
+              "View",
+            ].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
             <tbody>
               {data.staff.map((person) => {
-                const firstAid = findCertificate(data.certificates, person.id, ["first aid"]);
-                const safeguarding = findCertificate(data.certificates, person.id, ["safeguarding"]);
-                const firstAidStatus = firstAid ? certificateStatus(firstAid, today) : "awaiting_evidence";
-                const safeguardingStatus = safeguarding ? certificateStatus(safeguarding, today) : "awaiting_evidence";
+                const requiredCertificates = certificateRequirements.map((requirement) => findCertificate(data.certificates, person.id, [...(requirement.certificateKeywords ?? [requirement.label])]));
+                const requiredStatuses = requiredCertificates.map((certificate) => certificate ? certificateStatus(certificate, today) : "awaiting_evidence");
+                const firstAidStatus = requiredStatuses[0] ?? "verified";
+                const safeguardingStatus = requiredStatuses[1] ?? "verified";
                 const centralRecord = data.centralRecords.find((item) => item.staffId === person.id);
                 const central = centralRecordCompletion(centralRecord, data.centralItems.filter((item) => item.staffId === person.id));
-                const nextExpiry = [firstAid?.expiryDate, safeguarding?.expiryDate].filter(Boolean).sort()[0];
+                const nextExpiry = requiredCertificates.map((certificate) => certificate?.expiryDate).filter(Boolean).sort()[0];
                 const overall = overallComplianceIndicator({ firstAidStatus, safeguardingStatus, centralRecordPercent: central.percent });
                 const account = data.accounts.find((item) => item.staffId === person.id);
                 const login = !person.email && !account?.email ? "No login" : !(person.authUserId || account?.authUserId) ? "Email, login not linked" : account?.active === false ? "Disabled login" : "Active login";
@@ -64,10 +82,9 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
                         </div>
                       </ProductionActionForm>
                     </td>
-                    <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(firstAidStatus)}>{certificateStatusLabel(firstAidStatus)}</StatusPill></td>
-                    <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(safeguardingStatus)}>{certificateStatusLabel(safeguardingStatus)}</StatusPill></td>
-                    <td className="border-b border-purple-50 px-3 py-3">{centralRecord?.dbsRecorded ? "Recorded" : "Missing"}</td>
-                    <td className="border-b border-purple-50 px-3 py-3">{central.completed}/{central.total}</td>
+                    {requiredStatuses.map((status, index) => <td key={certificateRequirements[index].id} className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(status)}>{certificateStatusLabel(status)}</StatusPill></td>)}
+                    {includesDbs ? <td className="border-b border-purple-50 px-3 py-3">{centralRecord?.dbsRecorded ? "Recorded" : "Missing"}</td> : null}
+                    {includesCentralRecord ? <td className="border-b border-purple-50 px-3 py-3">{central.completed}/{central.total}</td> : null}
                     <td className="border-b border-purple-50 px-3 py-3">{nextExpiry ? formatDateUk(nextExpiry) : "No expiry"}</td>
                     <td className="border-b border-purple-50 px-3 py-3">{login}</td>
                     <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={overall === "urgent" ? "red" : overall === "complete" ? "green" : "amber"}>{overall}</StatusPill></td>

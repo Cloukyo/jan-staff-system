@@ -1,9 +1,10 @@
 import type { DemoState } from "@/types";
 import { createSeedState } from "@/lib/demo-data/seed";
 import { migrateState } from "@/lib/repositories/demo-store";
+import { browserIdentifiers, migrateStoredValue } from "@/lib/platform/browser-identifiers";
 
-export const DEMO_STORAGE_KEY = "jan-staff-demo-state-v4";
-export const LEGACY_DEMO_STORAGE_KEYS = ["jan-staff-demo-state-v3", "jan-staff-demo-state-v2", "jan-staff-demo-state-v1"];
+export const DEMO_STORAGE_KEY = browserIdentifiers.demoStorage.current;
+export const LEGACY_DEMO_STORAGE_KEYS = browserIdentifiers.demoStorage.legacy;
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -12,12 +13,12 @@ export interface StorageLike {
 }
 
 export function loadDemoStateFromStorage(storage: StorageLike): { state: DemoState; repaired: boolean; error?: string } {
-  const saved = storage.getItem(DEMO_STORAGE_KEY) ?? LEGACY_DEMO_STORAGE_KEYS.map((key) => storage.getItem(key)).find(Boolean);
+  const saved = migrateStoredValue(storage, browserIdentifiers.demoStorage);
   if (!saved) return { state: createSeedState(), repaired: false };
   try {
     return { state: migrateState(JSON.parse(saved) as Partial<DemoState>), repaired: true };
   } catch (error) {
-    console.warn("Jan Staff demo data was corrupted and has been reseeded.", error);
+    console.warn("Workforce platform demo data was corrupted and has been reseeded.", error);
     return { state: createSeedState(), repaired: true, error: "Corrupted local demo data was reset." };
   }
 }
@@ -27,7 +28,7 @@ export function saveDemoStateToStorage(storage: StorageLike, state: DemoState): 
     storage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
     return { ok: true };
   } catch (error) {
-    console.error("Jan Staff demo data could not be saved.", error);
+    console.error("Workforce platform demo data could not be saved.", error);
     return { ok: false, error: "Demo data could not be saved in this browser." };
   }
 }

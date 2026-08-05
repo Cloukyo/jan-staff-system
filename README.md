@@ -1,8 +1,8 @@
-# Jan Staff
+# Workforce Operations Platform
 
-Rota, Attendance and Pay Preparation for Jan Pre-School and Nursery.
+An industry-configurable rota, attendance and pay-preparation platform.
 
-This is a local prototype with a Supabase production path. It replaces the paper weekly rota and sign-in sheet with a manager-controlled rota, shared staff clocking kiosk, attendance review, leave requests, pay-preparation estimates and CSV exports.
+This commercial branch is derived from the Jan staff system but uses neutral core concepts. It supports a manager-controlled rota, shared staff clocking kiosk, attendance review, leave requests, pay-preparation estimates and exports. Jan production remains separate and unchanged.
 
 It is not a payroll system. It does not calculate PAYE, National Insurance, pensions, statutory pay, deductions, payslips or HMRC submissions.
 
@@ -43,7 +43,7 @@ Demo mode uses seeded fictional staff, rota, attendance, leave and pay-preparati
 
 Production mode does not mount the browser demo store. Demo records are kept under `src/lib/demo-data` and `src/lib/repositories`, and production routes must load from Supabase or fail clearly rather than falling back to demo records.
 
-Current local data schema version: `5`.
+Current local data schema version: `6`.
 
 Version 3 migrated earlier demo records by:
 
@@ -55,6 +55,16 @@ Version 3 migrated earlier demo records by:
 Version 4 adds approval audit metadata and development date/scenario settings. It preserves existing clock events, adjustments and approvals, and backfills older approvals with demo manager audit fields.
 
 Version 5 adds linked staff-account demo records and leave-request demo records. It does not alter original clock events or manager attendance corrections.
+
+Version 6 introduces neutral organisation, site and work-area presentation fields. It migrates legacy browser keys and display values without removing the old evidence, clock events or manager corrections.
+
+## Industry profiles and branding
+
+The core application uses neutral organisation, site, staff, work-area and compliance concepts. `NEXT_PUBLIC_INDUSTRY_PROFILE` selects `nursery`, `care_home`, `tuition_centre` or `clinic` presentation. Profiles supply role examples, work-area labels, demo content, help context and the default compliance pack. Nursery remains the compatibility default for inherited data.
+
+Branding is supplied through the `NEXT_PUBLIC_PRODUCT_*`, `NEXT_PUBLIC_ORGANISATION_DISPLAY_NAME` and `NEXT_PUBLIC_SITE_DISPLAY_NAME` variables documented in `.env.example`. The defaults are placeholders and are not a final commercial product name.
+
+Legacy database columns and browser identifiers remain readable while neutral names are used for new writes. See `docs/commercial/platform-neutrality.md` for the compatibility boundary and deferred industry-pack work.
 
 ## Authentication and Database
 
@@ -233,7 +243,7 @@ Staff can submit leave requests with a leave type, date range, full or partial d
 
 Approved leave appears as a rota conflict warning. Pending leave appears as a softer rota warning. Rejected and cancelled leave do not block rota assignment. Existing shifts are never silently removed when leave is approved.
 
-Working-day calculation currently excludes Saturdays and Sundays. Nursery closure dates are not stored yet; the leave calculation accepts a closure-date list so that a future closure calendar can be added without rewriting the workflow.
+Working-day calculation currently excludes Saturdays and Sundays. Site closure dates are not stored yet; the leave calculation accepts a closure-date list so that a future closure calendar can be added without rewriting the workflow.
 
 ## Production and Demo Separation
 
@@ -286,7 +296,7 @@ The result is rounded to the nearest penny using `Math.round`.
 
 ## Brand Asset
 
-The prototype uses the public nursery flower/header image copied into `public/brand/jan-logo.png` as visual brand inspiration. If a final production asset is supplied, replace that file and keep the same dimensions or update `src/components/ui/brand.tsx`.
+Branding is configuration-driven. Set an application-relative `NEXT_PUBLIC_PRODUCT_LOGO_PATH` to use a supplied logo; otherwise the neutral placeholder mark is shown. The inherited Jan image remains in `public/brand` as an unreferenced compatibility asset.
 
 ## Project Commands
 

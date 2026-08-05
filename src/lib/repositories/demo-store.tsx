@@ -24,9 +24,9 @@ import { calculateLeaveMinutes, findOverlappingLeave, validateLeaveRequestInput 
 import { createPaySummary } from "@/lib/calculations/pay";
 import { createSeedState } from "@/lib/demo-data/seed";
 import { prototypeHashPin, verifyPrototypePin } from "@/lib/pin/service";
+import { browserIdentifiers, migrateStoredValue } from "@/lib/platform/browser-identifiers";
 
-const STORAGE_KEY = "jan-staff-demo-state-v5";
-const LEGACY_STORAGE_KEYS = ["jan-staff-demo-state-v4", "jan-staff-demo-state-v3", "jan-staff-demo-state-v2", "jan-staff-demo-state-v1"];
+const STORAGE_KEY = browserIdentifiers.demoStorage.current;
 
 interface DemoRepository {
   state: DemoState;
@@ -73,7 +73,7 @@ function uid(prefix: string): string {
 
 function loadState(): DemoState {
   if (typeof window === "undefined") return createSeedState();
-  const saved = window.localStorage.getItem(STORAGE_KEY) ?? LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean);
+  const saved = migrateStoredValue(window.localStorage, browserIdentifiers.demoStorage);
   if (!saved) return createSeedState();
   try {
     return migrateState(JSON.parse(saved) as Partial<DemoState>);
@@ -89,11 +89,18 @@ export function repairContractedWeeklyMinutes(value: number | undefined): number
 
 export function migrateState(input: Partial<DemoState>): DemoState {
   const seed = createSeedState();
-  const settings = { ...seed.settings, ...(input.settings ?? {}) };
+  const legacyName = input.settings?.nurseryDisplayName;
+  const settings = {
+    ...seed.settings,
+    ...(input.settings ?? {}),
+    organisationDisplayName: input.settings?.organisationDisplayName ?? legacyName ?? seed.settings.organisationDisplayName,
+    siteDisplayName: input.settings?.siteDisplayName ?? legacyName ?? seed.settings.siteDisplayName,
+  };
   return {
     ...seed,
     ...input,
-    schemaVersion: 5,
+    schemaVersion: 6,
+    industryProfileId: input.industryProfileId ?? seed.industryProfileId,
     settings,
     staffAccounts: (input.staffAccounts ?? seed.staffAccounts).map((account) => ({
       ...account,
@@ -119,7 +126,7 @@ export function migrateState(input: Partial<DemoState>): DemoState {
     }),
     attendanceApprovals: (input.attendanceApprovals ?? []).map((approval) => ({
       ...approval,
-      approvedBy: approval.approvedBy ?? approval.managerName ?? "Nursery Manager",
+      approvedBy: approval.approvedBy ?? approval.managerName ?? "Manager",
       approvedAt: approval.approvedAt ?? approval.createdAt,
       approvalMethod:
         approval.approvalMethod ??
@@ -386,7 +393,7 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
               id: uid("apr"),
               staffId: day.staffId,
               date: day.date,
-              approvedBy: "Nursery Manager",
+              approvedBy: "Manager",
               approvedAt: new Date().toISOString(),
               approvalMethod: method,
               recordedMinutesAtApproval: day.recordedMinutes,

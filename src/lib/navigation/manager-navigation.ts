@@ -89,7 +89,7 @@ export const managerNavigation: NavGroup[] = [
       },
       {
         href: "/settings",
-        label: "Nursery settings",
+        label: "Site settings",
         icon: Settings,
         active: (path) => path === "/settings",
       },

@@ -1,6 +1,7 @@
-const CACHE_PREFIX = "jan-staff-clock-shell-";
+const CACHE_PREFIX = "workforce-platform-clock-shell-";
+const LEGACY_CACHE_PREFIXES = ["jan-staff-clock-shell-"];
 const CACHE_NAME = `${CACHE_PREFIX}v1`;
-const SHELL_URLS = ["/clock", "/brand/jan-logo.png"];
+const SHELL_URLS = ["/clock"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -19,7 +20,9 @@ self.addEventListener("activate", (event) => {
         Promise.all(
           names
             .filter(
-              (name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME,
+              (name) =>
+                (name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+                || LEGACY_CACHE_PREFIXES.some((prefix) => name.startsWith(prefix)),
             )
             .map((name) => caches.delete(name)),
         ),
@@ -101,7 +104,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("sync", (event) => {
-  if (event.tag !== "jan-staff-clock-sync") {
+  if (!["workforce-platform-clock-sync", "jan-staff-clock-sync"].includes(event.tag)) {
     return;
   }
   event.waitUntil(

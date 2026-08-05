@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { shiftDurationMinutes } from "@/lib/rota/validation";
+import { workAreaPayload } from "@/lib/platform/work-areas";
 
 export type RotaActionState = { ok: boolean; message: string };
 
@@ -71,7 +72,7 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
     end_time: endTime,
     break_minutes: breakMinutes,
     break_unspecified: breakUnspecified,
-    room_or_area: text(formData, "roomOrArea"),
+    ...workAreaPayload(formData.get("workArea") ?? formData.get("roomOrArea")),
     role_on_shift: text(formData, "roleOnShift"),
     notes: text(formData, "notes"),
     status: text(formData, "status") ?? "scheduled",
@@ -120,7 +121,7 @@ export async function duplicateRotaShiftAction(_state: RotaActionState, formData
     end_time: data.end_time,
     break_minutes: data.break_minutes,
     break_unspecified: data.break_unspecified,
-    room_or_area: data.room_or_area,
+    ...workAreaPayload(data.work_area ?? data.room_or_area),
     role_on_shift: data.role_on_shift,
     notes: data.notes,
     status: "scheduled",

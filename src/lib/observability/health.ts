@@ -3,12 +3,13 @@ import {
   EnvironmentValidationError,
   validateEnvironment,
 } from "@/lib/config/environment";
+import { getPlatformBranding } from "@/lib/platform/branding";
 
 type SupabaseHealth = "ready" | "unavailable" | "not_configured";
 
 export type HealthPayload = {
   status: "ok" | "not_ready";
-  service: "jan-staff";
+  service: string;
   version: string;
   environment: string;
   deploymentSha: string;
@@ -50,7 +51,7 @@ export function buildLiveness(
   }
   return {
     status: "ok",
-    service: "jan-staff",
+    service: getPlatformBranding(env).serviceIdentifier,
     version: packageMetadata.version,
     environment: metadata.environment,
     deploymentSha: metadata.deploymentSha,

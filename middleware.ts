@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getAppMode } from "@/lib/app-mode";
 import { correlationId } from "@/lib/observability/request-context";
-const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
 const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/my-rota", "/my-attendance", "/change-password", "/reset-password"];
 
@@ -18,7 +18,8 @@ export async function middleware(request: NextRequest) {
   };
   const hasConfig = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   const isProtected = protectedPrefixes.some((prefix) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
-  const hasKioskDeviceCookie = Boolean(request.cookies.get(KIOSK_DEVICE_COOKIE)?.value);
+  const hasKioskDeviceCookie = [browserIdentifiers.deviceCookie.current, ...browserIdentifiers.deviceCookie.legacy]
+    .some((name) => Boolean(request.cookies.get(name)?.value));
   if (hasKioskDeviceCookie && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/clock";

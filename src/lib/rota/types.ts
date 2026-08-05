@@ -28,6 +28,8 @@ export type ProductionRotaShift = {
   endTime: string;
   breakMinutes: number;
   breakUnspecified: boolean;
+  workArea?: string | null;
+  /** @deprecated Use workArea. */
   roomOrArea: string | null;
   roleOnShift: string | null;
   notes: string | null;
@@ -60,6 +62,8 @@ export type ProductionRotaDataset = {
     closingTime: string;
     defaultBreakMinutes: number;
     shiftIntervalMinutes: number;
+    availableWorkAreas?: string[];
+    /** @deprecated Use availableWorkAreas. */
     availableRooms: string[];
     allowOverlapOverride: boolean;
     allowInactiveStaffOverride: boolean;

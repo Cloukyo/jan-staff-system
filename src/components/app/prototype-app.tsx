@@ -31,6 +31,13 @@ import { exportPayWorkbook } from "@/lib/exports/xlsx";
 import { useDemoRepository } from "@/lib/repositories/demo-store";
 import { staffFormSchema } from "@/lib/validation/staff";
 import type { AttendanceDay, ClockEventType, PayPeriodSummary, RotaShift, StaffMember } from "@/types";
+import { getPlatformBranding } from "@/lib/platform/branding";
+import { browserIdentifiers, migrateStoredValue } from "@/lib/platform/browser-identifiers";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+import { getExportIdentity } from "@/lib/exports/identity";
+
+const branding = getPlatformBranding();
+const industryProfile = getActiveIndustryProfile();
 
 type Screen = "dashboard" | "staff" | "rota" | "attendance" | "payroll" | "settings";
 type AttendanceTab = "needs_review" | "ready" | "approved" | "all";
@@ -66,7 +73,7 @@ function PageHeader({ title, body, action }: { title: string; body: string; acti
   return (
     <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
       <div>
-        <p className="text-sm font-bold text-purple-700">Jan Staff</p>
+        <p className="text-sm font-bold text-purple-700">{branding.productShortName}</p>
         <h1 className="mt-1 text-3xl font-black tracking-normal text-purple-950">{title}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{body}</p>
       </div>
@@ -177,13 +184,13 @@ function DashboardScreen() {
       <Panel className="mt-4">
         <h2 className="text-xl font-black text-purple-950">Upcoming rota</h2>
         <DataTable
-          headers={["Date", "Staff", "Shift", "Status", "Room or duty"]}
+          headers={["Date", "Staff", "Shift", "Status", industryProfile.workAreaSingular]}
           rows={repo.state.rota
             .filter((shift) => [today, tomorrow].includes(shift.date) && shift.status !== "off")
             .slice(0, 12)
             .map((shift) => {
               const person = repo.state.staff.find((item) => item.id === shift.staffId);
-              return [formatDateUk(shift.date), person?.displayName ?? "", `${shift.scheduledStart ?? "-"} to ${shift.scheduledEnd ?? "-"}`, shift.status, shift.roomOrRole ?? ""];
+              return [formatDateUk(shift.date), person?.displayName ?? "", `${shift.scheduledStart ?? "-"} to ${shift.scheduledEnd ?? "-"}`, shift.status, shift.workArea ?? shift.roomOrRole ?? ""];
             })}
         />
       </Panel>
@@ -324,7 +331,7 @@ function StaffModal({ staff, onClose }: { staff: StaffMember | null; onClose: ()
   const [form, setForm] = useState({
     fullName: staff?.fullName ?? "",
     displayName: staff?.displayName ?? "",
-    role: staff?.role ?? "Nursery Practitioner",
+    role: staff?.role ?? industryProfile.defaultRoleLabels[0],
     payType: staff?.payType ?? "hourly",
     hourlyRate: staff?.hourlyRatePence ? staff.hourlyRatePence / 100 : 12.5,
     monthlySalary: staff?.monthlySalaryPence ? staff.monthlySalaryPence / 100 : 2400,
@@ -437,14 +444,14 @@ function RotaScreen() {
   const clock = createAppClock(repo.state.settings);
   const [start, setStart] = useState(clock.currentWeekStart());
   const [editing, setEditing] = useState<RotaShift | null>(null);
-  const [view, setView] = useState<"week" | "day" | "staff">(() => (typeof window === "undefined" ? "week" : (sessionStorage.getItem("jan-staff-rota-view") as "week" | "day" | "staff" | null) ?? "week"));
+  const [view, setView] = useState<"week" | "day" | "staff">(() => (typeof window === "undefined" ? "week" : (migrateStoredValue(sessionStorage, browserIdentifiers.rotaViewStorage) as "week" | "day" | "staff" | null) ?? "week"));
   const [selectedDate, setSelectedDate] = useState(clock.today());
   const [selectedStaffId, setSelectedStaffId] = useState(repo.state.staff.find((person) => person.active)?.id ?? "");
   const dates = weekDates(start, repo.state.settings.showWeekends);
   const weekShifts = repo.state.rota.filter((shift) => dates.includes(shift.date));
   const setRotaView = (next: "week" | "day" | "staff") => {
     setView(next);
-    sessionStorage.setItem("jan-staff-rota-view", next);
+    sessionStorage.setItem(browserIdentifiers.rotaViewStorage.current, next);
   };
 
   return (
@@ -542,10 +549,10 @@ function RotaScreen() {
               <Field label="Date"><input className={inputClassName()} type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /></Field>
             </div>
             <DataTable
-              headers={["Staff", "Status", "Start", "Finish", "Break", "Pay", "Credited", "Room or duty", "Warnings", "Edit"]}
+              headers={["Staff", "Status", "Start", "Finish", "Break", "Pay", "Credited", industryProfile.workAreaSingular, "Warnings", "Edit"]}
               rows={repo.state.staff.filter((person) => person.active).map((person) => {
                 const shift = repo.state.rota.find((item) => item.staffId === person.id && item.date === selectedDate) ?? { id: `new-${person.id}-${selectedDate}`, staffId: person.id, date: selectedDate, scheduledStart: "08:30", scheduledEnd: "16:30", status: "working", plannedBreakMinutes: person.defaultBreakMinutes } satisfies RotaShift;
-                return [person.displayName, titleCase(shift.status), shift.scheduledStart ?? "-", shift.scheduledEnd ?? "-", shift.plannedBreakMinutes, <PayTreatmentBadge key="pay" shift={shift} />, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), shift.roomOrRole ?? "", rotaWarnings(shift, person, repo.state.leaveRequests).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(selectedDate)}`} onClick={() => setEditing(shift)}>Edit</Button>];
+                return [person.displayName, titleCase(shift.status), shift.scheduledStart ?? "-", shift.scheduledEnd ?? "-", shift.plannedBreakMinutes, <PayTreatmentBadge key="pay" shift={shift} />, formatHours(shift.creditedMinutes ?? shiftScheduledMinutes(shift)), shift.workArea ?? shift.roomOrRole ?? "", rotaWarnings(shift, person, repo.state.leaveRequests).join(", ") || "None", <Button key="edit" variant="secondary" aria-label={`Edit ${person.displayName} on ${formatDateUk(selectedDate)}`} onClick={() => setEditing(shift)}>Edit</Button>];
               })}
             />
           </div>
@@ -592,7 +599,7 @@ function ShiftModal({ shift, onClose }: { shift: RotaShift; onClose: () => void 
     <Modal title={`Edit shift for ${formatDateUk(shift.date)}`} onClose={onClose}>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Status"><select className={inputClassName()} value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as RotaShift["status"] })}><option value="working">Working</option><option value="off">Off</option><option value="holiday">Holiday</option><option value="sick">Sick</option><option value="training">Training</option></select></Field>
-        <Field label="Room or duty"><input className={inputClassName()} value={draft.roomOrRole ?? ""} onChange={(e) => setDraft({ ...draft, roomOrRole: e.target.value })} /></Field>
+        <Field label={industryProfile.workAreaSingular}><input className={inputClassName()} value={draft.workArea ?? draft.roomOrRole ?? ""} onChange={(e) => setDraft({ ...draft, workArea: e.target.value, roomOrRole: e.target.value })} /></Field>
         <Field label="Start time"><input className={inputClassName()} value={draft.scheduledStart ?? ""} onChange={(e) => setDraft({ ...draft, scheduledStart: e.target.value })} type="time" /></Field>
         <Field label="Finish time"><input className={inputClassName()} value={draft.scheduledEnd ?? ""} onChange={(e) => setDraft({ ...draft, scheduledEnd: e.target.value })} type="time" /></Field>
         <Field label="Planned break minutes"><input className={inputClassName()} value={draft.plannedBreakMinutes} onChange={(e) => setDraft({ ...draft, plannedBreakMinutes: Number(e.target.value) })} type="number" /></Field>
@@ -914,7 +921,7 @@ function ExportPreviewModal({
   const unresolved = days.filter((day) => attendanceTabForDay(day) === "needs_review").length;
   const provisional = days.filter((day) => day.provisionalPayableMinutes > 0).length;
   const approved = days.filter((day) => day.approvalStatus === "approved").length;
-  const filename = type === "csv" ? `jan-staff-pay-preparation-${periodStart}-to-${periodEnd}.csv` : `jan-staff-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`;
+  const filename = type === "csv" ? `${getExportIdentity().siteSlug}-pay-preparation-${periodStart}-to-${periodEnd}.csv` : `${getExportIdentity().siteSlug}-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`;
   return (
     <Modal title={`Preview ${type.toUpperCase()} export`} onClose={onClose} description="Review export contents before downloading.">
       {unresolved > 0 && <p className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">This export includes unresolved attendance. Some pay figures may be incomplete or provisional.</p>}
@@ -976,7 +983,8 @@ function SettingsScreen() {
       <PageHeader title="Settings" body="Prototype settings that affect warnings, rota columns and kiosk behaviour where practical." />
       <Panel>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Nursery display name"><input className={inputClassName()} value={settings.nurseryDisplayName} onChange={(e) => setSettings({ ...settings, nurseryDisplayName: e.target.value })} /></Field>
+          <Field label="Organisation display name"><input className={inputClassName()} value={settings.organisationDisplayName ?? ""} onChange={(e) => setSettings({ ...settings, organisationDisplayName: e.target.value })} /></Field>
+          <Field label="Site display name"><input className={inputClassName()} value={settings.siteDisplayName ?? ""} onChange={(e) => setSettings({ ...settings, siteDisplayName: e.target.value })} /></Field>
           <Field label="Default unpaid break"><input className={inputClassName()} type="number" value={settings.defaultBreakMinutes} onChange={(e) => setSettings({ ...settings, defaultBreakMinutes: Number(e.target.value) })} /></Field>
           <Field label="Late arrival warning threshold"><input className={inputClassName()} type="number" value={settings.lateArrivalThresholdMinutes} onChange={(e) => setSettings({ ...settings, lateArrivalThresholdMinutes: Number(e.target.value) })} /></Field>
           <Field label="Overtime warning threshold"><input className={inputClassName()} type="number" value={settings.overtimeWarningThresholdMinutes} onChange={(e) => setSettings({ ...settings, overtimeWarningThresholdMinutes: Number(e.target.value) })} /></Field>

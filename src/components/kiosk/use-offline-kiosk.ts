@@ -7,6 +7,7 @@ import { syncPendingActions } from "@/lib/kiosk/offline/sync";
 import { OFFLINE_KIOSK_RUNTIME_ENABLED } from "@/lib/kiosk/offline/feature";
 import type { OfflineSyncTrigger } from "@/lib/kiosk/offline/types";
 import type { OfflineRuntimeState } from "@/lib/kiosk/offline/runtime";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
 export type OfflineConnectionState =
   | "online"
@@ -31,7 +32,7 @@ async function requestBackgroundSync() {
   const sync = (registration as ServiceWorkerRegistration & {
     sync?: { register(tag: string): Promise<void> };
   }).sync;
-  await sync?.register("jan-staff-clock-sync").catch(() => undefined);
+  await sync?.register(browserIdentifiers.backgroundSync.current).catch(() => undefined);
 }
 
 export function useOfflineKiosk() {

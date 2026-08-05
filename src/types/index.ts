@@ -201,6 +201,8 @@ export interface RotaShift {
   creditedMinutes?: number;
   payableMinutes?: number;
   managerNote?: string;
+  workArea?: string;
+  /** @deprecated Compatibility input for pre-neutralisation demo data. */
   roomOrRole?: string;
   notes?: string;
 }
@@ -291,8 +293,11 @@ export interface PayPeriodSummary {
   status: PayStatus;
 }
 
-export interface NurserySettings {
-  nurseryDisplayName: string;
+export interface PlatformSettings {
+  organisationDisplayName?: string;
+  siteDisplayName?: string;
+  /** Read-only compatibility input for demo data created before neutralisation. */
+  nurseryDisplayName?: string;
   defaultBreakMinutes: number;
   lateArrivalThresholdMinutes: number;
   overtimeWarningThresholdMinutes: number;
@@ -313,6 +318,7 @@ export interface NurserySettings {
 
 export interface DemoState {
   schemaVersion?: number;
+  industryProfileId?: import("@/lib/platform/industry-profile").IndustryProfileId;
   staff: StaffMember[];
   staffAccounts: StaffAccount[];
   leaveRequests: LeaveRequest[];
@@ -322,5 +328,8 @@ export interface DemoState {
   attendanceAdjustments: AttendanceAdjustment[];
   attendanceApprovals: AttendanceApproval[];
   paySummaries: PayPeriodSummary[];
-  settings: NurserySettings;
+  settings: PlatformSettings;
 }
+
+/** @deprecated Use PlatformSettings. */
+export type NurserySettings = PlatformSettings;

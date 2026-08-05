@@ -20,6 +20,7 @@ export type StaffRotaShift = {
   endTime: string;
   breakMinutes: number;
   breakUnspecified: boolean;
+  workArea: string | null;
   roomOrArea: string | null;
   roleOnShift: string | null;
   status: "scheduled" | "completed";
@@ -121,7 +122,7 @@ export async function loadStaffRotaWeek(weekValue?: string): Promise<StaffRotaWe
   let shifts: StaffRotaShift[] = [];
   if (weekResult.data) {
     const shiftResult = await supabase.from("rota_shifts")
-      .select("id,shift_date,start_time,end_time,break_minutes,break_unspecified,room_or_area,role_on_shift,status")
+      .select("id,shift_date,start_time,end_time,break_minutes,break_unspecified,work_area,room_or_area,role_on_shift,status")
       .eq("rota_week_id", weekResult.data.id)
       .eq("staff_id", account.staffId)
       .is("archived_at", null)
@@ -136,7 +137,8 @@ export async function loadStaffRotaWeek(weekValue?: string): Promise<StaffRotaWe
       endTime: String(row.end_time).slice(0, 5),
       breakMinutes: row.break_minutes,
       breakUnspecified: row.break_unspecified,
-      roomOrArea: row.room_or_area,
+      workArea: row.work_area ?? row.room_or_area,
+      roomOrArea: row.work_area ?? row.room_or_area,
       roleOnShift: row.role_on_shift,
       status: row.status,
     }));

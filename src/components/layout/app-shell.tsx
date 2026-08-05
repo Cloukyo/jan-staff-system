@@ -21,6 +21,7 @@ import {
   type NavGroup,
 } from "@/lib/navigation/manager-navigation";
 import type { AppRole } from "@/types";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
 const staffNavigation: NavGroup[] = [
   {
@@ -157,7 +158,10 @@ export function AppShell({ children, role = "manager" }: { children: React.React
   );
 
   const signOut = (
-    <form className="app-shell__signout" action={signOutAction} onSubmit={() => window.localStorage.removeItem("jan-staff-manager-session")}>
+    <form className="app-shell__signout" action={signOutAction} onSubmit={() => {
+      window.localStorage.removeItem(browserIdentifiers.managerSessionStorage.current);
+      browserIdentifiers.managerSessionStorage.legacy.forEach((key) => window.localStorage.removeItem(key));
+    }}>
       <Button type="submit" variant="ghost" className="w-full justify-start app-shell__signout-button">
         <LogOut className="h-4 w-4" /> Sign out
       </Button>

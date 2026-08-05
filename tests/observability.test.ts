@@ -104,6 +104,7 @@ describe("commercial health reporting", () => {
     const payload = buildLiveness(productionEnvironment, new Date("2026-08-05T12:00:00Z"));
     expect(payload).toMatchObject({
       status: "ok",
+      service: "workforce-platform",
       environment: "production",
       deploymentSha: productionEnvironment.VERCEL_GIT_COMMIT_SHA,
       checkedAt: "2026-08-05T12:00:00.000Z",

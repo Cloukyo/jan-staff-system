@@ -8,14 +8,17 @@ import { calculateLeaveMinutes, findRotaLeaveWarnings, leaveStatusTone, leaveTyp
 import { formatDateUk, formatDurationCompact } from "@/lib/dates/format";
 import { useDemoRepository } from "@/lib/repositories/demo-store";
 import type { LeaveDayPart, LeaveRequest, LeaveStatus, LeaveType } from "@/types";
+import { getPlatformBranding } from "@/lib/platform/branding";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 
 const leaveTypes: LeaveType[] = ["annual_leave", "sickness", "medical_appointment", "unpaid_leave", "training", "other"];
 const statuses: LeaveStatus[] = ["pending", "approved", "rejected", "cancelled"];
 
 function PageHeader({ title, body }: { title: string; body: string }) {
+  const branding = getPlatformBranding();
   return (
     <div className="mb-6">
-      <p className="text-sm font-bold text-purple-700">Jan Staff</p>
+      <p className="text-sm font-bold text-purple-700">{branding.productShortName}</p>
       <h1 className="mt-1 text-3xl font-black text-purple-950">{title}</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{body}</p>
     </div>
@@ -108,6 +111,7 @@ export function RequestLeaveScreen() {
   });
   const [message, setMessage] = useState("");
   const requestedMinutes = calculateLeaveMinutes(form);
+  const profile = getActiveIndustryProfile();
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -142,7 +146,7 @@ export function RequestLeaveScreen() {
             )}
           </div>
           <Field label="Reason or notes"><textarea className={inputClassName("min-h-24")} value={form.staffNote} onChange={(event) => setForm({ ...form, staffNote: event.target.value })} /></Field>
-          <p className="rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">Requested time: {formatDurationCompact(requestedMinutes)}. Weekends are excluded; nursery closure dates can be added later.</p>
+          <p className="rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">Requested time: {formatDurationCompact(requestedMinutes)}. Weekends are excluded; {profile.siteClosureLabel.toLowerCase()} dates can be added later.</p>
           {message && <p className="rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">{message}</p>}
           <Button type="submit">Submit leave request</Button>
         </form>

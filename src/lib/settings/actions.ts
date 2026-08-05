@@ -10,7 +10,7 @@ export type SettingsActionResult = {
   message: string;
 };
 
-export async function saveProductionNurserySettingsAction(_state: SettingsActionResult, formData: FormData): Promise<SettingsActionResult> {
+export async function saveProductionSiteSettingsAction(_state: SettingsActionResult, formData: FormData): Promise<SettingsActionResult> {
   await requireAccount(["manager"]);
   const workWeekStartsOn = normaliseWeekStartDay(Number(formData.get("workWeekStartsOn")));
   const supabase = await createSupabaseServerClient();
@@ -21,3 +21,6 @@ export async function saveProductionNurserySettingsAction(_state: SettingsAction
   revalidatePath("/clock");
   return { ok: true, message: "Production settings saved." };
 }
+
+/** @deprecated Use saveProductionSiteSettingsAction. */
+export const saveProductionNurserySettingsAction = saveProductionSiteSettingsAction;

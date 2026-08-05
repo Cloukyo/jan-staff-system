@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/app/providers";
 import { getAppMode } from "@/lib/app-mode";
+import { getPlatformBranding } from "@/lib/platform/branding";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,8 +15,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const branding = getPlatformBranding();
+
 export const metadata: Metadata = {
-  title: "Jan Staff",
+  title: branding.productName,
   description: "Rota, Attendance and Pay Preparation",
 };
 

@@ -11,8 +11,10 @@ import {
   type UnsignedPendingAction,
 } from "@/lib/kiosk/offline/types";
 import type { OfflineProvisioningPackage } from "@/lib/kiosk/offline/server-contract";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
-export const OFFLINE_DB_NAME = "jan-staff-clock";
+export const OFFLINE_DB_NAME = browserIdentifiers.offlineDatabase.current;
+export const LEGACY_OFFLINE_DB_NAMES = browserIdentifiers.offlineDatabase.legacy;
 export const OFFLINE_DB_VERSION = 2;
 
 const stores = {
@@ -32,6 +34,54 @@ type MetadataRecord = {
 };
 
 let databasePromise: Promise<IDBDatabase> | null = null;
+
+async function existingDatabaseNames(): Promise<Set<string>> {
+  if (!("databases" in indexedDB)) return new Set();
+  const values = await indexedDB.databases();
+  return new Set(values.map((item) => item.name).filter((name): name is string => Boolean(name)));
+}
+
+async function migrateLegacyDatabase(database: IDBDatabase): Promise<void> {
+  const names = await existingDatabaseNames();
+  const legacyName = LEGACY_OFFLINE_DB_NAMES.find((name) => names.has(name));
+  if (!legacyName) return;
+
+  const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(legacyName);
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error ?? new Error("Legacy offline database could not open")));
+  });
+  try {
+    const sharedStores = [...legacy.objectStoreNames].filter((name) => database.objectStoreNames.contains(name));
+    if (!sharedStores.length) return;
+    const sourceTransaction = legacy.transaction(sharedStores, "readonly");
+    const records = await Promise.all(sharedStores.map(async (name) => [
+      name,
+      await requestResult<unknown[]>(sourceTransaction.objectStore(name).getAll()),
+    ] as const));
+    await transactionDone(sourceTransaction);
+
+    const targetTransaction = database.transaction(sharedStores, "readwrite");
+    for (const [name, values] of records) {
+      const store = targetTransaction.objectStore(name);
+      for (const value of values) {
+        if (name === stores.pendingActions) {
+          const action = value as Partial<PendingAttendanceAction>;
+          store.put({
+            ...action,
+            clockConfidence: action.clockConfidence ?? "uncertain",
+            elapsedSinceAuthorisationMs: action.elapsedSinceAuthorisationMs ?? null,
+          });
+        } else {
+          store.put(value);
+        }
+      }
+    }
+    await transactionDone(targetTransaction);
+  } finally {
+    legacy.close();
+  }
+}
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -60,10 +110,12 @@ export function openOfflineDatabase(): Promise<IDBDatabase> {
   }
 
   databasePromise = new Promise((resolve, reject) => {
+    let createdNewDatabase = false;
     const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
 
     request.addEventListener("upgradeneeded", (event) => {
       const database = request.result;
+      createdNewDatabase = (event as IDBVersionChangeEvent).oldVersion === 0;
       if (!database.objectStoreNames.contains(stores.metadata)) {
         database.createObjectStore(stores.metadata, { keyPath: "key" });
       }
@@ -123,7 +175,19 @@ export function openOfflineDatabase(): Promise<IDBDatabase> {
         });
       }
     });
-    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("success", async () => {
+      const database = request.result;
+      try {
+        if (createdNewDatabase) {
+          await migrateLegacyDatabase(database);
+        }
+        resolve(database);
+      } catch (error) {
+        database.close();
+        databasePromise = null;
+        reject(error);
+      }
+    });
     request.addEventListener("error", () => {
       databasePromise = null;
       reject(request.error ?? new Error("Offline database could not open"));
@@ -148,16 +212,18 @@ export async function closeOfflineDatabase(): Promise<void> {
 
 export async function deleteOfflineDatabase(): Promise<void> {
   await closeOfflineDatabase();
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(OFFLINE_DB_NAME);
-    request.addEventListener("success", () => resolve());
-    request.addEventListener("error", () =>
-      reject(request.error ?? new Error("Offline database could not be deleted")),
-    );
-    request.addEventListener("blocked", () =>
-      reject(new Error("Offline database deletion is blocked")),
-    );
-  });
+  for (const name of [OFFLINE_DB_NAME, ...LEGACY_OFFLINE_DB_NAMES]) {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(name);
+      request.addEventListener("success", () => resolve());
+      request.addEventListener("error", () =>
+        reject(request.error ?? new Error("Offline database could not be deleted")),
+      );
+      request.addEventListener("blocked", () =>
+        reject(new Error("Offline database deletion is blocked")),
+      );
+    });
+  }
 }
 
 export async function resetOfflineDatabaseSafely(input: {
