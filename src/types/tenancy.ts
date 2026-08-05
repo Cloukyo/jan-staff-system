@@ -122,3 +122,40 @@ export interface StaffSiteAssignment {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AuthenticatorAssuranceLevel = "aal1" | "aal2";
+
+export interface CommercialRoleSummary {
+  role: OrganisationRole;
+  scopeType: MembershipScopeType;
+  siteId: string | null;
+}
+
+export interface CommercialMembershipSummary {
+  membershipId: string;
+  organisationId: string;
+  organisationDisplayName: string;
+  organisationStatus: OrganisationStatus;
+  organisationArchived: boolean;
+  status: OrganisationMembershipStatus;
+  active: boolean;
+  staffId: string | null;
+  authorisationRevision: number;
+  roles: CommercialRoleSummary[];
+  siteAccess: string[];
+  permissions: OrganisationPermission[];
+  sitePermissions: Record<string, OrganisationPermission[]>;
+}
+
+export interface CommercialIdentitySnapshot {
+  authUserId: string;
+  email: string | null;
+  aal: AuthenticatorAssuranceLevel;
+  memberships: CommercialMembershipSummary[];
+}
+
+export interface CommercialMembershipContext extends CommercialMembershipSummary {
+  selectedSiteId: string | null;
+  permittedSiteIds: string[];
+  permissions: OrganisationPermission[];
+}

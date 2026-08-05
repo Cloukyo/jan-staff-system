@@ -72,7 +72,9 @@ Later service commands may narrow direct writes further, but must use these same
 
 Existing `staff_profiles` rows remain unchanged with `organisation_id = null`. The TypeScript field is optional and nullable for the same reason. No current repository, route, attendance table, pay table, kiosk flow or report has been converted. This is a deliberate bridge, not a tenant-ready claim for inherited operational data.
 
-Workstream 3 must provide the controlled migration and validation that assigns existing Jan records to one organisation and the appropriate sites before making ownership mandatory. Until then, new tenant primitives must not be used to imply isolation for inherited operational tables.
+A later separately approved ownership-conversion workstream must provide the controlled migration and validation that assigns inherited records to an organisation and the appropriate sites before making ownership mandatory. Until then, new tenant primitives must not be used to imply isolation for inherited operational tables.
+
+Workstream 3 now supplies membership-aware identity resolution and invitation acceptance, but it intentionally does not backfill or make inherited operational ownership mandatory. See `docs/commercial/identity-and-membership.md`.
 
 ## Verification harness
 

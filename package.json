@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "audit:dependencies": "npm audit --audit-level=high",
-    "verify:migrations": "vitest run tests/migration-history.test.ts"
+    "verify:migrations": "vitest run tests/migration-history.test.ts",
+    "verify:browser-bundle": "node scripts/verify-browser-bundle.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 
@@ -43,6 +43,17 @@ language sql
 stable
 as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
+$$;
+
+create or replace function auth.jwt()
+returns jsonb
+language sql
+stable
+as $$
+  select jsonb_build_object(
+    'sub', nullif(current_setting('request.jwt.claim.sub', true), ''),
+    'aal', coalesce(nullif(current_setting('request.jwt.claim.aal', true), ''), 'aal1')
+  );
 $$;
 
 create table public.staff_profiles (
@@ -129,9 +140,27 @@ export async function createTenantPrimitivesDatabase(): Promise<PGlite> {
   return db;
 }
 
-export async function setTenantAuthUser(db: PGlite, authUserId: string | null) {
+export async function createIdentityMembershipDatabase(): Promise<PGlite> {
+  const db = new PGlite();
+  await db.exec(prerequisiteSql);
+  await db.exec(readFileSync(migrationPath, "utf8"));
+  const identityMigration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_identity_membership_conversion.sql"));
+  if (identityMigration) {
+    await db.exec(readFileSync(resolve("supabase/migrations", identityMigration), "utf8"));
+  }
+  await db.exec(fixtureSql);
+  return db;
+}
+
+export async function setTenantAuthUser(
+  db: PGlite,
+  authUserId: string | null,
+  aal: "aal1" | "aal2" = "aal1",
+) {
   await db.exec("reset role");
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [authUserId ?? ""]);
+  await db.query("select set_config('request.jwt.claim.aal', $1, false)", [aal]);
   await db.exec("set role authenticated");
 }
 
