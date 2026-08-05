@@ -1,0 +1,15 @@
+# Default commercial repository owner
+* @Cloukyo
+
+# Security-sensitive and release-critical surfaces
+/.github/ @Cloukyo
+/middleware.ts @Cloukyo
+/next.config.ts @Cloukyo
+/src/lib/auth/ @Cloukyo
+/src/lib/config/ @Cloukyo
+/src/lib/observability/ @Cloukyo
+/supabase/config.toml @Cloukyo
+/supabase/migrations/ @Cloukyo
+/supabase/tests/ @Cloukyo
+/package.json @Cloukyo
+/package-lock.json @Cloukyo

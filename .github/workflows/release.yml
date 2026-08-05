@@ -1,0 +1,61 @@
+name: Release Commercial Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_deployment_url:
+        description: Verified commercial staging deployment URL to promote
+        required: true
+        type: string
+      expected_sha:
+        description: Exact verified commit SHA represented by the staging deployment
+        required: true
+        type: string
+      confirmation:
+        description: Type RELEASE COMMERCIAL to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Promote verified commercial artifact
+    if: inputs.confirmation == 'RELEASE COMMERCIAL'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: commercial-production
+    steps:
+      - name: Enforce commercial-only credential guard
+        shell: bash
+        run: test "${{ secrets.COMMERCIAL_RELEASE_GUARD }}" = "commercial-only"
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@58.5.1
+      - name: Inspect candidate artifact
+        run: vercel inspect "${{ inputs.staging_deployment_url }}" --json --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > deployment.json
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Verify artifact commit and project
+        shell: bash
+        run: >-
+          node -e "const d=require('./deployment.json');
+          const sha=d.meta?.githubCommitSha ?? d.gitSource?.sha ?? d.source?.sha;
+          const project=d.projectId ?? d.project?.id;
+          if(sha !== process.env.EXPECTED_SHA) throw new Error('Deployment SHA does not match the approved SHA');
+          if(project && project !== process.env.VERCEL_PROJECT_ID) throw new Error('Deployment belongs to a different Vercel project');"
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Promote the tested artifact without rebuilding
+        run: vercel promote "${{ inputs.staging_deployment_url }}" --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Record release
+        run: echo "Promoted ${{ inputs.staging_deployment_url }} for expected SHA ${{ inputs.expected_sha }}" >> "$GITHUB_STEP_SUMMARY"

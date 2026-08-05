@@ -8,8 +8,10 @@ It is not a payroll system. It does not calculate PAYE, National Insurance, pens
 
 ## Local Setup
 
+Use Node.js 24 and npm 11. The committed lockfile is authoritative.
+
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
 npm run dev
 ```
@@ -60,23 +62,29 @@ Production authentication uses Supabase Auth with email and password. Passwords 
 
 Production leave requests use Supabase Postgres table `public.leave_requests`. The migration in `supabase/migrations/202606100001_auth_leave_requests.sql` creates constrained enums, audit fields, duplicate-account protections, row-level security policies and manager/staff access rules.
 
-Required environment variables:
+Production-style environments require explicit environment identity and database separation:
 
 ```bash
+APP_ENV=preview|staging|production
 APP_MODE=production
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_SITE_URL=https://the-environment-host.example
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+SUPABASE_PROJECT_REF=your-project
+PRODUCTION_SUPABASE_PROJECT_REF=the-commercial-production-project
+PRODUCTION_SITE_HOST=the-commercial-production-host.example
 ```
 
-No real secrets should be committed. `.env.example` contains placeholder names only.
+The application rejects preview or staging configuration that uses the declared production site or Supabase project. Production must match both declared production values. A deployment SHA must be available from Vercel, GitHub Actions or `DEPLOYMENT_SHA`.
+
+No real secrets should be committed. `.env.example` contains safe local defaults and empty placeholders only.
 
 ### Compliance data mode
 
 - `APP_MODE=demo`: compliance pages use clearly labelled, non-sensitive browser-only demo records.
 - `APP_MODE=production`: compliance pages read exclusively from Supabase through the authenticated manager session.
 
-In a production Next.js build, the default mode is `production`. In development, the default mode is `demo`. Set `APP_MODE` explicitly in Vercel. Missing Supabase configuration or a failed Supabase query displays an error and never falls back to demo staff data.
+The safe default is always `demo`. Every production-style environment must set `APP_MODE=production` explicitly. Missing or inconsistent production configuration fails startup and never falls back to demo staff data.
 
 ## Supabase Setup
 
@@ -97,6 +105,8 @@ Or paste `supabase/migrations/202606100001_auth_leave_requests.sql` into the Sup
 Managers create further staff account links from `/accounts`, then invite the matching email in Supabase Auth and update `auth_user_id` on the account link. Disabled accounts are blocked by server login checks and RLS policies.
 
 ## Vercel Deployment
+
+Commercial preview, staging and production must use a separate commercial Vercel project and separate Supabase projects. Do not configure the commercial workflows with Jan production credentials. See `docs/commercial/environments-and-releases.md` for environment variables, protected environments, staging promotion, release and rollback.
 
 1. Push the repository to GitHub.
 2. Import the project into Vercel.
@@ -249,11 +259,20 @@ The prototype PIN service is deliberately isolated in `src/lib/pin/service.ts` a
 
 Production readiness checks:
 
+- Keep browser security headers and CSP checks passing.
+- Keep `APP_ENV`, site host and Supabase project-reference validation enabled.
 - Keep Supabase migrations applied in order.
 - Keep Row Level Security enabled on exposed production tables.
 - Keep service role keys server-only.
 - Preserve original clock events and store manager corrections separately.
 - Review backups, monitoring and operational access before each production rollout.
+
+Operational endpoints:
+
+- `/api/health/live`: process liveness, application version and deployment SHA.
+- `/api/health/ready`: configuration and Supabase Auth readiness.
+
+Responses carry `x-request-id` for correlation. New server logging should use the structured logging and error-monitoring hooks under `src/lib/observability`.
 
 Never store production PINs in plain text.
 
@@ -276,6 +295,8 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run audit:dependencies
+npm run verify:migrations
 ```
 
 ## Deliberate Limitations
@@ -284,19 +305,16 @@ npm run build
 - No child records or staff-to-child ratio calculations.
 - No email, SMS, biometrics, GPS or external integrations.
 
-## XLSX Dependency Risk
+## Spreadsheet dependency safety
 
-The prototype uses `xlsx` for browser-only workbook export.
+The unpatched `xlsx` package has been removed. Workbook export and the constrained manager workbook reader use the existing ExcelJS implementation. Uploaded workbooks remain limited to 5 MB, and the first worksheet is limited to 2,000 rows and 200 columns before application processing.
 
-- Package: `xlsx`
-- Installed version: `0.18.5`
-- Audit severity: high
-- Advisory summary: prototype pollution and ReDoS advisories in SheetJS versions published to npm
-- Fixed npm version: none available in the npm advisory data
-- Current use: generating local workbooks from trusted in-app demo data, not parsing uploaded spreadsheets
-- Browser impact: lower than server-side untrusted parsing, but still a production-readiness concern
-- Alternative: evaluate maintained spreadsheet writers such as ExcelJS before production
+Run `npm run audit:dependencies` before every release. High or critical advisories fail the commercial security workflow.
 
-Recommendation: keep `xlsx` for this local prototype, do not accept untrusted spreadsheet input, and replace or re-evaluate before production.
+## Commercial foundation operations
 
-`npm audit` also reports a moderate PostCSS advisory through `next@16.2.7` using `postcss@8.4.31`. npm suggests `npm audit fix --force`, but that would install `next@9.3.3`, a breaking downgrade. Recommendation: do not force that change in this prototype; upgrade Next normally when a compatible patched release is available.
+- Environment and release runbook: `docs/commercial/environments-and-releases.md`
+- Repository protection recommendations: `docs/commercial/repository-protection.md`
+- CI workflows: `.github/workflows/ci.yml`
+- Security workflows: `.github/workflows/security.yml` and `.github/workflows/codeql.yml`
+- CODEOWNERS: `.github/CODEOWNERS`

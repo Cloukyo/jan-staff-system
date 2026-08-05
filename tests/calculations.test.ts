@@ -206,8 +206,11 @@ describe("exports", () => {
   it("creates a two-sheet XLSX workbook", () => {
     const summary = createPaySummary(hourly, [], [], "2026-06-01", "2026-06-30");
     const workbook = createPayWorkbook([summary], [], [hourly], "2026-06-01", "2026-06-30");
-    expect(workbook.SheetNames).toEqual(["Pay Summary", "Attendance Detail"]);
-    expect(workbook.Sheets["Pay Summary"]["!autofilter"]).toBeTruthy();
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Pay Summary",
+      "Attendance Detail",
+    ]);
+    expect(workbook.getWorksheet("Pay Summary")?.autoFilter).toBeTruthy();
   });
 
   it("supports export preview counts", () => {

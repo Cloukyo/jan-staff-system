@@ -1,0 +1,62 @@
+name: Promote Commercial Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Exact commercial commit SHA to deploy to staging
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Build and deploy commercial staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: commercial-staging
+    steps:
+      - name: Check out requested commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.git_ref }}
+          persist-credentials: false
+      - name: Verify exact commit
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.git_ref }}"
+      - name: Use Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run release checks
+        run: npm test
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@58.5.1
+      - name: Pull commercial staging configuration
+        run: vercel pull --yes --environment=preview --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Build once for staging
+        run: vercel build --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Deploy prebuilt staging artifact
+        id: deploy
+        shell: bash
+        run: echo "url=$(vercel deploy --prebuilt --token='${{ secrets.COMMERCIAL_VERCEL_TOKEN }}')" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+      - name: Record staging deployment
+        run: echo "Commercial staging deployment ${{ steps.deploy.outputs.url }} at ${{ inputs.git_ref }}" >> "$GITHUB_STEP_SUMMARY"

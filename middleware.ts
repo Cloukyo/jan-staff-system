@@ -1,11 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getAppMode } from "@/lib/app-mode";
+import { correlationId } from "@/lib/observability/request-context";
 const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
 
 const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/my-rota", "/my-attendance", "/change-password", "/reset-password"];
 
 export async function middleware(request: NextRequest) {
+  const requestId = correlationId(request.headers.get("x-request-id"));
+  const forwardedHeaders = new Headers(request.headers);
+  forwardedHeaders.set("x-request-id", requestId);
+  const nextResponse = () =>
+    NextResponse.next({ request: { headers: forwardedHeaders } });
+  const correlated = <T extends NextResponse>(response: T): T => {
+    response.headers.set("x-request-id", requestId);
+    return response;
+  };
   const hasConfig = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   const isProtected = protectedPrefixes.some((prefix) => request.nextUrl.pathname === prefix || request.nextUrl.pathname.startsWith(`${prefix}/`));
   const hasKioskDeviceCookie = Boolean(request.cookies.get(KIOSK_DEVICE_COOKIE)?.value);
@@ -13,11 +23,13 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/clock";
     url.search = "";
-    return NextResponse.redirect(url);
+    return correlated(NextResponse.redirect(url));
   }
-  if (getAppMode() === "demo" || !hasConfig || !isProtected) return NextResponse.next();
+  if (getAppMode() === "demo" || !hasConfig || !isProtected) {
+    return correlated(nextResponse());
+  }
 
-  let response = NextResponse.next({ request });
+  let response = nextResponse();
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
     cookies: {
       getAll() {
@@ -25,7 +37,7 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = nextResponse();
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       },
     },
@@ -37,7 +49,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return correlated(NextResponse.redirect(url));
   }
 
   const { data: account } = await supabase
@@ -50,10 +62,10 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/change-password";
     url.search = "";
-    return NextResponse.redirect(url);
+    return correlated(NextResponse.redirect(url));
   }
 
-  return response;
+  return correlated(response);
 }
 
 export const config = {

@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import * as XLSX from "xlsx";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { readFirstWorksheetRows } from "@/lib/exports/workbook-reader";
 import { loadPayrollReview } from "@/lib/payroll/review";
 import type { PayrollActionState } from "@/lib/payroll/actions";
 
@@ -24,9 +24,7 @@ export async function createPayrollReviewBatchAction(_state: PayrollActionState,
 
   let sourceRows: unknown[][];
   try {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    sourceRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: null, raw: true }) as unknown[][];
+    sourceRows = await readFirstWorksheetRows(await file.arrayBuffer());
   } catch {
     return fail("The workbook could not be read.");
   }
