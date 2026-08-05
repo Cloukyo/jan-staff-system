@@ -1,3 +1,5 @@
+export * from "./tenancy";
+
 export type PayType = "hourly" | "salaried";
 export type EmploymentStatus = "employed" | "former" | "on_leave";
 export type ShiftStatus = "working" | "off" | "holiday" | "sick" | "training";
@@ -52,6 +54,7 @@ export interface StaffAccount {
 
 export interface StaffProfile {
   id: string;
+  organisationId?: string | null;
   fullName: string;
   displayName: string;
   employmentRole: string;
