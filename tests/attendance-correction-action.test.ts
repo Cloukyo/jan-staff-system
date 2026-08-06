@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireAccount: vi.fn(),
+  requireAttendanceActor: vi.fn(),
   createSupabaseServerClient: vi.fn(),
   rpc: vi.fn(),
   revalidatePath: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAccount: mocks.requireAccount,
+}));
+
+vi.mock("@/lib/attendance/server-actor", () => ({
+  requireAttendanceActor: mocks.requireAttendanceActor,
 }));
 
 vi.mock("@/lib/auth/supabase-server", () => ({
@@ -85,6 +90,7 @@ describe("bound manager attendance correction actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAccount.mockResolvedValue({ id: "manager-1", role: "manager" });
+    mocks.requireAttendanceActor.mockResolvedValue({ kind: "legacy", account: { id: "manager-1", role: "manager" } });
     mocks.rpc.mockResolvedValue({ data: "batch-1", error: null });
     mocks.createSupabaseServerClient.mockResolvedValue({ rpc: mocks.rpc });
   });
@@ -96,7 +102,7 @@ describe("bound manager attendance correction actions", () => {
       correctionForm(),
     );
 
-    expect(mocks.requireAccount).toHaveBeenCalledWith(["manager"]);
+    expect(mocks.requireAttendanceActor).toHaveBeenCalledWith("attendance.correct", { siteRequired: true });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc).toHaveBeenCalledWith("save_manual_clock_event_correction", {
       target_staff_id: "staff-1",
@@ -217,7 +223,7 @@ describe("bound manager attendance correction actions", () => {
   });
 
   it("checks manager access before rejecting malformed form data", async () => {
-    mocks.requireAccount.mockRejectedValueOnce(new Error("Manager access required"));
+    mocks.requireAttendanceActor.mockRejectedValueOnce(new Error("Manager access required"));
 
     await expect(saveBoundClockEventCorrectionAction(
       context(),

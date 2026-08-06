@@ -9,6 +9,7 @@ import {
 } from "@/lib/attendance/staff-hours";
 import { analyseAttendanceDay } from "@/lib/attendance/sequence";
 import { requireAccount } from "@/lib/auth/permissions";
+import { requireAttendanceSelfActor } from "@/lib/attendance/server-actor";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
 import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
@@ -198,17 +199,23 @@ export function summariseAttendanceDay(
 }
 
 export async function loadStaffAttendance(fromValue?: string, toValue?: string): Promise<StaffAttendanceRange> {
-  const account = await requireAccount(["staff"]);
+  const actor = await requireAttendanceSelfActor();
   const range = normaliseDateRange(fromValue, toValue);
   requireAttendanceDateRange(range.from, range.to);
   const supabase = await createSupabaseServerClient();
   let records: OwnAttendanceRecordRow[];
   try {
-    records = await loadAllPostgrestPages<OwnAttendanceRecordRow>((from, to) => supabase
-      .rpc("get_own_attendance_records", {
+    records = await loadAllPostgrestPages<OwnAttendanceRecordRow>((from, to) => (actor.kind === "commercial"
+      ? supabase.rpc("get_commercial_own_attendance_records", {
+        target_organisation_id: actor.context.organisationId,
+        target_site_id: actor.context.selectedSiteId!,
         range_start: range.from,
         range_end: range.to,
       })
+      : supabase.rpc("get_own_attendance_records", {
+        range_start: range.from,
+        range_end: range.to,
+      }))
         .order("recorded_date")
         .order("id")
         .range(from, to));
@@ -220,7 +227,7 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
     .filter((row) => row.record_kind === "original" && row.event_type && row.event_timestamp)
     .map((row) => ({
       id: row.id,
-      staff_id: account.staffId,
+      staff_id: actor.kind === "commercial" ? actor.context.staffId! : actor.account.staffId,
       event_type: row.event_type!,
       event_timestamp: row.event_timestamp!,
       recorded_date: row.recorded_date,
@@ -232,7 +239,7 @@ export async function loadStaffAttendance(fromValue?: string, toValue?: string):
     .filter((row) => row.record_kind === "correction" && row.correction_kind)
     .map((row) => ({
       id: row.id,
-      staff_id: account.staffId,
+      staff_id: actor.kind === "commercial" ? actor.context.staffId! : actor.account.staffId,
       correction_kind: row.correction_kind!,
       original_event_id: row.original_event_id,
       supersedes_correction_id: row.supersedes_correction_id,

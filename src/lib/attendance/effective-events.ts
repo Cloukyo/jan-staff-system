@@ -1,6 +1,8 @@
 export type AttendanceEventType = "clock_in" | "clock_out";
 
 export type OriginalClockEvent = {
+  organisationId?: string;
+  siteId?: string;
   id: string;
   staffId: string;
   eventType: AttendanceEventType;
@@ -12,6 +14,8 @@ export type OriginalClockEvent = {
 export type AttendanceCorrectionKind = "add" | "replace" | "exclude";
 
 export type AttendanceCorrection = {
+  organisationId?: string;
+  siteId?: string;
   id: string;
   staffId: string;
   kind: AttendanceCorrectionKind;
@@ -24,6 +28,8 @@ export type AttendanceCorrection = {
 };
 
 export type EffectiveClockEvent = {
+  organisationId?: string;
+  siteId?: string;
   id: string;
   orderKey?: string;
   staffId: string;
@@ -79,6 +85,8 @@ function correctionEvent(
 ): EffectiveClockEvent | null {
   if (correction.kind === "exclude" || !correction.eventType || !correction.eventTimestamp) return null;
   return {
+    organisationId: correction.organisationId,
+    siteId: correction.siteId,
     id: correction.id,
     orderKey,
     staffId: correction.staffId,

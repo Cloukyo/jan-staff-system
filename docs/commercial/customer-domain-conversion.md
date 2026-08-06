@@ -79,14 +79,15 @@ The TypeScript preview validates and normalises fictional or customer-supplied r
 
 ## Compatibility and remaining paths
 
-The following remain deliberately compatible:
+The following remain deliberately compatible after Workstream 5:
 
 - unowned `staff_profiles` and related compliance rows use the legacy manager/staff RLS path;
 - `staff_accounts` remains for Jan authentication consumers;
 - `staff_certificates`, `staff_central_records`, `staff_central_record_items`, `staff_reference_checks` and `staff_import_reviews` remain available while neutral commercial tables are adopted;
 - `rota_settings`, legacy room columns and closure arrays remain readable;
 - staff pay arrangements carry organisation ownership, but payroll calculation, preparation, import, export and reports remain unconverted;
-- attendance, original clock events, corrections, exceptions, kiosk devices and offline records are unchanged.
+- unowned Jan attendance and device rows remain on named compatibility paths; new commercial originals, corrections, reviews, requests, exceptions and minimum online device bindings are organisation/site owned as documented in `attendance-tenancy.md`;
+- payroll and offline attendance records remain unchanged.
 
 The existing staff directory, staff detail and compliance screens continue through their legacy `staff_accounts`-compatible loaders because those screens currently aggregate attendance, payroll and kiosk data that are explicitly outside this workstream. Workstream 4 adds membership-authorised commercial commands, repositories and settings UI selection without pretending those mixed legacy screens are fully tenant-converted. Their customer-facing adoption must happen alongside the relevant attendance, payroll and kiosk conversions, using the adapters established here.
 

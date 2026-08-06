@@ -16,6 +16,7 @@ import {
   type PostgrestPage,
 } from "@/lib/repositories/postgrest-pagination";
 import type { KioskRosterEntry } from "@/lib/kiosk/types";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 
 type KioskRosterRow = {
   staff_id: string;
@@ -65,7 +66,7 @@ export async function loadProductionKioskRoster(): Promise<KioskRosterEntry[]> {
   const deviceToken = await getKioskDeviceToken();
   if (!deviceToken) throw new KioskDeviceAccessError("device_missing", "Kiosk device access has not been activated.");
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("get_device_kiosk_roster", { device_token: deviceToken });
+  const { data, error } = await supabase.rpc("get_tenant_aware_device_kiosk_roster", { device_token: deviceToken });
   if (error) {
     const rejected = /kiosk device access required/i.test(error.message);
     throw new KioskDeviceAccessError(
@@ -334,7 +335,43 @@ export function buildManagerClockHistory(
 }
 
 export async function loadManagerAttendance(): Promise<{ staff: ManagerKioskRow[]; events: ManagerClockEvent[] }> {
+  const actor = await requireAttendanceActor("attendance.read", { siteRequired: true });
   const supabase = await createSupabaseServerClient();
+  if (actor.kind === "commercial") {
+    const organisationId = actor.context.organisationId;
+    const siteId = actor.context.selectedSiteId!;
+    const today = isoDateInLondon();
+    const [profiles, assignments, originals, corrections] = await Promise.all([
+      supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active")
+        .eq("organisation_id", organisationId).eq("active", true).order("full_name"),
+      supabase.from("staff_site_assignments").select("staff_id").eq("organisation_id", organisationId)
+        .eq("site_id", siteId).lte("effective_from", today).or(`effective_to.is.null,effective_to.gte.${today}`),
+      loadAllPostgrestPages<ManagerClockEventSourceRow>((from, to) => supabase.from("clock_events")
+        .select("id,staff_id,event_type,event_timestamp,recorded_date,event_source,manager_correction,correction_reason,created_at")
+        .eq("organisation_id", organisationId).eq("site_id", siteId)
+        .order("event_timestamp", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      loadAllPostgrestPages<ManagerClockCorrectionSourceRow>((from, to) => supabase.from("clock_event_corrections")
+        .select("id,staff_id,correction_kind,original_event_id,supersedes_correction_id,event_type,event_timestamp,recorded_date,reason,created_by,created_at")
+        .eq("organisation_id", organisationId).eq("site_id", siteId)
+        .order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+    ]);
+    if (profiles.error || assignments.error) throw new Error("Production attendance could not be loaded.");
+    const eligible = new Set((assignments.data ?? []).map((row) => row.staff_id));
+    const staffRows = (profiles.data ?? []).filter((row) => eligible.has(row.id));
+    const states = await Promise.all(staffRows.map((row) => supabase.rpc("get_commercial_attendance_state", {
+      target_organisation_id: organisationId,target_site_id: siteId,target_staff_id: row.id,evaluated_at: new Date().toISOString(),
+    })));
+    if (states.some((state) => state.error)) throw new Error("Production attendance state could not be loaded.");
+    return {
+      staff: staffRows.map((row, index) => ({
+        staffId: row.id,displayName: row.display_name,fullName: row.full_name,employmentRole: row.employment_role,
+        currentStatus: (states[index].data as { state?: string } | null)?.state === "clocked_in" ? "clocked_in" : "clocked_out",
+        pinReady: false,kioskEnabled: true,pinUpdatedAt: null,pinResetRequired: false,
+        failedAttemptCount: 0,lockedUntil: null,lastKioskUseAt: null,
+      })),
+      events: buildManagerClockHistory(originals, corrections, new Map()),
+    };
+  }
   const [profiles, settings, history, accounts, effectiveStatuses] = await Promise.all([
     supabase.from("staff_profiles").select("id,display_name,full_name,employment_role,active").order("full_name"),
     supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required,failed_attempt_count,locked_until"),

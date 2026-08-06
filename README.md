@@ -68,6 +68,8 @@ Legacy database columns and browser identifiers remain readable while neutral na
 
 The commercial customer domain now supports organisation-owned staff, effective-dated multi-site assignments, modular compliance, inherited organisation/site settings, site work areas and closures, and previewable atomic staff imports. Existing Jan rows remain unowned compatibility data. See `docs/commercial/customer-domain-conversion.md`.
 
+Commercial attendance now records mandatory organisation and occurrence-site ownership, derives kiosk context from the registered device, and exposes tenant-aware state, correction, exception and effective-ledger RPCs. Jan attendance remains on an explicit unowned compatibility path and payroll is unchanged. See `docs/commercial/attendance-tenancy.md`.
+
 ## Authentication and Database
 
 Production authentication uses Supabase Auth with email and password. Passwords are stored and reset by Supabase, not by this application. App-specific account links are stored in `public.staff_accounts`, which connects a Supabase Auth user to an existing staff record, role and active/inactive status.

@@ -1,4 +1,4 @@
-import { requireAccount } from "@/lib/auth/permissions";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { attendanceOperationalDate } from "@/lib/attendance/state-machine";
 import type {
@@ -187,15 +187,25 @@ export function buildAttendanceExceptionResolutionPlan(input: {
 export async function loadAttendanceExceptions(
   filters: AttendanceExceptionFilters,
 ): Promise<AttendanceExceptionRow[]> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.review", { siteRequired: true });
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("get_manager_attendance_exceptions", {
+  const { data, error } = actor.kind === "commercial"
+    ? await supabase.rpc("get_commercial_attendance_exceptions", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      range_start: filters.from,
+      range_end: filters.to,
+      requested_status: filters.status ?? null,
+      requested_type: filters.type ?? null,
+      requested_staff_id: filters.staffId ?? null,
+    })
+    : await supabase.rpc("get_legacy_manager_attendance_exceptions", {
     range_start: filters.from,
     range_end: filters.to,
     requested_status: filters.status ?? null,
     requested_type: filters.type ?? null,
     requested_staff_id: filters.staffId ?? null,
-  });
+    });
   if (error) throw new Error("Attendance exceptions could not be loaded.");
   return mapAttendanceExceptionRows((data ?? []) as DatabaseExceptionRow[]);
 }

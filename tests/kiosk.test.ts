@@ -110,8 +110,8 @@ describe("device-specific kiosk access", () => {
     expect(migration).toContain("revoke execute on function public.get_kiosk_roster() from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.verify_kiosk_pin(text, text) from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.record_kiosk_clock_event(text, text, text, text) from anon, authenticated");
-    expect(kioskServer).toContain("get_device_kiosk_roster");
-    expect(kioskActions).toContain("perform_device_kiosk_attendance_action");
+    expect(kioskServer).toContain("get_tenant_aware_device_kiosk_roster");
+    expect(kioskActions).toContain("perform_tenant_aware_kiosk_attendance_action");
     expect(stateMigration).toContain("idempotency_key uuid primary key");
     expect(verificationMigration).toContain("'attendanceState', attendance_state");
     expect(verificationMigration).not.toMatch(/jsonb_build_object[\s\S]*pin_hash/i);

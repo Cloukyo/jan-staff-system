@@ -328,7 +328,8 @@ describe("production attendance review", () => {
   it("lets staff request corrections without editing clock events", () => {
     const server = source("src/lib/attendance/review-actions.ts");
     const form = source("src/components/staff-self-service/attendance-correction-request.tsx");
-    expect(server).toContain('requireAccount(["staff"])');
+    expect(server).toContain("requireAttendanceSelfActor()");
+    expect(server).toContain('submit_commercial_attendance_correction_request');
     expect(server).toContain('from("attendance_correction_requests").insert');
     expect(form).toContain("It does not alter the original clock events.");
     expect(server).not.toMatch(/from\("clock_events"\)\.update/);
