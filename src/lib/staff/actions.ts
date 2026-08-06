@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { requireCustomerDomainContext } from "@/lib/customer-domain/context";
 
 export type StaffActionState = { ok: boolean; message: string };
 
@@ -48,6 +49,30 @@ export async function createStaffProfileAction(
   if (error) return fail("Staff profile could not be created. Check for a duplicate staff record.");
   refreshStaffPaths(id);
   redirect(`/compliance/staff/${id}`);
+}
+
+export async function createCommercialStaffProfileAction(
+  _state: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const context = await requireCustomerDomainContext("staff.manage", { siteRequired: true });
+  const fullName = text(formData, "fullName");
+  const employmentRole = text(formData, "employmentRole");
+  if (!context.selectedSiteId) return fail("Select a site before creating a staff profile.");
+  if (!fullName || !employmentRole) return fail("Full name and role are required.");
+  const supabase = await createSupabaseServerClient();
+  const { data: staffId, error } = await supabase.rpc("create_commercial_staff_profile", {
+    target_organisation_id: context.organisationId,
+    target_site_id: context.selectedSiteId,
+    target_full_name: fullName,
+    target_display_name: text(formData, "displayName") ?? fullName.split(" ")[0],
+    target_employment_role: employmentRole,
+    target_effective_from: text(formData, "appointmentDate") ?? new Date().toISOString().slice(0, 10),
+    target_primary_site: true,
+  });
+  if (error || !staffId) return fail("Staff profile could not be created.");
+  refreshStaffPaths(String(staffId));
+  redirect(`/compliance/staff/${staffId}`);
 }
 
 export async function deactivateStaffProfileAction(

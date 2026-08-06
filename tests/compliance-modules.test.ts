@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { complianceDashboardCounts } from "@/lib/calculations/compliance";
 import {
+  CORE_COMPLIANCE_CAPABILITIES,
   getCompliancePack,
   getCompliancePackForIndustry,
 } from "@/lib/compliance/modules";
@@ -24,6 +25,16 @@ const staff: StaffProfile[] = [{
 }];
 
 describe("compliance modules", () => {
+  it("keeps the core compliance capability catalogue industry neutral", () => {
+    expect(CORE_COMPLIANCE_CAPABILITIES).toEqual([
+      "qualifications",
+      "credentials",
+      "requirements",
+      "documents",
+    ]);
+    expect(CORE_COMPLIANCE_CAPABILITIES.join(" ").toLowerCase()).not.toMatch(/dbs|safeguarding|central record/);
+  });
+
   it("selects an optional default pack for every approved industry profile", () => {
     expect(getCompliancePackForIndustry("nursery").id).toBe("early_years_uk");
     expect(getCompliancePackForIndustry("care_home").id).toBe("care_uk");
@@ -32,6 +43,10 @@ describe("compliance modules", () => {
   });
 
   it("keeps nursery checks in its pack instead of universal core logic", () => {
+    expect(getCompliancePack("early_years_uk").industry).toBe("nursery");
+    expect(getCompliancePack("care_uk").industry).toBe("care_home");
+    expect(getCompliancePack("education_safeguarding_uk").industry).toBe("tuition_centre");
+    expect(getCompliancePack("clinical_uk").industry).toBe("clinic");
     expect(getCompliancePack("early_years_uk").requirements.map((item) => item.label)).toEqual([
       "Paediatric First Aid",
       "Safeguarding",

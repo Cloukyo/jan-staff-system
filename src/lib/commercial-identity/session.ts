@@ -15,6 +15,7 @@ export function commercialPreferenceCookieOptions(production: boolean) {
 
 export async function readCommercialPreference(): Promise<CommercialPreference | null> {
   const value = (await cookies()).get(COMMERCIAL_PREFERENCE_COOKIE)?.value;
+  if (!value) return null;
   return decodeCommercialPreference(value, getCommercialSessionSecret());
 }
 

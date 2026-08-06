@@ -1,3 +1,32 @@
+import { getIndustryProfile, type IndustryProfileId } from "@/lib/platform/industry-profile";
+
+export type WorkAreaDescriptor = {
+  id: string;
+  organisationId: string;
+  siteId: string;
+  name: string;
+  singularLabel: string;
+  pluralLabel: string;
+};
+
+export function createWorkAreaDescriptor(
+  id: string,
+  organisationId: string,
+  siteId: string,
+  name: string,
+  industryProfileId: IndustryProfileId,
+): WorkAreaDescriptor {
+  const profile = getIndustryProfile(industryProfileId);
+  return {
+    id,
+    organisationId,
+    siteId,
+    name,
+    singularLabel: profile.workAreaSingular,
+    pluralLabel: profile.workAreaPlural,
+  };
+}
+
 export function readWorkArea(row: Record<string, unknown>): string | null {
   const value = row.work_area ?? row.room_or_area;
   return typeof value === "string" && value.trim() ? value : null;

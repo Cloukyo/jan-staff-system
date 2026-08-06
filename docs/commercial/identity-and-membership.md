@@ -48,6 +48,6 @@ Invitation tokens are stored only as SHA-256 hashes and are expiring and single-
 
 `toLegacyAccountCapability()` is the only new compatibility mapper. It maps a single unambiguous active commercial membership with approved management permissions to legacy `manager`, or an active linked staff membership to legacy `staff`. It never chooses the first of several organisations.
 
-Inherited `staff_accounts` remains in `src/lib/auth/actions.ts`, `src/lib/auth/permissions.ts`, `src/lib/accounts/server.ts`, `src/lib/leave/server.ts`, `src/lib/compliance/repository.ts`, `src/lib/payroll/server.ts` and `src/lib/kiosk/server.ts`. They remain unchanged so Jan behaviour is preserved.
+Inherited `staff_accounts` remains in `src/lib/auth/actions.ts`, `src/lib/auth/permissions.ts`, `src/lib/accounts/server.ts`, `src/lib/leave/server.ts`, `src/lib/payroll/server.ts` and `src/lib/kiosk/server.ts`. Compliance repositories now accept an optional server-derived commercial context but still retain the legacy account status path for unowned Jan rows.
 
-Workstream 4 is limited to tenant ownership and membership-aware conversion of staff, staff-site assignment and compliance account consumers, with removal of the matching compatibility paths after tests. It excludes onboarding, billing, attendance tenancy, payroll tenancy, kiosk tenancy, offline changes and Jan migration unless separately approved.
+Workstream 4 adds tenant ownership and membership-aware conversion for staff, staff-site assignments, compliance, settings, work areas, site closures and imports. Its exact compatibility boundary is recorded in `docs/commercial/customer-domain-conversion.md`. Attendance, payroll processing, kiosk tenancy, onboarding, billing, offline changes and Jan migration remain excluded.

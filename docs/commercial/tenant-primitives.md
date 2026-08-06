@@ -70,11 +70,11 @@ Later service commands may narrow direct writes further, but must use these same
 
 ## Compatibility boundary
 
-Existing `staff_profiles` rows remain unchanged with `organisation_id = null`. The TypeScript field is optional and nullable for the same reason. No current repository, route, attendance table, pay table, kiosk flow or report has been converted. This is a deliberate bridge, not a tenant-ready claim for inherited operational data.
+Existing Jan `staff_profiles` rows remain unchanged with `organisation_id = null`. Workstream 4 now tenant-fences commercial staff, compliance and site-operational records while retaining this nullable Jan bridge. Attendance tables, payroll processing, kiosk flows and Jan rows remain unconverted.
 
 A later separately approved ownership-conversion workstream must provide the controlled migration and validation that assigns inherited records to an organisation and the appropriate sites before making ownership mandatory. Until then, new tenant primitives must not be used to imply isolation for inherited operational tables.
 
-Workstream 3 now supplies membership-aware identity resolution and invitation acceptance, but it intentionally does not backfill or make inherited operational ownership mandatory. See `docs/commercial/identity-and-membership.md`.
+Workstream 3 supplies membership-aware identity resolution and invitation acceptance. Workstream 4 supplies the customer-domain conversion described in `docs/commercial/customer-domain-conversion.md`. Neither workstream backfills Jan.
 
 ## Verification harness
 
@@ -83,8 +83,7 @@ Workstream 3 now supplies membership-aware identity resolution and invitation ac
 ## Explicitly deferred
 
 - Existing Jan data backfill and mandatory ownership.
-- Operational-table tenancy and RLS conversion.
-- Attendance, rota, leave, compliance, kiosk and payroll migration.
+- Attendance, rota, leave, kiosk and payroll-processing tenancy.
 - Organisation creation commands, onboarding and invitations workflow.
 - Billing, subscription and entitlement enforcement.
 - Offline attendance.

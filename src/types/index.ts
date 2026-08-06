@@ -16,6 +16,7 @@ export type CertificateStatus = "valid" | "expiring_90" | "expiring_60" | "expir
 export type ComplianceIndicator = "complete" | "attention" | "urgent" | "incomplete";
 export type EvidenceStatus = "not_required" | "awaiting" | "received" | "verified";
 export type ChecklistStatus = "complete" | "incomplete" | "not_applicable";
+export * from "./customer-domain";
 
 export interface StaffMember {
   id: string;
@@ -72,6 +73,7 @@ export interface StaffProfile {
 
 export interface StaffQualification {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   qualificationName: string;
   qualificationLevel: string | null;
@@ -91,6 +93,7 @@ export interface StaffQualification {
 
 export interface StaffCertificate {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   certificateType: string;
   customTitle: string | null;
@@ -110,6 +113,7 @@ export interface StaffCertificate {
 
 export interface StaffCentralRecord {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   appointmentInductionCompleted: boolean;
   appointmentInductionCheckedAt: string | null;
@@ -148,6 +152,7 @@ export interface StaffCentralRecord {
 
 export interface StaffReferenceCheck {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   referenceType: "current_last_employer" | "previous_employer" | "alternative";
   referenceName: string | null;

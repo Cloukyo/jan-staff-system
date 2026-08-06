@@ -66,6 +66,8 @@ Branding is supplied through the `NEXT_PUBLIC_PRODUCT_*`, `NEXT_PUBLIC_ORGANISAT
 
 Legacy database columns and browser identifiers remain readable while neutral names are used for new writes. See `docs/commercial/platform-neutrality.md` for the compatibility boundary and deferred industry-pack work.
 
+The commercial customer domain now supports organisation-owned staff, effective-dated multi-site assignments, modular compliance, inherited organisation/site settings, site work areas and closures, and previewable atomic staff imports. Existing Jan rows remain unowned compatibility data. See `docs/commercial/customer-domain-conversion.md`.
+
 ## Authentication and Database
 
 Production authentication uses Supabase Auth with email and password. Passwords are stored and reset by Supabase, not by this application. App-specific account links are stored in `public.staff_accounts`, which connects a Supabase Auth user to an existing staff record, role and active/inactive status.
@@ -243,7 +245,7 @@ Staff can submit leave requests with a leave type, date range, full or partial d
 
 Approved leave appears as a rota conflict warning. Pending leave appears as a softer rota warning. Rejected and cancelled leave do not block rota assignment. Existing shifts are never silently removed when leave is approved.
 
-Working-day calculation currently excludes Saturdays and Sundays. Site closure dates are not stored yet; the leave calculation accepts a closure-date list so that a future closure calendar can be added without rewriting the workflow.
+Working-day calculation currently excludes Saturdays and Sundays. Commercial site closure dates are stored for future site-aware leave impact, but the existing leave workflow is not tenant-converted and continues to accept its compatibility closure-date list.
 
 ## Production and Demo Separation
 

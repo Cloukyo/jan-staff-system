@@ -9,6 +9,7 @@ import type {
 import { getAppMode } from "@/lib/app-mode";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import type { CommercialMembershipContext } from "@/types/tenancy";
 
 export type ComplianceImportWarning = {
   id: string;
@@ -65,6 +66,7 @@ function ensureProductionConfig() {
 function profile(row: Record<string, unknown>): StaffProfile {
   return {
     id: String(row.id),
+    organisationId: row.organisation_id ? String(row.organisation_id) : null,
     fullName: String(row.full_name),
     displayName: String(row.display_name),
     employmentRole: String(row.employment_role),
@@ -84,6 +86,7 @@ function profile(row: Record<string, unknown>): StaffProfile {
 function qualification(row: Record<string, unknown>): StaffQualification {
   return {
     id: String(row.id),
+    organisationId: row.organisation_id ? String(row.organisation_id) : null,
     staffId: String(row.staff_id),
     qualificationName: String(row.qualification_name),
     qualificationLevel: row.qualification_level ? String(row.qualification_level) : null,
@@ -105,6 +108,7 @@ function qualification(row: Record<string, unknown>): StaffQualification {
 function certificate(row: Record<string, unknown>): StaffCertificate {
   return {
     id: String(row.id),
+    organisationId: row.organisation_id ? String(row.organisation_id) : null,
     staffId: String(row.staff_id),
     certificateType: String(row.certificate_type),
     customTitle: row.custom_title ? String(row.custom_title) : null,
@@ -126,6 +130,7 @@ function certificate(row: Record<string, unknown>): StaffCertificate {
 function centralRecord(row: Record<string, unknown>): StaffCentralRecord {
   return {
     id: String(row.id),
+    organisationId: row.organisation_id ? String(row.organisation_id) : null,
     staffId: String(row.staff_id),
     appointmentInductionCompleted: Boolean(row.appointment_induction_completed),
     appointmentInductionCheckedAt: row.appointment_induction_checked_at ? String(row.appointment_induction_checked_at) : null,
@@ -164,6 +169,7 @@ function centralRecord(row: Record<string, unknown>): StaffCentralRecord {
 function reference(row: Record<string, unknown>): StaffReferenceCheck {
   return {
     id: String(row.id),
+    organisationId: row.organisation_id ? String(row.organisation_id) : null,
     staffId: String(row.staff_id),
     referenceType: String(row.reference_type) as StaffReferenceCheck["referenceType"],
     referenceName: row.reference_name ? String(row.reference_name) : null,
@@ -183,18 +189,39 @@ function assertQuery<T>(result: { data: T | null; error: { message: string } | n
   return result.data ?? ([] as T);
 }
 
-export async function loadProductionComplianceDataset(): Promise<ComplianceDataset> {
+export async function loadProductionComplianceDataset(
+  commercialContext?: Pick<CommercialMembershipContext, "organisationId">,
+): Promise<ComplianceDataset> {
   ensureProductionConfig();
   const supabase = await createSupabaseServerClient();
+  const organisationId = commercialContext?.organisationId;
+  const staffQuery = supabase.from("staff_profiles").select("*").order("full_name");
+  const qualificationQuery = supabase.from("staff_qualifications").select("*").is("archived_at", null);
+  const certificateQuery = supabase.from("staff_certificates").select("*").is("archived_at", null);
+  const centralQuery = supabase.from("staff_central_records").select("*");
+  const referenceQuery = supabase.from("staff_reference_checks").select("*").is("archived_at", null);
+  const importQuery = supabase.from("staff_import_reviews").select("*").order("created_at", { ascending: false });
+  const centralItemsQuery = supabase.from("staff_central_record_items").select("*");
+  if (organisationId) {
+    staffQuery.eq("organisation_id", organisationId);
+    qualificationQuery.eq("organisation_id", organisationId);
+    certificateQuery.eq("organisation_id", organisationId);
+    centralQuery.eq("organisation_id", organisationId);
+    referenceQuery.eq("organisation_id", organisationId);
+    importQuery.eq("organisation_id", organisationId);
+    centralItemsQuery.eq("organisation_id", organisationId);
+  }
   const [staffResult, qualificationResult, certificateResult, centralResult, referenceResult, importResult, accountResult, centralItemsResult] = await Promise.all([
-    supabase.from("staff_profiles").select("*").order("full_name"),
-    supabase.from("staff_qualifications").select("*").is("archived_at", null),
-    supabase.from("staff_certificates").select("*").is("archived_at", null),
-    supabase.from("staff_central_records").select("*"),
-    supabase.from("staff_reference_checks").select("*").is("archived_at", null),
-    supabase.from("staff_import_reviews").select("*").order("created_at", { ascending: false }),
-    supabase.from("staff_accounts").select("id,staff_id,email,auth_user_id,active"),
-    supabase.from("staff_central_record_items").select("*"),
+    staffQuery,
+    qualificationQuery,
+    certificateQuery,
+    centralQuery,
+    referenceQuery,
+    importQuery,
+    organisationId
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.from("staff_accounts").select("id,staff_id,email,auth_user_id,active"),
+    centralItemsQuery,
   ]);
   const staffRows = assertQuery(staffResult, "Staff profiles") as Record<string, unknown>[];
   const qualificationRows = assertQuery(qualificationResult, "Qualifications") as Record<string, unknown>[];
@@ -236,8 +263,11 @@ export async function loadProductionComplianceDataset(): Promise<ComplianceDatas
   };
 }
 
-export async function loadProductionStaffCompliance(staffId: string): Promise<StaffComplianceRecord | null> {
-  const dataset = await loadProductionComplianceDataset();
+export async function loadProductionStaffCompliance(
+  staffId: string,
+  commercialContext?: Pick<CommercialMembershipContext, "organisationId">,
+): Promise<StaffComplianceRecord | null> {
+  const dataset = await loadProductionComplianceDataset(commercialContext);
   const staff = dataset.staff.find((person) => person.id === staffId);
   if (!staff) return null;
   return {

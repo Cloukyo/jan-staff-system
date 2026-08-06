@@ -6,6 +6,15 @@ export type CompliancePackId =
   | "education_safeguarding_uk"
   | "clinical_uk";
 
+export const CORE_COMPLIANCE_CAPABILITIES = [
+  "qualifications",
+  "credentials",
+  "requirements",
+  "documents",
+] as const;
+
+export type CoreComplianceCapability = (typeof CORE_COMPLIANCE_CAPABILITIES)[number];
+
 export type ComplianceRequirement = {
   id: string;
   label: string;
@@ -15,6 +24,7 @@ export type ComplianceRequirement = {
 
 export type CompliancePack = {
   id: CompliancePackId;
+  industry: IndustryProfileId;
   displayName: string;
   requirements: readonly ComplianceRequirement[];
 };
@@ -22,6 +32,7 @@ export type CompliancePack = {
 const packs: Record<CompliancePackId, CompliancePack> = {
   early_years_uk: {
     id: "early_years_uk",
+    industry: "nursery",
     displayName: "Early Years UK",
     requirements: [
       { id: "paediatric_first_aid", label: "Paediatric First Aid", kind: "certificate", certificateKeywords: ["paediatric first aid", "first aid"] },
@@ -32,6 +43,7 @@ const packs: Record<CompliancePackId, CompliancePack> = {
   },
   care_uk: {
     id: "care_uk",
+    industry: "care_home",
     displayName: "Care UK",
     requirements: [
       { id: "first_aid", label: "First Aid", kind: "certificate", certificateKeywords: ["first aid"] },
@@ -41,6 +53,7 @@ const packs: Record<CompliancePackId, CompliancePack> = {
   },
   education_safeguarding_uk: {
     id: "education_safeguarding_uk",
+    industry: "tuition_centre",
     displayName: "Education Safeguarding UK",
     requirements: [
       { id: "safeguarding", label: "Safeguarding", kind: "certificate", certificateKeywords: ["safeguarding"] },
@@ -49,6 +62,7 @@ const packs: Record<CompliancePackId, CompliancePack> = {
   },
   clinical_uk: {
     id: "clinical_uk",
+    industry: "clinic",
     displayName: "Clinical UK",
     requirements: [
       { id: "basic_life_support", label: "Basic Life Support", kind: "certificate", certificateKeywords: ["basic life support", "bls"] },
