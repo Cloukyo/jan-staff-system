@@ -15,3 +15,22 @@ export function getExportIdentity(env: NodeJS.ProcessEnv = process.env) {
     siteSlug: safeExportSlug(branding.siteDisplayName),
   };
 }
+
+export type CommercialExportIdentityInput = {
+  organisationDisplayName: string;
+  siteDisplayName?: string | null;
+};
+
+export function getCommercialExportIdentity(input: CommercialExportIdentityInput) {
+  const organisationDisplayName = input.organisationDisplayName.trim() || "Organisation";
+  const siteDisplayName = input.siteDisplayName?.trim() || null;
+  return {
+    productName: "Workforce Operations Platform",
+    organisationDisplayName,
+    siteDisplayName,
+    fileSlug: safeExportSlug([
+      organisationDisplayName,
+      siteDisplayName,
+    ].filter(Boolean).join(" ")),
+  };
+}

@@ -1,7 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ManagerPageNav } from "@/components/layout/manager-page-nav";
 import { PayrollReviewScreen } from "@/components/payroll/payroll-review-screen";
-import { requireAccount } from "@/lib/auth/permissions";
 import { loadPayrollReview } from "@/lib/payroll/review";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +12,6 @@ const payPageNav = [
 ];
 
 export default async function PayrollReviewPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireAccount(["manager"]);
   const params = await searchParams;
   const batchId = typeof params.batch === "string" ? params.batch : undefined;
   const review = await loadPayrollReview(batchId);
@@ -22,7 +20,7 @@ export default async function PayrollReviewPage({ searchParams }: { searchParams
       <div className="mb-5">
         <h1 className="text-3xl font-black text-purple-950">Import pay details</h1>
         <p className="mt-2 text-slate-600">
-          Advanced manager tool for checking a private workbook before adding dated pay details.
+          {review.scope.kind === "commercial" ? `${review.scope.organisationDisplayName}: check a private workbook before adding dated pay details.` : "Advanced manager tool for checking a private workbook before adding dated pay details."}
         </p>
       </div>
       <ManagerPageNav items={payPageNav} activeId="import" label="Pay hours sections" />
@@ -34,6 +32,7 @@ export default async function PayrollReviewPage({ searchParams }: { searchParams
           profiles={review.profiles}
           summary={review.validation?.summary ?? null}
           warningsByRow={review.validation?.warningsByRow ?? {}}
+          canPrepare={review.scope.canPrepare}
         />
       </div>
     </AppShell>

@@ -156,3 +156,10 @@ export type PayrollPreparationRow = {
   adjustmentNotes: string[];
   warnings: string[];
 };
+
+export type PayrollPreparationArithmetic = {
+  ordinaryMinutes: number;
+  overtimeMinutes: number;
+  estimatedGross: number | null;
+  salaryBasis: number | null;
+};

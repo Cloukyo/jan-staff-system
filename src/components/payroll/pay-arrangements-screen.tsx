@@ -7,6 +7,50 @@ import type { ProductionStaffRow } from "@/lib/payroll/types";
 import { PayrollActionForm } from "@/components/payroll/payroll-action-form";
 import { Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatDateUk, formatMoney, isoDateInLondon } from "@/lib/dates/format";
+import type { CommercialPayArrangement, CommercialPayrollStaff } from "@/lib/payroll/tenant-types";
+
+export function CommercialPayArrangementsScreen({
+  organisationDisplayName,
+  staff,
+  arrangements,
+  canPrepare,
+}: {
+  organisationDisplayName: string;
+  staff: CommercialPayrollStaff[];
+  arrangements: CommercialPayArrangement[];
+  canPrepare: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => staff.filter((person) =>
+    `${person.fullName} ${person.employmentRole}`.toLowerCase().includes(query.toLowerCase())
+  ), [query, staff]);
+  return (
+    <div className="grid gap-5">
+      <Panel>
+        <p className="text-sm font-bold text-slate-500">Organisation</p>
+        <h2 className="text-xl font-black text-purple-950">{organisationDisplayName}</h2>
+        <input className={inputClassName("mt-4")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff" />
+        {canPrepare ? <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/payroll/review">Import approved pay details</Link> : <p className="mt-4 text-sm font-bold text-slate-600">You have read-only payroll access.</p>}
+      </Panel>
+      {filtered.map((person) => {
+        const history = arrangements.filter((arrangement) => arrangement.staffId === person.id);
+        return (
+          <Panel key={person.id}>
+            <h2 className="text-xl font-black text-purple-950">{person.fullName}</h2>
+            <p className="text-sm text-slate-600">{person.employmentRole}</p>
+            {!history.length ? <p className="mt-3 text-sm font-bold text-amber-700">No pay arrangement is recorded.</p> : null}
+            {history.map((item) => (
+              <div key={item.id} className="mt-3 rounded-lg border border-purple-100 p-3">
+                <p className="font-bold text-purple-950">{item.payType === "hourly" ? `${formatMoney(item.hourlyRate === null ? null : Math.round(item.hourlyRate * 100))} per hour` : item.annualSalary !== null ? `${formatMoney(Math.round(item.annualSalary * 100))} annual salary basis` : `${formatMoney(item.monthlySalary === null ? null : Math.round(item.monthlySalary * 100))} monthly salary basis`}</p>
+                <p className="text-sm text-slate-600">{formatDateUk(item.effectiveFrom)} to {item.effectiveTo ? formatDateUk(item.effectiveTo) : "ongoing"} | {item.contractedWeeklyHours === null ? item.hoursBasis.replaceAll("_", " ") : `${item.contractedWeeklyHours} contracted hours weekly`}</p>
+              </div>
+            ))}
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
 
 export function PayArrangementsScreen({ staff }: { staff: ProductionStaffRow[] }) {
   const [query, setQuery] = useState("");

@@ -1,5 +1,5 @@
-import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
 import type { PayrollHoursBasis, ProductionPayType } from "@/lib/payroll/types";
 
 export type PayrollImportResolution = "unresolved" | "current_staff" | "former_staff" | "external" | "excluded";
@@ -179,12 +179,24 @@ function mapRow(row: Record<string, unknown>): PayrollImportReviewRow {
 }
 
 export async function loadPayrollReview(selectedBatchId?: string) {
-  await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("payroll.read");
   const supabase = await createSupabaseServerClient();
+  let batchesQuery = supabase.from("payroll_import_batches").select("*");
+  let profilesQuery = supabase.from("staff_profiles").select("id,full_name,active");
+  let arrangementsQuery = supabase.from("staff_pay_arrangements").select("staff_id,effective_from,effective_to,is_active");
+  if (actor.kind === "commercial") {
+    batchesQuery = batchesQuery.eq("organisation_id", actor.context.organisationId);
+    profilesQuery = profilesQuery.eq("organisation_id", actor.context.organisationId);
+    arrangementsQuery = arrangementsQuery.eq("organisation_id", actor.context.organisationId);
+  } else {
+    batchesQuery = batchesQuery.is("organisation_id", null);
+    profilesQuery = profilesQuery.is("organisation_id", null);
+    arrangementsQuery = arrangementsQuery.is("organisation_id", null);
+  }
   const [batchesResult, profilesResult, arrangementsResult] = await Promise.all([
-    supabase.from("payroll_import_batches").select("*").order("created_at", { ascending: false }),
-    supabase.from("staff_profiles").select("id,full_name,active").order("full_name"),
-    supabase.from("staff_pay_arrangements").select("staff_id,effective_from,effective_to,is_active"),
+    batchesQuery.order("created_at", { ascending: false }),
+    profilesQuery.order("full_name"),
+    arrangementsQuery,
   ]);
   if (batchesResult.error || profilesResult.error || arrangementsResult.error) {
     throw new Error("Payroll review data could not be loaded.");
@@ -193,7 +205,11 @@ export async function loadPayrollReview(selectedBatchId?: string) {
   const batch = batches.find((item) => item.id === selectedBatchId) ?? batches[0] ?? null;
   let rows: PayrollImportReviewRow[] = [];
   if (batch) {
-    const result = await supabase.from("payroll_import_review_rows").select("*").eq("batch_id", batch.id).order("source_row_index");
+    let rowsQuery = supabase.from("payroll_import_review_rows").select("*").eq("batch_id", batch.id);
+    rowsQuery = actor.kind === "commercial"
+      ? rowsQuery.eq("organisation_id", actor.context.organisationId)
+      : rowsQuery.is("organisation_id", null);
+    const result = await rowsQuery.order("source_row_index");
     if (result.error) throw new Error("Payroll review rows could not be loaded.");
     rows = ((result.data ?? []) as Record<string, unknown>[]).map(mapRow);
   }
@@ -204,6 +220,15 @@ export async function loadPayrollReview(selectedBatchId?: string) {
     active: row.is_active,
   }));
   return {
+    scope: actor.kind === "commercial" ? {
+      kind: "commercial" as const,
+      organisationDisplayName: actor.context.organisationDisplayName,
+      canPrepare: actor.context.permissions.includes("payroll.prepare"),
+    } : {
+      kind: "jan_legacy" as const,
+      organisationDisplayName: null,
+      canPrepare: true,
+    },
     batches,
     batch,
     rows,

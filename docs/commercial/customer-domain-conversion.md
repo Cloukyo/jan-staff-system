@@ -79,17 +79,17 @@ The TypeScript preview validates and normalises fictional or customer-supplied r
 
 ## Compatibility and remaining paths
 
-The following remain deliberately compatible after Workstream 5:
+The following remain deliberately compatible after Workstream 6:
 
 - unowned `staff_profiles` and related compliance rows use the legacy manager/staff RLS path;
 - `staff_accounts` remains for Jan authentication consumers;
 - `staff_certificates`, `staff_central_records`, `staff_central_record_items`, `staff_reference_checks` and `staff_import_reviews` remain available while neutral commercial tables are adopted;
 - `rota_settings`, legacy room columns and closure arrays remain readable;
-- staff pay arrangements carry organisation ownership, but payroll calculation, preparation, import, export and reports remain unconverted;
+- commercial payroll calculation, preparation, import, export and reporting are now organisation-owned as documented in `payroll-reporting-tenancy.md`; the unowned Jan payroll contract remains explicit and separate;
 - unowned Jan attendance and device rows remain on named compatibility paths; new commercial originals, corrections, reviews, requests, exceptions and minimum online device bindings are organisation/site owned as documented in `attendance-tenancy.md`;
-- payroll and offline attendance records remain unchanged.
+- offline attendance remains disabled; the commercial payroll conversion does not enable it or mutate attendance evidence.
 
-The existing staff directory, staff detail and compliance screens continue through their legacy `staff_accounts`-compatible loaders because those screens currently aggregate attendance, payroll and kiosk data that are explicitly outside this workstream. Workstream 4 adds membership-authorised commercial commands, repositories and settings UI selection without pretending those mixed legacy screens are fully tenant-converted. Their customer-facing adoption must happen alongside the relevant attendance, payroll and kiosk conversions, using the adapters established here.
+The existing staff directory, staff detail and compliance screens continue through their legacy `staff_accounts`-compatible loaders because those screens still aggregate compatibility attendance and kiosk data. Workstream 4 adds membership-authorised commercial commands, repositories and settings UI selection without pretending those mixed legacy screens are fully tenant-converted. Payroll now uses a commercial-first, fail-closed adapter with a distinct Jan path; its exact migration and removal conditions are recorded in `payroll-reporting-tenancy.md`.
 
 Legacy policies are limited to `organisation_id is null`. A legacy Jan manager cannot use those policies to read or modify commercial rows. Commercial policies cannot use an unowned row as customer data.
 

@@ -1,16 +1,16 @@
 import { PayrollScreen } from "@/components/payroll/payroll-screen";
-import { ProductionPayrollScreen } from "@/components/payroll/production-payroll-screen";
+import { CommercialPayrollReportingScreen, ProductionPayrollScreen } from "@/components/payroll/production-payroll-screen";
 import { AppShell } from "@/components/layout/app-shell";
 import { ManagerHelpLink } from "@/components/help/manager-help-link";
 import { ManagerPageNav } from "@/components/layout/manager-page-nav";
 import { getAppMode } from "@/lib/app-mode";
-import { requireAccount } from "@/lib/auth/permissions";
 import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { loadPayrollAttendanceReviews, loadProductionAttendanceData, loadProductionStaffRows } from "@/lib/payroll/server";
 import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 import { loadOfflinePayrollReadiness } from "@/lib/payroll/offline-readiness-server";
+import { createPayrollOperationId, loadCommercialPayrollReportingState, loadPayrollWorkspace } from "@/lib/payroll/tenant-server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,6 @@ const payPageNav = [
 
 export default async function PayrollPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   if (getAppMode() === "demo") return <PayrollScreen />;
-  await requireAccount(["manager"]);
   const params = await searchParams;
   const today = isoDateInLondon();
   const [year, month] = today.split("-").map(Number);
@@ -37,6 +36,40 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const includeInactive = params.inactive === "1";
   const includeManagers = params.managers === "1";
   const includeZero = params.zero !== "0";
+  const actor = await loadPayrollWorkspace({ periodStart, periodEnd });
+  if (actor.kind === "commercial") {
+    const reporting = await loadCommercialPayrollReportingState(actor.context, { periodStart, periodEnd });
+    return (
+      <AppShell>
+        <div className="mb-5">
+          <h1 className="text-3xl font-black text-purple-950">Payroll reporting</h1>
+          <p className="mt-2 text-slate-600">
+            Review organisation-owned preparation totals and export only an approved stored revision. This is not completed payroll.
+          </p>
+        </div>
+        <ManagerPageNav items={payPageNav} activeId="export" label="Pay hours sections" />
+        <div className="pt-5">
+          <CommercialPayrollReportingScreen
+            organisationDisplayName={actor.context.organisationDisplayName}
+            siteId={actor.context.selectedSiteId}
+            snapshot={actor.workspace.snapshot}
+            reporting={reporting}
+            canPrepare={actor.context.permissions.includes("payroll.prepare")}
+            canExport={actor.context.permissions.includes("payroll.export")}
+            operationIds={{
+              create: createPayrollOperationId(),
+              prepare: createPayrollOperationId(),
+              acknowledge: createPayrollOperationId(),
+              approve: createPayrollOperationId(),
+              adjustment: createPayrollOperationId(),
+              reopen: createPayrollOperationId(),
+              resolveAdjustment: createPayrollOperationId(),
+            }}
+          />
+        </div>
+      </AppShell>
+    );
+  }
   const [staff, attendance, reviews, reviewReadiness, offlineReadiness] = await Promise.all([
     loadProductionStaffRows(),
     loadProductionAttendanceData(periodStart, periodEnd),

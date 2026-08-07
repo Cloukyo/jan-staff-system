@@ -73,3 +73,7 @@ export async function closePayArrangementAction(_state: PayrollActionState, form
   revalidatePath("/payroll");
   return ok("Pay arrangement end date saved.");
 }
+
+// Explicit names for Jan's inherited unowned pay-arrangement forms.
+export const saveJanLegacyPayArrangementAction = savePayArrangementAction;
+export const closeJanLegacyPayArrangementAction = closePayArrangementAction;

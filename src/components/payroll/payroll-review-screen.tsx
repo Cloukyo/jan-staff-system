@@ -37,6 +37,7 @@ export function PayrollReviewScreen({
   profiles,
   summary,
   warningsByRow,
+  canPrepare = true,
 }: {
   batches: PayrollImportBatch[];
   batch: PayrollImportBatch | null;
@@ -44,8 +45,9 @@ export function PayrollReviewScreen({
   profiles: ProfileOption[];
   summary: PayrollReviewSummary | null;
   warningsByRow: Record<string, string[]>;
+  canPrepare?: boolean;
 }) {
-  const editable = batch?.status === "draft";
+  const editable = canPrepare && batch?.status === "draft";
   return (
     <div className="grid gap-5">
       <Panel>
@@ -56,12 +58,12 @@ export function PayrollReviewScreen({
             <p className="mt-1 text-sm text-slate-600">Workbook values stay in this manager-only review. Reviewing them does not change staff pay details.</p>
           </div>
         </div>
-        <PayrollActionForm action={createPayrollReviewBatchAction} submitLabel="Start import review" className="mt-5">
+        {canPrepare ? <PayrollActionForm action={createPayrollReviewBatchAction} submitLabel="Start import review" className="mt-5">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Payroll workbook (.xlsx)"><input className={inputClassName()} name="workbook" type="file" accept=".xlsx" required /></Field>
             <Field label="Proposed effective date"><input className={inputClassName()} name="proposedEffectiveDate" type="date" required /></Field>
           </div>
-        </PayrollActionForm>
+        </PayrollActionForm> : <p className="mt-4 text-sm font-bold text-slate-600">You have read-only payroll access.</p>}
       </Panel>
 
       {batches.length ? (
@@ -122,7 +124,7 @@ export function PayrollReviewScreen({
             ))}
           </div>
 
-          {batch.status === "draft" ? (
+          {canPrepare && batch.status === "draft" ? (
             <Panel>
               <h2 className="font-black text-purple-950">Approve review</h2>
               <p className="mt-1 text-sm text-slate-600">Approval locks this review. It still does not change any pay details.</p>
@@ -132,7 +134,7 @@ export function PayrollReviewScreen({
             </Panel>
           ) : null}
 
-          {batch.status === "ready" ? (
+          {canPrepare && batch.status === "ready" ? (
             <Panel>
               <h2 className="font-black text-purple-950">Import approved pay details</h2>
               <p className="mt-1 text-sm text-slate-600">This saves the approved pay details from their confirmed start dates. Overlapping pay details will stop the import.</p>
