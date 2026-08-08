@@ -2,6 +2,7 @@
 
 These documents describe implemented commercial tenancy milestones on `codex/commercial-production`. They record the current implementation boundary, not a production rollout or a replacement for approved design specifications.
 
+- [Commercial platform baseline](commercial-platform-baseline.md): the frozen Workstreams 1 through 6 checkpoint, verification record and Workstream 7 boundary.
 - [Tenant primitives](tenant-primitives.md): organisations, sites, memberships and the first tenant fences.
 - [Identity and membership](identity-and-membership.md): request-time membership, permissions, site access and AAL2 guards.
 - [Customer domain conversion](customer-domain-conversion.md): commercial staff, compliance, settings, site operations and the Jan compatibility boundary.
