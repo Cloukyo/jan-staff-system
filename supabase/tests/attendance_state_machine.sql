@@ -21,7 +21,12 @@ declare
   device_token constant text := 'sql-test-device-token-00000000000000000000000000000001';
   request_id constant uuid := '00000000-0000-4000-8000-000000000404';
   reused_request_id constant uuid := '00000000-0000-4000-8000-000000000405';
-  evaluated_at constant timestamptz := '2026-08-03 09:00:00+01';
+  evaluated_at timestamptz := clock_timestamp();
+  yesterday_date date := public.attendance_operational_date(evaluated_at) - 1;
+  yesterday_clock_in timestamptz :=
+    (yesterday_date::timestamp + time '08:30') at time zone 'Europe/London';
+  yesterday_clock_out timestamptz :=
+    (yesterday_date::timestamp + time '17:00') at time zone 'Europe/London';
   yesterday_in_id constant uuid := '00000000-0000-4000-8000-000000000406';
   today_in_id constant uuid := '00000000-0000-4000-8000-000000000407';
   exception_id uuid;
@@ -75,7 +80,7 @@ begin
   insert into public.clock_events (
     id, staff_id, event_type, event_timestamp, kiosk_device_id
   ) values (
-    yesterday_in_id, test_staff_id, 'clock_in', '2026-08-02 08:30:00+01', device_id::text
+    yesterday_in_id, test_staff_id, 'clock_in', yesterday_clock_in, device_id::text
   );
 
   select count(*) into before_count from public.attendance_exceptions;
@@ -156,12 +161,12 @@ begin
       'primary', jsonb_build_object(
         'id', gen_random_uuid(),
         'staff_id', test_staff_id,
-        'recorded_date', '2026-08-02',
+        'recorded_date', yesterday_date,
         'correction_kind', 'add',
         'original_event_id', null,
         'supersedes_correction_id', null,
         'event_type', 'clock_out',
-        'event_timestamp', '2026-08-02 17:00:00+01'
+        'event_timestamp', yesterday_clock_out
       ),
       'consequential', '[]'::jsonb
     ),
