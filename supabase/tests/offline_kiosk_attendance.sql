@@ -1,5 +1,7 @@
 begin;
 
+select plan(1);
+
 do $$
 begin
   if to_regclass('public.kiosk_offline_authorisations') is null then
@@ -199,5 +201,8 @@ begin
   );
 end;
 $$;
+
+select pass('offline kiosk attendance database contract');
+select * from finish();
 
 rollback;

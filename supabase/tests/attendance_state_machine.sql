@@ -1,5 +1,7 @@
 begin;
 
+select plan(1);
+
 create or replace function pg_temp.assert_true(condition boolean, message text)
 returns void
 language plpgsql
@@ -242,5 +244,8 @@ begin
 end;
 $$;
 reset role;
+
+select pass('attendance state machine database contract');
+select * from finish();
 
 rollback;
