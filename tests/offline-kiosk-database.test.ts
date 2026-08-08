@@ -124,7 +124,7 @@ describe("offline kiosk IndexedDB", () => {
       server: { time: "2026-08-03T19:00:00.000Z", timezone: "Europe/London", operationalDayStart: "00:00" },
       roster: [{
         staffId: "staff-a",
-        displayName: "Areeg",
+        displayName: "Demo B",
         employmentRole: "Practitioner",
         pinVersion: "pin-v1",
         trustedState: trustedState().state,
@@ -178,7 +178,7 @@ describe("offline kiosk IndexedDB", () => {
       roster("roster-1", [
         {
           staffId: "staff-a",
-          displayName: "Areeg",
+          displayName: "Demo B",
           employmentRole: "Practitioner",
           offlineReady: true,
         },
@@ -210,7 +210,7 @@ describe("offline kiosk IndexedDB", () => {
         entries: [
           expect.objectContaining({
             staffId: "staff-a",
-            displayName: "Areeg",
+            displayName: "Demo B",
           }),
         ],
       }),
@@ -398,7 +398,7 @@ describe("offline kiosk IndexedDB", () => {
       roster("roster-1", [
         {
           staffId: "staff-a",
-          displayName: "Areeg",
+          displayName: "Demo B",
           employmentRole: "Practitioner",
           offlineReady: true,
         },

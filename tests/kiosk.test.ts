@@ -16,16 +16,16 @@ describe("production kiosk separation", () => {
   it("maps only limited roster fields and never returns a PIN hash", () => {
     const roster = mapKioskRoster([{
       staff_id: "canonical-uuid",
-      display_name: "Areeg",
-      full_name: "Areeg Shahzadi",
+      display_name: "Demo B",
+      full_name: "Demo Person B",
       employment_role: "Nursery Practitioner",
       current_status: "clocked_out",
       pin_ready: true,
     }]);
     expect(roster[0]).toEqual({
       staffId: "canonical-uuid",
-      displayName: "Areeg",
-      fullName: "Areeg Shahzadi",
+      displayName: "Demo B",
+      fullName: "Demo Person B",
       employmentRole: "Nursery Practitioner",
       currentStatus: "clocked_out",
       pinReady: true,

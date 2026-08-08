@@ -123,7 +123,7 @@ describe("rota template migration and permissions", () => {
 describe("private workbook parser safeguards", () => {
   it("ignores sign-in rows and converts Excel serial and text times", () => {
     expect(isWorkbookStaffRow("sign in/out")).toBe(false);
-    expect(isWorkbookStaffRow("Areeg")).toBe(true);
+    expect(isWorkbookStaffRow("Demo B")).toBe(true);
     expect(normaliseWorkbookTime(0.5)).toBe("12:00");
     expect(normaliseWorkbookTime("8:30 AM")).toBe("08:30");
   });

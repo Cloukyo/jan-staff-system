@@ -337,11 +337,11 @@ describe("production attendance review", () => {
 
   it("maps manager date-range hours with empty staff rows as 0 minutes", () => {
     const rows = mapManagerHoursPreview([
-      { staff_id: "staff-a", display_name: "Areeg", full_name: "Areeg Shahzadi", completed_minutes: 450, open_shift_count: 0 },
+      { staff_id: "staff-a", display_name: "Demo B", full_name: "Demo Person B", completed_minutes: 450, open_shift_count: 0 },
       { staff_id: "staff-b", display_name: "Maya", full_name: "Maya Patel", completed_minutes: null, open_shift_count: 1 },
     ]);
     expect(rows).toEqual([
-      { staffId: "staff-a", displayName: "Areeg", fullName: "Areeg Shahzadi", completedMinutes: 450, openShiftCount: 0 },
+      { staffId: "staff-a", displayName: "Demo B", fullName: "Demo Person B", completedMinutes: 450, openShiftCount: 0 },
       { staffId: "staff-b", displayName: "Maya", fullName: "Maya Patel", completedMinutes: 0, openShiftCount: 1 },
     ]);
   });

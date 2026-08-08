@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Fictional UUID idempotency keys in offline kiosk tests"
+  condition = "AND"
+  regexTarget = "secret"
+  regexes = [
+    '''^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$''',
+  ]
+  paths = [
+    '''^tests/offline-kiosk-(?:pin|sync-contract)\.test\.ts$''',
+  ]
