@@ -1,0 +1,42 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import type { PGlite } from "@electric-sql/pglite";
+import { createTenantPrimitivesDatabase } from "./tenant-primitives-db";
+
+export const ONBOARDING_SESSION_A = "31000000-0000-4000-8000-000000000001";
+export const ONBOARDING_SESSION_B = "32000000-0000-4000-8000-000000000001";
+export const ONBOARDING_BOOTSTRAP_SESSION = "33000000-0000-4000-8000-000000000001";
+export const ONBOARDING_STEP_A = "31000000-0000-4000-8000-000000000002";
+export const ONBOARDING_EVENT_A = "31000000-0000-4000-8000-000000000003";
+export const ONBOARDING_RECEIPT_A = "31000000-0000-4000-8000-000000000004";
+export const ONBOARDING_IDEMPOTENCY_A = "31000000-0000-4000-8000-000000000005";
+
+export async function createOnboardingPersistenceDatabase(): Promise<PGlite> {
+  const db = await createTenantPrimitivesDatabase();
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_onboarding_workflow_persistence.sql"));
+  if (!migration) {
+    await db.close();
+    throw new Error("onboarding workflow persistence migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
+export async function insertOnboardingSession(
+  db: PGlite,
+  values: {
+    id: string;
+    ownerAuthUserId: string;
+    organisationId: string | null;
+    currentStepKey?: string;
+  },
+) {
+  await db.query(
+    `insert into public.onboarding_sessions (
+       id, owner_auth_user_id, organisation_id, workflow_key, workflow_version,
+       status, current_step_key, revision
+     ) values ($1, $2, $3, 'commercial_customer_v1', 1, 'in_progress', $4, 0)`,
+    [values.id, values.ownerAuthUserId, values.organisationId, values.currentStepKey ?? "owner_account"],
+  );
+}
