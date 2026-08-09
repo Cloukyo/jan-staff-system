@@ -1,6 +1,6 @@
 begin;
 
-select plan(6);
+select plan(8);
 
 create or replace function pg_temp.assert_true(condition boolean, message text)
 returns void
@@ -42,6 +42,16 @@ select ok(
     'authenticated', 'private.can_read_onboarding_session(uuid)', 'EXECUTE'
   ),
   'authenticated can execute the narrow child-table RLS helper'
+);
+
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.execute_onboarding_foundation_command(jsonb)', 'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon', 'public.execute_onboarding_foundation_command(jsonb)', 'EXECUTE'
+  ),
+  'only authenticated callers can execute the onboarding command boundary'
 );
 
 do $$
@@ -184,6 +194,8 @@ begin
   update public.onboarding_command_receipts
   set status = 'succeeded', result_code = 'settings_saved',
       result_reference = '{"siteId":"41000000-0000-4000-8000-000000000099"}'::jsonb,
+      result_outcome = 'succeeded', result_data_state = 'saved',
+      result_session_revision = 0, result_issues = '[]'::jsonb,
       completed_at = now()
   where id = receipt_id;
   begin
@@ -200,6 +212,8 @@ select pass('version, tenant, revision, append-only, metadata and replay constra
 select set_config('request.jwt.claim.sub', '41000000-0000-4000-8000-000000000001', true);
 set local role authenticated;
 do $$
+declare
+  command_response jsonb;
 begin
   perform pg_temp.assert_true(
     (select count(*) from public.onboarding_sessions
@@ -224,6 +238,27 @@ begin
      where session_id = '41000000-0000-4000-8000-000000000004') = 1,
     'authorised owner must read onboarding command receipts'
   );
+  select public.execute_onboarding_foundation_command(jsonb_build_object(
+    'schemaVersion', 1,
+    'workflowKey', 'commercial_customer_v1',
+    'workflowVersion', 1,
+    'sessionId', '41000000-0000-4000-8000-000000000004',
+    'commandType', 'evaluate_readiness',
+    'idempotencyKey', '41000000-0000-4000-8000-000000000009',
+    'expectedSessionRevision', '0',
+    'payload', '{}'::jsonb
+  )) into command_response;
+  perform pg_temp.assert_true(
+    command_response #>> '{commandResult,outcome}' = 'succeeded'
+    and command_response #>> '{commandResult,sessionRevision}' = '1'
+    and command_response #>> '{readiness,workflowRevision}' = '1',
+    'authorised RPC must return the committed revision and authoritative readiness'
+  );
+  perform pg_temp.assert_true(
+    (select count(*) from public.onboarding_events
+     where session_id = '41000000-0000-4000-8000-000000000004') = 2,
+    'successful RPC must append exactly one event'
+  );
   begin
     update public.onboarding_sessions
     set revision = 1 where id = '41000000-0000-4000-8000-000000000004';
@@ -235,10 +270,13 @@ $$;
 reset role;
 
 select pass('owner bootstrap and post-organisation child RLS reads are available without writes');
+select pass('authenticated command RPC commits state, receipt, event and readiness atomically');
 
 select set_config('request.jwt.claim.sub', '42000000-0000-4000-8000-000000000001', true);
 set local role authenticated;
 do $$
+declare
+  denied_response jsonb;
 begin
   perform pg_temp.assert_true(
     (select count(*) from public.onboarding_sessions
@@ -247,6 +285,21 @@ begin
        '41000000-0000-4000-8000-000000000008'
      )) = 0,
     'unrelated identity must not read bootstrap or organisation sessions'
+  );
+  select public.execute_onboarding_foundation_command(jsonb_build_object(
+    'schemaVersion', 1,
+    'workflowKey', 'commercial_customer_v1',
+    'workflowVersion', 1,
+    'sessionId', '41000000-0000-4000-8000-000000000004',
+    'commandType', 'evaluate_readiness',
+    'idempotencyKey', '42000000-0000-4000-8000-000000000009',
+    'expectedSessionRevision', '1',
+    'payload', '{}'::jsonb
+  )) into denied_response;
+  perform pg_temp.assert_true(
+    denied_response #>> '{commandResult,outcome}' = 'permission_denied'
+    and denied_response -> 'readiness' = 'null'::jsonb,
+    'unrelated identity must receive no tenant readiness disclosure'
   );
 end;
 $$;

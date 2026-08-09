@@ -23,6 +23,28 @@ export async function createOnboardingPersistenceDatabase(): Promise<PGlite> {
   return db;
 }
 
+export async function createOnboardingServiceDatabase(): Promise<PGlite> {
+  const db = await createOnboardingPersistenceDatabase();
+  await applyOnboardingServiceMigration(db);
+  return db;
+}
+
+export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
+  await db.exec(`
+    create schema if not exists extensions;
+    create or replace function extensions.digest(candidate text, algorithm text)
+    returns bytea language sql immutable as $$
+      select decode(md5(candidate) || md5(algorithm || ':' || candidate), 'hex')
+    $$
+  `);
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_onboarding_application_service_foundation.sql"));
+  if (!migration) {
+    throw new Error("onboarding application service migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+}
+
 export async function insertOnboardingSession(
   db: PGlite,
   values: {
