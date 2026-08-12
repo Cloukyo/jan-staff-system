@@ -839,6 +839,7 @@ tbody tr:hover {
 .onboarding-auth-card > div:nth-child(2) { margin-top: 42px; }
 .onboarding-signup-form,
 .onboarding-mfa-flow { display: grid; gap: 17px; margin-top: 28px; }
+.onboarding-signup-form .relative > button { min-width: 44px; min-height: 44px; }
 .onboarding-auth-switch { margin: 4px 0 0; color: #667085; text-align: center; }
 .onboarding-auth-switch a { color: #4b2a7a; font-weight: 800; }
 .onboarding-auth-message { margin: 0; border-radius: 8px; background: #fff1f1; padding: 12px; color: #8f2f2f; font-size: 14px; font-weight: 700; }
