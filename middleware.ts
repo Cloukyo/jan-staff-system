@@ -4,7 +4,7 @@ import { getAppMode } from "@/lib/app-mode";
 import { correlationId } from "@/lib/observability/request-context";
 import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
-const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/my-rota", "/my-attendance", "/change-password", "/reset-password"];
+const protectedPrefixes = ["/dashboard", "/staff", "/compliance", "/rota", "/attendance", "/payroll", "/settings", "/leave", "/accounts", "/profile", "/my-rota", "/my-attendance", "/change-password", "/reset-password", "/onboarding", "/mfa"];
 
 export async function middleware(request: NextRequest) {
   const requestId = correlationId(request.headers.get("x-request-id"));

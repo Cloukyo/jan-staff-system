@@ -18,11 +18,46 @@ export async function signInAction(_state: AuthActionState, formData: FormData):
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { message: "The email or password was not recognised." };
   const { data: account, error: accountError } = await supabase.from("staff_accounts").select("active,must_change_password,role").eq("auth_user_id", data.user.id).maybeSingle();
-  if (accountError || !account?.active) {
+  if (accountError) {
     await supabase.auth.signOut();
-    return { message: "This account is inactive or has not been linked to a staff record." };
+    return { message: "Your account could not be loaded. Try again." };
+  }
+  if (!account) redirect("/onboarding");
+  if (!account.active) {
+    await supabase.auth.signOut();
+    return { message: "This account is inactive." };
   }
   redirect(account.must_change_password ? "/change-password" : account.role === "manager" ? "/dashboard" : "/my-rota");
+}
+
+export type SignUpActionState = { ok: boolean; message: string; email: string };
+
+export async function signUpAction(
+  _state: SignUpActionState,
+  formData: FormData,
+): Promise<SignUpActionState> {
+  if (!hasSupabaseConfig()) return { ok: false, message: "Commercial signup is not configured.", email: "" };
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const confirmation = String(formData.get("confirmation") ?? "");
+  if (!email || !password) return { ok: false, message: "Enter an email address and password.", email };
+  if (password !== confirmation) return { ok: false, message: "The password confirmation does not match.", email };
+  const passwordIssue = validatePrivatePassword(password, email);
+  if (passwordIssue) return { ok: false, message: passwordIssue, email };
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: process.env.NEXT_PUBLIC_SITE_URL
+        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`
+        : undefined,
+    },
+  });
+  if (error) return { ok: false, message: "Your account could not be created. Try again or sign in if you already registered.", email };
+  if (data.session) redirect("/onboarding");
+  return { ok: true, message: "Check your inbox and verify your email address to continue.", email };
 }
 
 export type ChangePasswordActionState = {

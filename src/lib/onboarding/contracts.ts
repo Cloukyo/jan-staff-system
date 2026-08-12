@@ -66,6 +66,18 @@ export const onboardingStepKeySchema = z.enum([
   "go_live",
 ]);
 
+export const onboardingBootstrapStepKeySchema = z.enum([
+  "owner_security",
+  "legal_acceptance",
+  "organisation",
+]);
+
+export const legalDocumentTypeSchema = z.enum([
+  "terms_of_service",
+  "privacy_acknowledgement",
+  "data_processing_agreement",
+]);
+
 const onboardingStepDefinitionSchema = z.object({
   stepKey: onboardingStepKeySchema,
   stepVersion: z.literal(1),
@@ -226,6 +238,7 @@ export const onboardingStepStateSchema = z.object({
 
 export const onboardingCommandTypeSchema = z.enum([
   "save_step_draft",
+  "accept_legal_documents",
   "complete_owner_setup",
   "create_organisation",
   "create_first_site",
@@ -242,6 +255,33 @@ export const onboardingCommandTypeSchema = z.enum([
   "go_live",
 ]);
 
+const legalAcceptanceCommandPayloadSchema = z.object({
+  acceptances: z.array(z.object({
+    documentType: legalDocumentTypeSchema,
+    documentVersion: z.string().trim().min(1).max(64),
+    locale: z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/),
+  }).strict()).length(3),
+  safeRequestMetadata: z.object({
+    source: z.literal("commercial_onboarding"),
+  }).strict(),
+}).strict();
+
+export const organisationCreationPayloadSchema = z.object({
+  displayName: z.string().trim().min(2).max(160),
+  legalName: z.string().trim().min(2).max(200),
+  contactEmail: z.email().transform((value) => value.toLowerCase()),
+  country: z.string().regex(/^[A-Z]{2}$/),
+  timezone: z.string().trim().min(1).max(80),
+  postalAddress: z.object({
+    line1: z.string().trim().min(2).max(160),
+    line2: z.string().trim().max(160).optional(),
+    locality: z.string().trim().min(2).max(120),
+    region: z.string().trim().max(120).optional(),
+    postcode: z.string().trim().min(2).max(24),
+  }).strict(),
+  phone: z.string().trim().min(5).max(40).optional(),
+}).strict();
+
 export const onboardingCommandSchema = z.object({
   schemaVersion: z.literal(ONBOARDING_CONTRACT_SCHEMA_VERSION),
   workflowKey: z.literal(COMMERCIAL_CUSTOMER_WORKFLOW_KEY),
@@ -252,6 +292,33 @@ export const onboardingCommandSchema = z.object({
   expectedSessionRevision: revisionSchema,
   payload: z.record(z.string(), jsonValueSchema),
 }).strict();
+
+export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRefine((command, context) => {
+  if (command.commandType === "accept_legal_documents") {
+    const result = legalAcceptanceCommandPayloadSchema.safeParse(command.payload);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+      }
+    }
+  }
+  if (command.commandType === "create_organisation") {
+    const result = organisationCreationPayloadSchema.safeParse(command.payload);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+      }
+    }
+  }
+}).transform((command) => {
+  if (command.commandType === "accept_legal_documents") {
+    return { ...command, payload: legalAcceptanceCommandPayloadSchema.parse(command.payload) };
+  }
+  if (command.commandType === "create_organisation") {
+    return { ...command, payload: organisationCreationPayloadSchema.parse(command.payload) };
+  }
+  return command;
+});
 
 const stableCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,95}$/);
 const internalRepairRouteSchema = z.string().regex(/^\/[a-z0-9/_-]*$/).max(240);
@@ -342,10 +409,13 @@ export const onboardingCommandResultSchema = z.object({
 });
 
 export const onboardingEventTypeSchema = z.enum([
+  "onboarding_started",
   "signup_started",
   "owner_email_verified",
   "owner_mfa_enrolled",
+  "owner_mfa_ready",
   "legal_acceptance_completed",
+  "organisation_creation_started",
   "organisation_created",
   "first_site_created",
   "plan_selected",
@@ -382,7 +452,7 @@ export const onboardingEventSchema = z.object({
   sessionId: z.uuid(),
   organisationId: z.uuid().nullable(),
   eventType: onboardingEventTypeSchema,
-  stepKey: onboardingStepKeySchema.nullable(),
+  stepKey: z.union([onboardingStepKeySchema, onboardingBootstrapStepKeySchema]).nullable(),
   actorType: onboardingEventActorTypeSchema,
   actorAuthUserId: z.uuid().nullable(),
   actorMembershipId: z.uuid().nullable(),
@@ -536,3 +606,39 @@ export type OnboardingCommandResult = z.infer<typeof onboardingCommandResultSche
 export type OnboardingEvent = z.infer<typeof onboardingEventSchema>;
 export type OnboardingReadinessItem = z.infer<typeof onboardingReadinessItemSchema>;
 export type OnboardingReadinessSnapshot = z.infer<typeof onboardingReadinessSnapshotSchema>;
+
+export const onboardingBootstrapSnapshotSchema = z.object({
+  session: z.object({
+    id: z.uuid(),
+    organisationId: z.uuid().nullable(),
+    workflowKey: z.literal(COMMERCIAL_CUSTOMER_WORKFLOW_KEY),
+    workflowVersion: z.literal(COMMERCIAL_CUSTOMER_WORKFLOW_VERSION),
+    status: onboardingWorkflowStatusSchema,
+    currentStepKey: onboardingStepKeySchema,
+    revision: revisionSchema,
+    lastActivityAt: timestampSchema,
+  }).strict(),
+  security: z.object({
+    emailVerified: z.boolean(),
+    assuranceLevel: z.enum(["aal1", "aal2"]),
+    legalAcceptancesCurrent: z.boolean(),
+  }).strict(),
+  steps: z.array(z.object({
+    stepKey: onboardingBootstrapStepKeySchema,
+    status: onboardingStepStatusSchema,
+    revision: revisionSchema,
+    draftPayload: draftPayloadSchema,
+    validationSummary: z.array(validationIssueSchema),
+  }).strict()).length(3),
+  legalDocuments: z.array(z.object({
+    documentType: legalDocumentTypeSchema,
+    documentVersion: z.string().min(1).max(64),
+    locale: z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/),
+    title: z.string().min(2).max(120),
+    summary: z.string().min(2).max(500),
+    effectiveAt: timestampSchema,
+    accepted: z.boolean(),
+  }).strict()).length(3),
+}).strict();
+
+export type OnboardingBootstrapSnapshot = z.infer<typeof onboardingBootstrapSnapshotSchema>;

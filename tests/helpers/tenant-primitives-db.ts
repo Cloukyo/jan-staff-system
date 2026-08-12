@@ -34,7 +34,8 @@ create schema auth;
 
 create table auth.users (
   id uuid primary key,
-  email text
+  email text,
+  email_confirmed_at timestamptz
 );
 
 create or replace function auth.uid()
@@ -71,12 +72,12 @@ values ('${LEGACY_STAFF}', 'Legacy Person', 'Legacy', 'Staff member');
 `;
 
 const fixtureSql = `
-insert into auth.users (id, email) values
-  ('${USER_A_OWNER}', 'owner-a@example.test'),
-  ('${USER_A_ADMIN}', 'admin-a@example.test'),
-  ('${USER_A_SITE_MANAGER}', 'manager-a@example.test'),
-  ('${USER_MULTI}', 'multi@example.test'),
-  ('${USER_B_OWNER}', 'owner-b@example.test');
+insert into auth.users (id, email, email_confirmed_at) values
+  ('${USER_A_OWNER}', 'owner-a@example.test', now()),
+  ('${USER_A_ADMIN}', 'admin-a@example.test', now()),
+  ('${USER_A_SITE_MANAGER}', 'manager-a@example.test', now()),
+  ('${USER_MULTI}', 'multi@example.test', now()),
+  ('${USER_B_OWNER}', 'owner-b@example.test', now());
 
 insert into public.organisations (id, legal_name, display_name, slug, status) values
   ('${ORG_A}', 'Organisation A Limited', 'Organisation A', 'organisation-a', 'active'),

@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/ui/brand";
 import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
 import { PasswordInput } from "@/components/ui/password-input";
 import { getPlatformBranding } from "@/lib/platform/branding";
+import Link from "next/link";
 
 const initialState: AuthActionState = { message: "" };
 
@@ -51,6 +52,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
             {resetPending ? "Sending..." : "Send reset email"}
           </Button>
         </form>
+        <p className="mt-6 border-t border-purple-100 pt-5 text-center text-sm text-slate-600">Setting up a new commercial account? <Link className="font-bold text-purple-700 underline-offset-4 hover:underline" href="/signup">Create an owner account</Link></p>
       </Panel>
     </main>
   );

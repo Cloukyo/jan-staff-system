@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   commercialCustomerWorkflowV1,
+  onboardingBootstrapCommandSchema,
   onboardingCommandResultSchema,
   onboardingCommandSchema,
   onboardingEventSchema,
@@ -153,6 +154,48 @@ describe("commercial onboarding command and event contracts", () => {
     expect(() => onboardingCommandSchema.parse({ ...command, commandType: "run_sql" })).toThrow();
     expect(() => onboardingCommandSchema.parse({ ...command, expectedSessionRevision: 12 })).toThrow(/revision/i);
     expect(() => onboardingCommandSchema.parse({ ...command, organisationId })).toThrow();
+  });
+
+  it("strictly validates legal acceptance and organisation bootstrap payloads", () => {
+    const legalCommand = {
+      ...command,
+      commandType: "accept_legal_documents",
+      payload: {
+        acceptances: [
+          { documentType: "terms_of_service", documentVersion: "2026-08", locale: "en-GB" },
+          { documentType: "privacy_acknowledgement", documentVersion: "2026-08", locale: "en-GB" },
+          { documentType: "data_processing_agreement", documentVersion: "2026-08", locale: "en-GB" },
+        ],
+        safeRequestMetadata: { source: "commercial_onboarding" },
+      },
+    } as const;
+    expect(onboardingBootstrapCommandSchema.parse(legalCommand)).toEqual(legalCommand);
+
+    const organisationCommand = {
+      ...command,
+      payload: {
+        displayName: "Northstar Demonstration Operations",
+        legalName: "Northstar Demonstration Operations Limited",
+        contactEmail: "OWNER@EXAMPLE.INVALID",
+        country: "GB",
+        timezone: "Europe/London",
+        postalAddress: {
+          line1: "1 Fictional Way",
+          locality: "Exampleton",
+          postcode: "ZZ1 1ZZ",
+        },
+      },
+    } as const;
+    expect(onboardingBootstrapCommandSchema.parse(organisationCommand).payload)
+      .toMatchObject({ contactEmail: "owner@example.invalid" });
+    expect(() => onboardingBootstrapCommandSchema.parse({
+      ...organisationCommand,
+      payload: { ...organisationCommand.payload, role: "organisation_owner" },
+    })).toThrow();
+    expect(() => onboardingBootstrapCommandSchema.parse({
+      ...organisationCommand,
+      payload: { ...organisationCommand.payload, organisationId },
+    })).toThrow();
   });
 
   it("requires replayable command results to state whether data was saved", () => {
