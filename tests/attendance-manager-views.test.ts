@@ -213,7 +213,7 @@ describe("manager attendance views", () => {
   });
 
   it("gives the manager shell an explicit vertical scroll owner", () => {
-    const globalStyles = readFileSync(resolve("src/app/globals.css"), "utf8");
+    const globalStyles = readFileSync(resolve("src/app/platform.css"), "utf8");
     const appShell = readFileSync(
       resolve("src/components/layout/app-shell.tsx"),
       "utf8",
