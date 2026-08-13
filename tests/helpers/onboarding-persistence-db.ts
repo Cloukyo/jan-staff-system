@@ -5,7 +5,8 @@ import { createTenantPrimitivesDatabase } from "./tenant-primitives-db";
 
 export const ONBOARDING_SESSION_A = "31000000-0000-4000-8000-000000000001";
 export const ONBOARDING_SESSION_B = "32000000-0000-4000-8000-000000000001";
-export const ONBOARDING_BOOTSTRAP_SESSION = "33000000-0000-4000-8000-000000000001";
+export const ONBOARDING_BOOTSTRAP_SESSION =
+  "33000000-0000-4000-8000-000000000001";
 export const ONBOARDING_STEP_A = "31000000-0000-4000-8000-000000000002";
 export const ONBOARDING_EVENT_A = "31000000-0000-4000-8000-000000000003";
 export const ONBOARDING_RECEIPT_A = "31000000-0000-4000-8000-000000000004";
@@ -13,13 +14,16 @@ export const ONBOARDING_IDEMPOTENCY_A = "31000000-0000-4000-8000-000000000005";
 
 export async function createOnboardingPersistenceDatabase(): Promise<PGlite> {
   const db = await createTenantPrimitivesDatabase();
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_onboarding_workflow_persistence.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_onboarding_workflow_persistence.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("onboarding workflow persistence migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
   return db;
 }
 
@@ -31,13 +35,16 @@ export async function createOnboardingServiceDatabase(): Promise<PGlite> {
 
 export async function createOnboardingBootstrapDatabase(): Promise<PGlite> {
   const db = await createOnboardingServiceDatabase();
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_commercial_onboarding_bootstrap.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_onboarding_bootstrap.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("commercial onboarding bootstrap migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
   return db;
 }
 
@@ -55,25 +62,31 @@ export async function createFirstSiteOnboardingDatabase(): Promise<PGlite> {
       add column if not exists operating_overrides jsonb not null default '{}'::jsonb,
       add column if not exists staffing_overrides jsonb not null default '{}'::jsonb;
   `);
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_commercial_first_site_onboarding.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_first_site_onboarding.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("commercial first-site onboarding migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
   return db;
 }
 
 export async function createTrialEntitlementsOnboardingDatabase(): Promise<PGlite> {
   const db = await createFirstSiteOnboardingDatabase();
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_commercial_trial_entitlements.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_trial_entitlements.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("commercial trial-entitlements migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
   return db;
 }
 
@@ -106,13 +119,16 @@ export async function createInitialStaffingOnboardingDatabase(): Promise<PGlite>
       pin_hash text, pin_updated_at timestamptz, pin_reset_required boolean not null default true,
       failed_attempt_count integer not null default 0, locked_until timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
   `);
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_commercial_initial_staffing.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_initial_staffing.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("commercial initial-staffing migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
   return db;
 }
 
@@ -138,19 +154,42 @@ export async function createManagerInvitationsOnboardingDatabase(): Promise<PGli
     create view vault.decrypted_secrets as select id,secret,decrypted_secret,name,description,created_at,updated_at
       from (select id,secret,secret decrypted_secret,name,description,created_at,updated_at from vault.secrets) secrets;
   `);
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_commercial_manager_invitations.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_manager_invitations.sql"),
+  );
   if (!migration) {
     await db.close();
     throw new Error("commercial manager-invitations migration is missing");
   }
-  const sql = readFileSync(resolve("supabase/migrations", migration), "utf8")
-    .replace("create extension if not exists supabase_vault with schema vault;", "");
+  const sql = readFileSync(
+    resolve("supabase/migrations", migration),
+    "utf8",
+  ).replace(
+    "create extension if not exists supabase_vault with schema vault;",
+    "",
+  );
   await db.exec(sql);
   return db;
 }
 
-export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
+export async function createStaffInvitationsOnboardingDatabase(): Promise<PGlite> {
+  const db = await createManagerInvitationsOnboardingDatabase();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_staff_invitations.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial staff-invitations migration is missing");
+  }
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
+  return db;
+}
+
+export async function applyOnboardingServiceMigration(
+  db: PGlite,
+): Promise<void> {
   await db.exec(`
     create schema if not exists extensions;
     create or replace function extensions.digest(candidate text, algorithm text)
@@ -158,12 +197,15 @@ export async function applyOnboardingServiceMigration(db: PGlite): Promise<void>
       select decode(md5(candidate) || md5(algorithm || ':' || candidate), 'hex')
     $$
   `);
-  const migration = readdirSync(resolve("supabase/migrations"))
-    .find((name) => name.endsWith("_onboarding_application_service_foundation.sql"));
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_onboarding_application_service_foundation.sql"),
+  );
   if (!migration) {
     throw new Error("onboarding application service migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(
+    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+  );
 }
 
 export async function insertOnboardingSession(
@@ -180,6 +222,11 @@ export async function insertOnboardingSession(
        id, owner_auth_user_id, organisation_id, workflow_key, workflow_version,
        status, current_step_key, revision
      ) values ($1, $2, $3, 'commercial_customer_v1', 1, 'in_progress', $4, 0)`,
-    [values.id, values.ownerAuthUserId, values.organisationId, values.currentStepKey ?? "owner_account"],
+    [
+      values.id,
+      values.ownerAuthUserId,
+      values.organisationId,
+      values.currentStepKey ?? "owner_account",
+    ],
   );
 }

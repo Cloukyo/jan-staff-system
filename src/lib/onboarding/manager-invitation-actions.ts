@@ -162,7 +162,7 @@ export async function finishManagerInvitationsAction(
     formData,
   );
   if (["succeeded", "replayed"].includes(response.commandResult.outcome))
-    redirect("/onboarding/next");
+    redirect("/onboarding/staff-invitations");
   redirect(
     `/onboarding/managers?error=${encodeURIComponent(response.commandResult.resultCode)}`,
   );

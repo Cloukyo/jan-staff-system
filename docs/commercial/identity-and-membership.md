@@ -51,3 +51,11 @@ Invitation tokens are stored only as SHA-256 hashes and are expiring and single-
 Inherited `staff_accounts` remains in `src/lib/auth/actions.ts`, `src/lib/auth/permissions.ts`, `src/lib/accounts/server.ts`, `src/lib/leave/server.ts`, `src/lib/payroll/server.ts` and `src/lib/kiosk/server.ts`. Compliance repositories now accept an optional server-derived commercial context but still retain the legacy account status path for unowned Jan rows.
 
 Workstream 4 adds tenant ownership and membership-aware conversion for staff, staff-site assignments, compliance, settings, work areas, site closures and imports. Its exact compatibility boundary is recorded in `docs/commercial/customer-domain-conversion.md`. Attendance, payroll processing, kiosk tenancy, onboarding, billing, offline changes and Jan migration remain excluded.
+
+### Ordinary staff invitation compatibility
+
+Workstream 7F links a commercial Auth identity directly through `organisation_memberships.staff_id`; that same-organisation composite relationship is authoritative. Acceptance always assigns the fixed organisation-scoped `staff` role. It grants site access only for the selected profile's active or future `staff_site_assignments` whose site is active and belongs to the same organisation. The invitation path cannot select another profile, role, organisation or site, and it never creates or updates a legacy `staff_accounts` row.
+
+This keeps Jan compatibility explicit: unowned Jan identities continue through `staff_accounts`, while commercial self-service must resolve an unambiguous active membership and linked staff profile. A person may hold memberships linked to different staff profiles in different organisations; no global staff-account link is inferred. Any legacy consumer that cannot distinguish several commercial memberships fails closed through `toLegacyAccountCapability()`.
+
+The `staff_accounts` compatibility path can be removed only after all Jan identities have migrated to Auth users plus organisation memberships, every commercial self-service and kiosk consumer resolves a selected membership instead of a global account row, and the Jan migration rehearsal proves that no unowned identity path remains. Removing it is not part of onboarding and must not backfill or guess links from matching names or email addresses.

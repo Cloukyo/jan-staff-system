@@ -1,6 +1,6 @@
 begin;
 
-select plan(33);
+select plan(38);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -220,6 +220,39 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'public.accept_organisation_invitation(text)', 'EXECUTE'),
   'the legacy invitation acceptance boundary is unavailable to browser roles'
+);
+
+select ok(
+  to_regclass('public.staff_invitation_audit_events') is not null
+  and exists(select 1 from information_schema.columns where table_schema='public' and table_name='organisation_invitations' and column_name='staff_id'),
+  'ordinary staff invitations retain a same-organisation staff link and append-only audit evidence'
+);
+
+select ok(
+  has_function_privilege('anon','public.inspect_staff_invitation(text)','EXECUTE')
+  and has_function_privilege('authenticated','public.accept_staff_invitation(text)','EXECUTE')
+  and not has_function_privilege('anon','public.accept_staff_invitation(text)','EXECUTE'),
+  'staff invitation inspection and authenticated acceptance use separate boundaries'
+);
+
+select ok(
+  has_function_privilege('service_role','public.preview_staff_invitation_token(uuid)','EXECUTE')
+  and has_function_privilege('service_role','public.claim_staff_invitation_delivery(uuid)','EXECUTE')
+  and has_function_privilege('service_role','public.record_staff_invitation_delivery(uuid,text,text)','EXECUTE')
+  and not has_function_privilege('authenticated','public.claim_staff_invitation_delivery(uuid)','EXECUTE'),
+  'staff delivery material remains service-role only'
+);
+
+select ok(
+  not has_table_privilege('authenticated','public.staff_invitation_audit_events','INSERT')
+  and not has_table_privilege('authenticated','public.message_outbox','SELECT'),
+  'browser roles cannot append staff invitation evidence or inspect delivery internals'
+);
+
+select ok(
+  not has_function_privilege('authenticated','private.execute_staff_invitation_command(jsonb)','EXECUTE')
+  and not has_function_privilege('anon','private.execute_staff_invitation_command(jsonb)','EXECUTE'),
+  'staff invitation mutation implementation remains private'
 );
 
 select * from finish();

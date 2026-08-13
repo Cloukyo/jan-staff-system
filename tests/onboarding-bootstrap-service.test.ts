@@ -93,6 +93,13 @@ const bootstrap = {
       draftPayload: {},
       validationSummary: [],
     },
+    {
+      stepKey: "staff_invitations",
+      status: "not_started",
+      revision: "0",
+      draftPayload: {},
+      validationSummary: [],
+    },
   ],
   legalDocuments: [
     {
@@ -140,6 +147,10 @@ const bootstrap = {
     soleManagerAcknowledged: false,
     invitations: [],
     availableSites: [],
+  },
+  staffInvitations: {
+    skipped: false,
+    staff: [],
   },
 } as const;
 
@@ -196,12 +207,10 @@ describe("onboarding bootstrap service", () => {
     );
     await expect(
       executeOnboardingBootstrapCommand(command, {
-        rpc: vi
-          .fn()
-          .mockResolvedValue({
-            data: { ...response, bootstrap: { fictionalDemoFallback: true } },
-            error: null,
-          }),
+        rpc: vi.fn().mockResolvedValue({
+          data: { ...response, bootstrap: { fictionalDemoFallback: true } },
+          error: null,
+        }),
       }),
     ).rejects.toThrow(/authoritative response/i);
   });

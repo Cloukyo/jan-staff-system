@@ -6,11 +6,18 @@ const onboardingPaths = new Set([
   "/onboarding/plan",
   "/onboarding/staffing",
   "/onboarding/managers",
+  "/onboarding/staff-invitations",
 ]);
 
 export function managerInvitationPath(token: string): string | null {
   return tokenPattern.test(token)
     ? `/invitations/manager?token=${encodeURIComponent(token)}`
+    : null;
+}
+
+export function staffInvitationPath(token: string): string | null {
+  return tokenPattern.test(token)
+    ? `/invitations/staff?token=${encodeURIComponent(token)}`
     : null;
 }
 
@@ -23,12 +30,15 @@ export function safeCommercialContinuation(
     const url = new URL(value, "https://commercial.invalid");
     if (
       url.origin !== "https://commercial.invalid" ||
-      url.pathname !== "/invitations/manager"
+      !["/invitations/manager", "/invitations/staff"].includes(url.pathname)
     )
       return null;
     if ([...url.searchParams.keys()].some((key) => key !== "token"))
       return null;
-    return managerInvitationPath(url.searchParams.get("token") ?? "");
+    const token = url.searchParams.get("token") ?? "";
+    return url.pathname === "/invitations/staff"
+      ? staffInvitationPath(token)
+      : managerInvitationPath(token);
   } catch {
     return null;
   }

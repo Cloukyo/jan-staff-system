@@ -953,6 +953,25 @@ tbody tr:hover {
 .manager-invitation-empty svg { width: 24px; height: 24px; color: #6657c7; }
 .manager-completion { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-top: 1px solid #dfe3ea; padding-top: 22px; }
 
+.staff-invitations { display: grid; gap: 28px; }
+.staff-invitation-form { display: grid; gap: 22px; }
+.staff-invitation-selection { min-width: 0; margin: 0; border: 1px solid #dfe3ea; border-radius: 9px; padding: 20px; }
+.staff-invitation-selection legend { padding-inline: 6px; color: #24173f; font-size: 18px; font-weight: 800; }
+.staff-invitation-selection > p { margin: 0 0 16px; color: #667085; font-size: 14px; line-height: 1.55; }
+.staff-invitation-selection ul { display: grid; gap: 1px; margin: 0; padding: 0; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 8px; background: #e4e7ec; list-style: none; }
+.staff-invitation-selection li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; background: #fff; padding: 13px 14px; }
+.staff-invitation-selection label { display: flex; min-width: 0; min-height: 44px; align-items: center; gap: 12px; cursor: pointer; }
+.staff-invitation-selection input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: #4b2a7a; }
+.staff-invitation-selection input:disabled { cursor: not-allowed; opacity: .55; }
+.staff-invitation-selection label span { display: grid; min-width: 0; gap: 3px; }
+.staff-invitation-selection label strong, .staff-invitation-selection label small { overflow-wrap: anywhere; }
+.staff-invitation-selection label small, .staff-invitation-selection li > small { color: #667085; font-size: 12px; }
+.staff-account-status { border-radius: 999px; background: #f2f4f7; padding: 5px 9px; color: #475467; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.staff-account-status--account_linked { background: #e4f3ec; color: #287a55; }
+.staff-account-status--invitation_pending { background: #ebe6f2; color: #4b2a7a; }
+.staff-account-status--delivery_failed, .staff-account-status--invitation_expired, .staff-account-status--needs_review { background: #fff1ee; color: #a13b2b; }
+.staff-account-status--pin_only { background: #fcf8ed; color: #7a5a18; }
+
 .invitation-shell { display: grid; min-height: 100dvh; place-items: center; gap: 28px; background: #f7f8fb; padding: 24px; }
 .invitation-card { width: min(100%, 590px); border: 1px solid #dfe3ea; border-radius: 10px; background: #fff; padding: clamp(24px, 5vw, 48px); box-shadow: 0 20px 55px rgba(36, 23, 63, .08); }
 .invitation-card .brand-mark { margin-bottom: 42px; }
@@ -972,6 +991,9 @@ tbody tr:hover {
   .onboarding-signout { padding-inline: 8px; }
   .manager-invitation-list dl { grid-template-columns: 1fr; }
   .manager-completion, .manager-completion form, .manager-completion .ui-button { width: 100%; }
+  .staff-invitation-selection { padding: 14px; }
+  .staff-invitation-selection li { grid-template-columns: minmax(0, 1fr) auto; }
+  .staff-invitation-selection li > small { grid-column: 1 / -1; padding-left: 32px; }
   .invitation-shell { align-content: start; padding: 16px; }
   .invitation-card { border-radius: 8px; }
 }
