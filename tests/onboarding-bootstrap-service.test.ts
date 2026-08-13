@@ -41,6 +41,7 @@ const bootstrap = {
     { stepKey: "organisation", status: "in_progress", revision: "0", draftPayload: {}, validationSummary: [] },
     { stepKey: "first_site", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
     { stepKey: "subscription", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
+    { stepKey: "staffing", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
   ],
   legalDocuments: [
     { documentType: "terms_of_service", documentVersion: "2026-08", locale: "en-GB", title: "Terms of Service", summary: "Commercial platform terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
@@ -50,6 +51,7 @@ const bootstrap = {
   siteSummary: null,
   planCatalogue: [],
   subscriptionSummary: null,
+  staffing: { firstSiteId: null, firstSiteName: null, activeStaffCount: 0, staffLimit: null, remainingStaffAllowance: null, committedThisStep: 0, skipped: false, activeBatch: null },
 } as const;
 
 describe("onboarding bootstrap service", () => {

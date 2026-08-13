@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(24);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -123,6 +123,43 @@ select ok(
   and not has_function_privilege('anon', 'public.commercial_capability_decision(uuid,text,jsonb)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'private.commercial_capability_decision(uuid,text,jsonb)', 'EXECUTE'),
   'capability decisions use an authenticated guarded boundary with a private evaluator'
+);
+
+select ok(
+  (select count(*) = 6 from information_schema.columns
+   where table_schema = 'public' and table_name = 'staff_import_batches'
+     and column_name in ('onboarding_session_id','safe_filename','file_digest','expires_at','reviewed_set_hash','excluded_rows')),
+  'staff import batches retain bounded resumable review evidence without raw files'
+);
+
+select ok(
+  (select count(*) = 4 from information_schema.columns
+   where table_schema = 'public' and table_name = 'staff_import_rows'
+     and column_name in ('source_row_number','row_decision','warning_codes','attendance_eligible_requested')),
+  'staff import rows retain explicit review and attendance-eligibility decisions'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.staff_import_batches', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.staff_import_rows', 'INSERT'),
+  'browser clients cannot bypass guarded staffing import commands'
+);
+
+select ok(
+  not has_function_privilege('authenticated', 'private.execute_commercial_staffing_command(jsonb)', 'EXECUTE')
+  and not has_function_privilege('anon', 'private.execute_commercial_staffing_command(jsonb)', 'EXECUTE'),
+  'the staffing mutation implementation remains private'
+);
+
+select ok(
+  exists(select 1 from pg_trigger where tgname='staff_profiles_commercial_capacity' and not tgisinternal)
+  and exists(select 1 from pg_trigger where tgname='staff_profiles_commercial_secure_defaults' and not tgisinternal),
+  'all commercial staff mutation paths enforce plan capacity and secure kiosk defaults'
+);
+
+select ok(
+  not exists (select 1 from public.staff_kiosk_settings where kiosk_enabled or pin_hash is not null),
+  'initial staffing creates no enabled kiosk access or PIN authority'
 );
 
 select * from finish();

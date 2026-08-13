@@ -43,6 +43,13 @@ export async function executeOnboardingBootstrapCommand(
     "save_step_draft",
     "create_first_site",
     "select_plan",
+    "save_staff_draft",
+    "create_staff",
+    "preview_staff_import",
+    "review_staff_import_row",
+    "commit_staff_import",
+    "complete_staffing",
+    "skip_staffing",
   ].includes(command.commandType)) {
     throw new Error("This command is not part of the available onboarding milestones.");
   }

@@ -77,6 +77,45 @@ export async function createTrialEntitlementsOnboardingDatabase(): Promise<PGlit
   return db;
 }
 
+export async function createInitialStaffingOnboardingDatabase(): Promise<PGlite> {
+  const db = await createTrialEntitlementsOnboardingDatabase();
+  await db.exec(`
+    alter table public.staff_profiles
+      add column if not exists email text,
+      add column if not exists appointment_date date;
+    do $$ begin create type public.staff_import_batch_status as enum ('previewing','preview_ready','invalid','committed'); exception when duplicate_object then null; end $$;
+    do $$ begin create type public.staff_import_row_status as enum ('valid','invalid','committed'); exception when duplicate_object then null; end $$;
+    create table if not exists public.staff_import_batches (
+      id uuid primary key default gen_random_uuid(), organisation_id uuid not null, site_id uuid not null,
+      idempotency_key text not null, request_hash text not null, status public.staff_import_batch_status not null default 'previewing',
+      total_rows integer not null default 0, valid_rows integer not null default 0, invalid_rows integer not null default 0,
+      created_by_membership_id uuid not null, committed_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+      unique(organisation_id,id), unique(organisation_id,idempotency_key),
+      foreign key(organisation_id,site_id) references public.organisation_sites(organisation_id,id),
+      foreign key(organisation_id,created_by_membership_id) references public.organisation_memberships(organisation_id,id));
+    create table if not exists public.staff_import_rows (
+      id uuid primary key default gen_random_uuid(), organisation_id uuid not null, batch_id uuid not null, site_id uuid not null,
+      source_row text not null, external_key text not null, proposed_staff_id text not null, status public.staff_import_row_status not null,
+      input_data jsonb not null, normalised_data jsonb not null, validation_errors jsonb not null default '[]', imported_staff_id text, created_at timestamptz not null default now(),
+      unique(organisation_id,id), unique(organisation_id,batch_id,external_key),
+      foreign key(organisation_id,batch_id) references public.staff_import_batches(organisation_id,id),
+      foreign key(organisation_id,site_id) references public.organisation_sites(organisation_id,id),
+      foreign key(organisation_id,imported_staff_id) references public.staff_profiles(organisation_id,id));
+    create table if not exists public.staff_kiosk_settings (
+      staff_id text primary key references public.staff_profiles(id), kiosk_enabled boolean not null default true,
+      pin_hash text, pin_updated_at timestamptz, pin_reset_required boolean not null default true,
+      failed_attempt_count integer not null default 0, locked_until timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+  `);
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_commercial_initial_staffing.sql"));
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial initial-staffing migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
   await db.exec(`
     create schema if not exists extensions;

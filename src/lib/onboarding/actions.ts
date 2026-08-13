@@ -248,7 +248,7 @@ export async function startFreeTrialAction(
     idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
     expectedSessionRevision: String(formData.get("expectedSessionRevision") ?? ""), payload: parsed.data,
   });
-  if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") redirect("/onboarding/next");
+  if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") redirect("/onboarding/staffing");
   return { ok: false, code: response.commandResult.resultCode,
     message: response.commandResult.issues[0]?.message ?? "Nothing was saved. Reload and try again.", fieldErrors: {}, values };
 }

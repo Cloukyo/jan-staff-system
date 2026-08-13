@@ -675,6 +675,39 @@ tbody tr:hover {
   }
 }
 
+.staffing-setup { display: grid; gap: 24px; }
+.staffing-summary { display: grid; gap: 10px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.staffing-summary > div { display: flex; align-items: center; gap: 12px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; padding: 15px; }
+.staffing-summary svg { width: 21px; color: #4b2a7a; }
+.staffing-summary span,.staffing-paths span { display: grid; gap: 3px; }
+.staffing-summary small,.staffing-paths small { color: #667085; font-size: 12px; }
+.staffing-paths { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.staffing-paths button { display: flex; min-height: 76px; align-items: center; gap: 12px; border: 1px solid #cfd5df; border-radius: 8px; background: #fff; padding: 15px; color: #20242c; text-align: left; cursor: pointer; }
+.staffing-paths button[aria-selected="true"] { border-color: #63418f; box-shadow: 0 0 0 2px #ebe6f2; }
+.staffing-paths svg { width: 23px; color: #4b2a7a; }
+.staffing-form,.staffing-import,.staffing-review { border: 1px solid #dfe3ea; border-radius: 10px; background: #fff; padding: 24px; }
+.staffing-form .onboarding-form-section { display: grid; gap: 20px; }
+.staffing-form .onboarding-form-section h2 { margin: 0; }.staffing-form .onboarding-form-section > div:first-child p { margin: 6px 0 0; color: #667085; }
+.onboarding-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.onboarding-field { display: grid; align-content: start; gap: 7px; font-size: 14px; font-weight: 700; }
+.onboarding-field span em { color: #667085; font-weight: 500; }
+.onboarding-field input,.onboarding-field select { width: 100%; min-height: 48px; border: 1px solid #aeb6c4; border-radius: 7px; background: #fff; padding: 10px 12px; color: #20242c; font: inherit; font-weight: 500; }
+.onboarding-field input:focus-visible,.onboarding-field select:focus-visible { border-color: #4b2a7a; outline: 3px solid #dcd3e9; outline-offset: 1px; }
+.onboarding-field input[aria-invalid="true"] { border-color: #b42318; }.onboarding-field small { min-height: 17px; color: #667085; font-size: 12px; font-weight: 500; line-height: 1.4; }.onboarding-field input[aria-invalid="true"] + small { color: #b42318; }
+.staffing-check { display: flex; grid-column: 1/-1; min-height: 54px; align-items: flex-start; gap: 12px; border: 1px solid #dfe3ea; border-radius: 8px; padding: 14px; cursor: pointer; }
+.staffing-check input { width: 20px; height: 20px; margin-top: 2px; accent-color: #4b2a7a; }
+.staffing-check span { display: grid; gap: 4px; }.staffing-check small { color: #667085; }
+.staffing-upload { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; }
+.staffing-upload > svg { width: 34px; height: 34px; color: #4b2a7a; }.staffing-upload h2 { margin: 0; }.staffing-upload p { margin: 5px 0; color: #667085; line-height: 1.5; }.staffing-upload a { color: #4b2a7a; font-weight: 750; }
+.staffing-upload input { grid-column: 1/-1; min-height: 48px; border: 1px dashed #aeb6c4; border-radius: 8px; padding: 11px; }
+.staffing-upload button { grid-column: 1/-1; justify-self: end; }
+.staffing-review { margin-top: 20px; padding: 0; overflow: hidden; }.staffing-review__heading { padding: 20px; border-bottom: 1px solid #e4e7ec; }.staffing-review__heading span { color: #6941c6; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }.staffing-review__heading h2 { margin: 5px 0; }.staffing-review__heading p { margin: 0; color: #667085; }
+.staffing-review__metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; background: #e4e7ec; border-bottom: 1px solid #e4e7ec; }.staffing-review__metrics span { display: grid; gap: 3px; background: #fff; padding: 13px 16px; color: #667085; font-size: 12px; }.staffing-review__metrics strong { color: #20242c; font-size: 17px; }
+.staffing-review__filters { display: flex; flex-wrap: wrap; gap: 7px; padding: 13px 15px; border-bottom: 1px solid #e4e7ec; }.staffing-review__filters button { min-height: 40px; border: 1px solid #cfd5df; border-radius: 20px; background: #fff; padding: 7px 13px; color: #475467; font-weight: 700; cursor: pointer; }.staffing-review__filters button[aria-pressed="true"] { border-color: #4b2a7a; background: #ebe6f2; color: #4b2a7a; }.staffing-review__filters button:focus-visible { outline: 3px solid #dcd3e9; outline-offset: 2px; }
+.staffing-review__table { overflow-x: auto; }.staffing-review table { width: 100%; border-collapse: collapse; min-width: 690px; }.staffing-review th,.staffing-review td { padding: 13px 15px; border-bottom: 1px solid #eaecf0; text-align: left; vertical-align: top; font-size: 13px; }.staffing-review th { background: #f8f9fb; color: #475467; }.staffing-review td small { display: block; margin-top: 3px; color: #667085; }.staffing-review td form { display: flex; gap: 7px; }.staffing-code { display: block; color: #a13b2b; }.staffing-valid { color: #287a55; font-weight: 700; }
+.staffing-safety { display: flex; gap: 12px; border-left: 3px solid #b68a28; background: #fcf8ed; padding: 16px; }.staffing-safety svg { flex: 0 0 auto; width: 20px; color: #8a6417; }.staffing-safety p { margin: 5px 0 0; color: #5e5541; line-height: 1.5; }
+@media (max-width: 640px) { .staffing-summary,.staffing-paths,.onboarding-form-grid { grid-template-columns: 1fr; }.staffing-form,.staffing-import { padding: 18px; }.staffing-upload button { width: 100%; }.staffing-review { margin-inline: -18px; border-inline: 0; border-radius: 0; }.staffing-review__metrics { grid-template-columns: 1fr 1fr 1fr; }.staffing-review table,.staffing-review tbody,.staffing-review tr,.staffing-review td { display: block; min-width: 0; width: 100%; }.staffing-review thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }.staffing-review tr { border-bottom: 8px solid #f2f4f7; padding: 8px 0; }.staffing-review td { display: grid; grid-template-columns: 105px 1fr; gap: 10px; border: 0; padding: 9px 15px; }.staffing-review td::before { content: attr(data-label); color: #667085; font-size: 12px; font-weight: 750; }.staffing-review td form { flex-wrap: wrap; }.staffing-review__empty { padding: 18px; } }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

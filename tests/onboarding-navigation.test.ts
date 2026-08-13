@@ -12,6 +12,7 @@ function snapshot(overrides: Partial<OnboardingBootstrapSnapshot["security"]> = 
       { stepKey: "organisation", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
       { stepKey: "first_site", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
       { stepKey: "subscription", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
+      { stepKey: "staffing", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
     ],
     legalDocuments: [
       { documentType: "terms_of_service", documentVersion: "2026-08", locale: "en-GB", title: "Terms of Service", summary: "Fictional commercial terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: false },
@@ -21,6 +22,7 @@ function snapshot(overrides: Partial<OnboardingBootstrapSnapshot["security"]> = 
     siteSummary: null,
     planCatalogue: [],
     subscriptionSummary: null,
+    staffing: { firstSiteId: null, firstSiteName: null, activeStaffCount: 0, staffLimit: null, remainingStaffAllowance: null, committedThisStep: 0, skipped: false, activeBatch: null },
   };
 }
 
@@ -34,6 +36,8 @@ describe("authoritative onboarding resume route", () => {
     complete.steps[3].status = "complete";
     expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/plan");
     complete.steps[4].status = "complete";
+    expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/staffing");
+    complete.steps[5].status = "complete";
     expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/next");
   });
 });

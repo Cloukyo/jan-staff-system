@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  manualStaffDraftPayloadSchema, manualStaffPayloadSchema, staffImportCommitPayloadSchema, staffImportDecisionPayloadSchema,
+  staffImportUploadPayloadSchema, staffingSkipPayloadSchema, staffingSnapshotSchema,
+} from "./staffing-contracts";
 
 export const ONBOARDING_CONTRACT_SCHEMA_VERSION = 1 as const;
 export const COMMERCIAL_CUSTOMER_WORKFLOW_KEY = "commercial_customer_v1" as const;
@@ -72,6 +76,7 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "organisation",
   "first_site",
   "subscription",
+  "staffing",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([
@@ -246,9 +251,13 @@ export const onboardingCommandTypeSchema = z.enum([
   "create_first_site",
   "select_plan",
   "save_settings",
+  "save_staff_draft",
   "create_staff",
   "preview_staff_import",
+  "review_staff_import_row",
   "commit_staff_import",
+  "complete_staffing",
+  "skip_staffing",
   "create_manager_invitations",
   "create_staff_invitations",
   "start_kiosk_registration",
@@ -457,6 +466,19 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
       }
     }
   }
+  const staffingSchema = command.commandType === "save_staff_draft" ? manualStaffDraftPayloadSchema
+    : command.commandType === "create_staff" ? manualStaffPayloadSchema
+    : command.commandType === "preview_staff_import" ? staffImportUploadPayloadSchema
+      : command.commandType === "review_staff_import_row" ? staffImportDecisionPayloadSchema
+        : command.commandType === "commit_staff_import" ? staffImportCommitPayloadSchema
+          : command.commandType === "skip_staffing" ? staffingSkipPayloadSchema : null;
+  if (staffingSchema) {
+    const result = staffingSchema.safeParse(command.payload);
+    if (!result.success) for (const issue of result.error.issues) context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+  }
+  if (command.commandType === "complete_staffing" && Object.keys(command.payload).length !== 0) {
+    context.addIssue({ code: "custom", message: "Complete staffing accepts no payload", path: ["payload"] });
+  }
   if (command.commandType === "save_step_draft") {
     const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
     if (!result.success) {
@@ -478,6 +500,12 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
   if (command.commandType === "select_plan") {
     return { ...command, payload: planSelectionPayloadSchema.parse(command.payload) };
   }
+  if (command.commandType === "save_staff_draft") return { ...command, payload: manualStaffDraftPayloadSchema.parse(command.payload) };
+  if (command.commandType === "create_staff") return { ...command, payload: manualStaffPayloadSchema.parse(command.payload) };
+  if (command.commandType === "preview_staff_import") return { ...command, payload: staffImportUploadPayloadSchema.parse(command.payload) };
+  if (command.commandType === "review_staff_import_row") return { ...command, payload: staffImportDecisionPayloadSchema.parse(command.payload) };
+  if (command.commandType === "commit_staff_import") return { ...command, payload: staffImportCommitPayloadSchema.parse(command.payload) };
+  if (command.commandType === "skip_staffing") return { ...command, payload: staffingSkipPayloadSchema.parse(command.payload) };
   if (command.commandType === "save_step_draft") {
     return { ...command, payload: firstSiteDraftPayloadSchema.parse(command.payload) };
   }
@@ -593,8 +621,14 @@ export const onboardingEventTypeSchema = z.enum([
   "trial_activated",
   "settings_completed",
   "staff_import_started",
+  "staffing_started",
+  "staff_manual_created",
+  "staff_import_uploaded",
   "staff_import_validated",
+  "staff_import_reviewed",
   "staff_import_committed",
+  "staffing_skipped",
+  "staffing_completed",
   "manager_invitations_created",
   "staff_invitations_created",
   "kiosk_registration_started",
@@ -800,7 +834,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     revision: revisionSchema,
     draftPayload: draftPayloadSchema,
     validationSummary: z.array(validationIssueSchema),
-  }).strict()).length(5),
+  }).strict()).length(6),
   legalDocuments: z.array(z.object({
     documentType: legalDocumentTypeSchema,
     documentVersion: z.string().min(1).max(64),
@@ -817,6 +851,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
   }).strict().nullable(),
   planCatalogue: z.array(commercialPlanCatalogueEntrySchema).max(20),
   subscriptionSummary: organisationSubscriptionSummarySchema.nullable(),
+  staffing: staffingSnapshotSchema,
 }).strict();
 
 export type OnboardingBootstrapSnapshot = z.infer<typeof onboardingBootstrapSnapshotSchema>;
