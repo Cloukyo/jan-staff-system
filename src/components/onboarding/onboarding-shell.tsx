@@ -4,12 +4,13 @@ import { BrandMark } from "@/components/ui/brand";
 import { signOutAction } from "@/lib/auth/actions";
 import type { ReactNode } from "react";
 
-type ProgressKey = "owner_security" | "legal_acceptance" | "organisation";
+type ProgressKey = "owner_security" | "legal_acceptance" | "organisation" | "first_site";
 
 const steps: Array<{ key: ProgressKey; label: string }> = [
   { key: "owner_security", label: "Account security" },
   { key: "legal_acceptance", label: "Legal acceptance" },
   { key: "organisation", label: "Organisation" },
+  { key: "first_site", label: "First site" },
 ];
 
 export function OnboardingShell({
@@ -27,14 +28,14 @@ export function OnboardingShell({
         <BrandMark />
         <div className="onboarding-header__actions">
           <Link href="mailto:support@example.invalid" className="onboarding-help-link"><HelpCircle aria-hidden /> Need help?</Link>
-          <form action={signOutAction}><button className="onboarding-signout" type="submit"><LogOut aria-hidden /> Save and exit</button></form>
+          <form action={signOutAction}><button className="onboarding-signout" type="submit"><LogOut aria-hidden /> Sign out</button></form>
         </div>
       </header>
 
       <div className="onboarding-mobile-progress" aria-label="Onboarding progress">
-        <p>Step {steps.findIndex((step) => step.key === activeStep) + 1} of 3</p>
+        <p>Step {steps.findIndex((step) => step.key === activeStep) + 1} of {steps.length}</p>
         <strong>{steps.find((step) => step.key === activeStep)?.label}</strong>
-        <div aria-hidden><span style={{ width: `${((steps.findIndex((step) => step.key === activeStep) + 1) / 3) * 100}%` }} /></div>
+        <div aria-hidden><span style={{ width: `${((steps.findIndex((step) => step.key === activeStep) + 1) / steps.length) * 100}%` }} /></div>
       </div>
 
       <div className="onboarding-layout">

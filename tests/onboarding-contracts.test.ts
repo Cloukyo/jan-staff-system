@@ -10,6 +10,7 @@ import {
   onboardingStepStateSchema,
   onboardingWorkflowDefinitionSchema,
   onboardingWorkflowStateSchema,
+  firstSitePayloadSchema,
 } from "@/lib/onboarding/contracts";
 
 const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -195,6 +196,70 @@ describe("commercial onboarding command and event contracts", () => {
     expect(() => onboardingBootstrapCommandSchema.parse({
       ...organisationCommand,
       payload: { ...organisationCommand.payload, organisationId },
+    })).toThrow();
+  });
+
+  it("strictly validates the versioned first-site payload and operational defaults", () => {
+    const payload = {
+      siteName: "Northstar Central",
+      displayName: "Central",
+      contactPhone: "+44 20 7946 0999",
+      siteEmail: "CENTRAL@EXAMPLE.INVALID",
+      country: "GB",
+      timezone: "Europe/London",
+      postalAddress: {
+        line1: "7 Fictional Square",
+        locality: "Exampleton",
+        postcode: "ZZ2 2ZZ",
+      },
+      openingHours: Array.from({ length: 7 }, (_, index) => ({
+        dayOfWeek: index + 1,
+        intervals: index < 5 ? [{ opensAt: "08:00", closesAt: "18:00" }] : [],
+      })),
+      workWeekStarts: 1,
+      operationalDayBoundary: "04:00",
+    };
+
+    expect(firstSitePayloadSchema.parse(payload)).toMatchObject({ siteEmail: "central@example.invalid" });
+    expect(onboardingBootstrapCommandSchema.parse({
+      ...command,
+      commandType: "create_first_site",
+      payload,
+    }).payload).toEqual(firstSitePayloadSchema.parse(payload));
+    expect(() => firstSitePayloadSchema.parse({ ...payload, ownerRole: "organisation_owner" })).toThrow();
+    expect(() => firstSitePayloadSchema.parse({ ...payload, timezone: "UTC" })).toThrow();
+    expect(() => firstSitePayloadSchema.parse({ ...payload, operationalDayBoundary: "12:00" })).toThrow();
+    expect(() => firstSitePayloadSchema.parse({
+      ...payload,
+      openingHours: payload.openingHours.map((day, index) => index === 1
+        ? { ...day, dayOfWeek: 1 }
+        : day),
+    })).toThrow(/seven|unique/i);
+    expect(() => firstSitePayloadSchema.parse({
+      ...payload,
+      openingHours: payload.openingHours.map((day, index) => index === 0
+        ? { ...day, intervals: [{ opensAt: "12:00", closesAt: "10:00" }] }
+        : day),
+    })).toThrow(/opening|closing/i);
+  });
+
+  it("allows bounded incomplete first-site drafts without accepting unknown nested fields", () => {
+    const draftCommand = {
+      ...command,
+      commandType: "save_step_draft",
+      payload: {
+        stepKey: "first_site",
+        draft: {
+          siteName: "Northstar Central",
+          postalAddress: { line1: "" },
+          openingHours: [{ dayOfWeek: 1, intervals: [{ opensAt: "", closesAt: "" }] }],
+        },
+      },
+    } as const;
+    expect(onboardingBootstrapCommandSchema.parse(draftCommand).payload).toEqual(draftCommand.payload);
+    expect(() => onboardingBootstrapCommandSchema.parse({
+      ...draftCommand,
+      payload: { stepKey: "first_site", draft: { postalAddress: { accessToken: "unsafe" } } },
     })).toThrow();
   });
 

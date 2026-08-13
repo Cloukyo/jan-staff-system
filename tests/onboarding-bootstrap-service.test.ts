@@ -39,12 +39,14 @@ const bootstrap = {
     { stepKey: "owner_security", status: "complete", revision: "0", draftPayload: {}, validationSummary: [] },
     { stepKey: "legal_acceptance", status: "complete", revision: "1", draftPayload: {}, validationSummary: [] },
     { stepKey: "organisation", status: "in_progress", revision: "0", draftPayload: {}, validationSummary: [] },
+    { stepKey: "first_site", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
   ],
   legalDocuments: [
     { documentType: "terms_of_service", documentVersion: "2026-08", locale: "en-GB", title: "Terms of Service", summary: "Commercial platform terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
     { documentType: "privacy_acknowledgement", documentVersion: "2026-08", locale: "en-GB", title: "Privacy acknowledgement", summary: "Commercial privacy information.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
     { documentType: "data_processing_agreement", documentVersion: "2026-08", locale: "en-GB", title: "Data Processing Agreement", summary: "Commercial processor terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
   ],
+  siteSummary: null,
 } as const;
 
 describe("onboarding bootstrap service", () => {
@@ -79,5 +81,21 @@ describe("onboarding bootstrap service", () => {
     await expect(executeOnboardingBootstrapCommand(command, {
       rpc: vi.fn().mockResolvedValue({ data: { ...response, bootstrap: { fictionalDemoFallback: true } }, error: null }),
     })).rejects.toThrow(/authoritative response/i);
+  });
+
+  it("accepts an exact terminal replay after the authoritative workflow has advanced", async () => {
+    const response = {
+      commandResult: {
+        schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
+        sessionId, commandType: "create_organisation", outcome: "replayed", dataState: "saved",
+        resultCode: "organisation_created", resultReference: { organisationId: "71000000-0000-4000-8000-000000000009" },
+        sessionRevision: "2", issues: [],
+      },
+      readiness: null,
+      bootstrap: { ...bootstrap, session: { ...bootstrap.session, revision: "5" } },
+    };
+    await expect(executeOnboardingBootstrapCommand(command, {
+      rpc: vi.fn().mockResolvedValue({ data: response, error: null }),
+    })).resolves.toEqual(expect.objectContaining({ commandResult: expect.objectContaining({ outcome: "replayed" }) }));
   });
 });

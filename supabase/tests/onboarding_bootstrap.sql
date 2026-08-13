@@ -1,6 +1,6 @@
 begin;
 
-select plan(7);
+select plan(11);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -53,6 +53,29 @@ select ok(
       and privilege.routine_name like 'commercial_onboarding_%'
   ),
   'private bootstrap helpers are not executable by browser roles'
+);
+
+select ok(
+  not has_function_privilege('authenticated', 'private.execute_onboarding_bootstrap_command_7a(jsonb)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'private.commercial_allocate_site_slug(uuid,text)', 'EXECUTE'),
+  'first-site implementation helpers are unavailable to browser roles'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.onboarding_events', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.onboarding_command_receipts', 'INSERT'),
+  'first-site audit evidence and command receipts remain RPC-only'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.membership_site_access', 'INSERT'),
+  'owner site access cannot be granted directly by a browser client'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.organisation_sites', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.site_settings', 'INSERT'),
+  'site and site-default creation are restricted to guarded server boundaries'
 );
 
 select * from finish();

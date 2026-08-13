@@ -41,6 +41,30 @@ export async function createOnboardingBootstrapDatabase(): Promise<PGlite> {
   return db;
 }
 
+export async function createFirstSiteOnboardingDatabase(): Promise<PGlite> {
+  const db = await createOnboardingBootstrapDatabase();
+  // The tenant fixture replays the minimal prerequisite chain. Mirror the
+  // additive customer-domain columns consumed by the first-site defaults.
+  await db.exec(`
+    alter table public.organisation_settings
+      add column if not exists operating_defaults jsonb not null default '{}'::jsonb,
+      add column if not exists staffing_defaults jsonb not null default '{}'::jsonb;
+    alter table public.site_settings
+      add column if not exists timezone_override text,
+      add column if not exists work_week_starts_override smallint check (work_week_starts_override between 1 and 7),
+      add column if not exists operating_overrides jsonb not null default '{}'::jsonb,
+      add column if not exists staffing_overrides jsonb not null default '{}'::jsonb;
+  `);
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_commercial_first_site_onboarding.sql"));
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial first-site onboarding migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
   await db.exec(`
     create schema if not exists extensions;

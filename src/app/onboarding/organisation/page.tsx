@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function OrganisationPage() {
   const snapshot = await loadOnboardingBootstrapServer();
-  if (snapshot.session.organisationId) redirect("/onboarding/next");
+  if (snapshot.session.organisationId) redirect("/onboarding/site");
   if (!snapshot.security.emailVerified || snapshot.security.assuranceLevel !== "aal2") redirect("/onboarding");
   if (!snapshot.security.legalAcceptancesCurrent) redirect("/onboarding/legal");
   const { data } = await (await createSupabaseServerClient()).auth.getUser();

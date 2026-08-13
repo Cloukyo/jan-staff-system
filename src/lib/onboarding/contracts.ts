@@ -70,6 +70,7 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "owner_security",
   "legal_acceptance",
   "organisation",
+  "first_site",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([
@@ -282,6 +283,108 @@ export const organisationCreationPayloadSchema = z.object({
   phone: z.string().trim().min(5).max(40).optional(),
 }).strict();
 
+const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a 24-hour time in HH:mm format");
+
+const siteOpeningIntervalSchema = z.object({
+  opensAt: localTimeSchema,
+  closesAt: localTimeSchema,
+}).strict().superRefine((interval, context) => {
+  if (interval.opensAt >= interval.closesAt) {
+    context.addIssue({
+      code: "custom",
+      message: "Opening time must be before closing time",
+      path: ["closesAt"],
+    });
+  }
+});
+
+const siteOpeningDaySchema = z.object({
+  dayOfWeek: z.number().int().min(1).max(7),
+  intervals: z.array(siteOpeningIntervalSchema).max(4),
+}).strict().superRefine((day, context) => {
+  const sorted = [...day.intervals].sort((left, right) => left.opensAt.localeCompare(right.opensAt));
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (sorted[index - 1].closesAt > sorted[index].opensAt) {
+      context.addIssue({
+        code: "custom",
+        message: "Opening intervals cannot overlap",
+        path: ["intervals"],
+      });
+      return;
+    }
+  }
+});
+
+export const firstSitePayloadSchema = z.object({
+  siteName: z.string().trim().min(2).max(160),
+  displayName: z.string().trim().min(2).max(160).optional(),
+  contactPhone: z.string().trim().min(5).max(40),
+  siteEmail: z.email().transform((value) => value.toLowerCase()).optional(),
+  country: z.literal("GB"),
+  timezone: z.literal("Europe/London"),
+  postalAddress: z.object({
+    line1: z.string().trim().min(2).max(160),
+    line2: z.string().trim().max(160).optional(),
+    locality: z.string().trim().min(2).max(120),
+    region: z.string().trim().max(120).optional(),
+    postcode: z.string().trim().min(2).max(24),
+  }).strict(),
+  openingHours: z.array(siteOpeningDaySchema).length(7),
+  workWeekStarts: z.number().int().min(1).max(7),
+  operationalDayBoundary: localTimeSchema,
+}).strict().superRefine((site, context) => {
+  const days = new Set(site.openingHours.map((day) => day.dayOfWeek));
+  if (days.size !== 7) {
+    context.addIssue({
+      code: "custom",
+      message: "Opening hours must contain seven unique days",
+      path: ["openingHours"],
+    });
+  }
+  if (!site.openingHours.some((day) => day.intervals.length > 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "At least one opening interval is required",
+      path: ["openingHours"],
+    });
+  }
+  if (site.operationalDayBoundary > "06:00") {
+    context.addIssue({
+      code: "custom",
+      message: "Operational day boundary must be between 00:00 and 06:00",
+      path: ["operationalDayBoundary"],
+    });
+  }
+});
+
+export const firstSiteDraftPayloadSchema = z.object({
+  stepKey: z.literal("first_site"),
+  draft: z.object({
+    siteName: z.string().trim().max(160).optional(),
+    displayName: z.string().trim().max(160).optional(),
+    contactPhone: z.string().trim().max(40).optional(),
+    siteEmail: z.string().trim().max(254).optional(),
+    country: z.literal("GB").optional(),
+    timezone: z.literal("Europe/London").optional(),
+    postalAddress: z.object({
+      line1: z.string().trim().max(160).optional(),
+      line2: z.string().trim().max(160).optional(),
+      locality: z.string().trim().max(120).optional(),
+      region: z.string().trim().max(120).optional(),
+      postcode: z.string().trim().max(24).optional(),
+    }).strict().optional(),
+    openingHours: z.array(z.object({
+      dayOfWeek: z.number().int().min(1).max(7),
+      intervals: z.array(z.object({
+        opensAt: z.string().max(5),
+        closesAt: z.string().max(5),
+      }).strict()).max(4),
+    }).strict()).max(7).optional(),
+    workWeekStarts: z.number().int().min(1).max(7).optional(),
+    operationalDayBoundary: localTimeSchema.optional(),
+  }).strict(),
+}).strict();
+
 export const onboardingCommandSchema = z.object({
   schemaVersion: z.literal(ONBOARDING_CONTRACT_SCHEMA_VERSION),
   workflowKey: z.literal(COMMERCIAL_CUSTOMER_WORKFLOW_KEY),
@@ -310,12 +413,34 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
       }
     }
   }
+  if (command.commandType === "create_first_site") {
+    const result = firstSitePayloadSchema.safeParse(command.payload);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+      }
+    }
+  }
+  if (command.commandType === "save_step_draft") {
+    const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+      }
+    }
+  }
 }).transform((command) => {
   if (command.commandType === "accept_legal_documents") {
     return { ...command, payload: legalAcceptanceCommandPayloadSchema.parse(command.payload) };
   }
   if (command.commandType === "create_organisation") {
     return { ...command, payload: organisationCreationPayloadSchema.parse(command.payload) };
+  }
+  if (command.commandType === "create_first_site") {
+    return { ...command, payload: firstSitePayloadSchema.parse(command.payload) };
+  }
+  if (command.commandType === "save_step_draft") {
+    return { ...command, payload: firstSiteDraftPayloadSchema.parse(command.payload) };
   }
   return command;
 });
@@ -417,6 +542,9 @@ export const onboardingEventTypeSchema = z.enum([
   "legal_acceptance_completed",
   "organisation_creation_started",
   "organisation_created",
+  "first_site_started",
+  "first_site_validation_failed",
+  "first_site_defaults_created",
   "first_site_created",
   "plan_selected",
   "trial_activated",
@@ -629,7 +757,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     revision: revisionSchema,
     draftPayload: draftPayloadSchema,
     validationSummary: z.array(validationIssueSchema),
-  }).strict()).length(3),
+  }).strict()).length(4),
   legalDocuments: z.array(z.object({
     documentType: legalDocumentTypeSchema,
     documentVersion: z.string().min(1).max(64),
@@ -639,6 +767,11 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     effectiveAt: timestampSchema,
     accepted: z.boolean(),
   }).strict()).length(3),
+  siteSummary: z.object({
+    siteId: z.uuid(),
+    displayName: z.string().min(1).max(160),
+    timezone: z.string().min(1).max(80),
+  }).strict().nullable(),
 }).strict();
 
 export type OnboardingBootstrapSnapshot = z.infer<typeof onboardingBootstrapSnapshotSchema>;

@@ -37,8 +37,13 @@ export async function executeOnboardingBootstrapCommand(
   dependencies: OnboardingBootstrapDependencies,
 ) {
   const command = onboardingBootstrapCommandSchema.parse(input);
-  if (command.commandType !== "accept_legal_documents" && command.commandType !== "create_organisation") {
-    throw new Error("This command is not part of the onboarding bootstrap milestone.");
+  if (![
+    "accept_legal_documents",
+    "create_organisation",
+    "save_step_draft",
+    "create_first_site",
+  ].includes(command.commandType)) {
+    throw new Error("This command is not part of the available onboarding milestones.");
   }
   const result = await dependencies.rpc("execute_onboarding_bootstrap_command", {
     command_envelope: command,
@@ -49,7 +54,7 @@ export async function executeOnboardingBootstrapCommand(
     || parsed.data.commandResult.sessionId !== command.sessionId
     || parsed.data.commandResult.commandType !== command.commandType
     || (parsed.data.bootstrap !== null
-      && parsed.data.bootstrap.session.revision !== parsed.data.commandResult.sessionRevision)) {
+      && BigInt(parsed.data.bootstrap.session.revision) < BigInt(parsed.data.commandResult.sessionRevision))) {
     throw new Error("The authoritative response was invalid.");
   }
   return parsed.data;

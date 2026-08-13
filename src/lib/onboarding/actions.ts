@@ -5,7 +5,7 @@ import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { requireCommercialIdentity } from "@/lib/commercial-identity/server";
 import { requireAal2 } from "@/lib/commercial-identity/guards";
 import { CommercialIdentityError } from "@/lib/commercial-identity/errors";
-import { organisationCreationPayloadSchema } from "./contracts";
+import { firstSitePayloadSchema, organisationCreationPayloadSchema } from "./contracts";
 import {
   executeOnboardingBootstrapCommandServer,
   loadOnboardingBootstrapServer,
@@ -30,6 +30,43 @@ const initialOnboardingFormState: OnboardingFormState = {
 function formValues(formData: FormData) {
   const keys = ["displayName", "legalName", "contactEmail", "country", "timezone", "line1", "line2", "locality", "region", "postcode", "phone"];
   return Object.fromEntries(keys.map((key) => [key, String(formData.get(key) ?? "")]));
+}
+
+const weekdayFields = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+
+function firstSiteFormValues(formData: FormData) {
+  const keys = ["siteName", "displayName", "contactPhone", "siteEmail", "country", "timezone", "line1", "line2", "locality", "region", "postcode", "workWeekStarts", "operationalDayBoundary"];
+  const values = Object.fromEntries(keys.map((key) => [key, String(formData.get(key) ?? "")]));
+  for (const day of weekdayFields) {
+    values[`${day}Open`] = String(formData.get(`${day}Open`) ?? "");
+    values[`${day}Close`] = String(formData.get(`${day}Close`) ?? "");
+    values[`${day}Closed`] = formData.get(`${day}Closed`) === "yes" ? "yes" : "";
+  }
+  return values;
+}
+
+function firstSitePayload(values: Record<string, string>) {
+  return {
+    siteName: values.siteName,
+    ...(values.displayName ? { displayName: values.displayName } : {}),
+    contactPhone: values.contactPhone,
+    ...(values.siteEmail ? { siteEmail: values.siteEmail } : {}),
+    country: values.country,
+    timezone: values.timezone,
+    postalAddress: {
+      line1: values.line1,
+      ...(values.line2 ? { line2: values.line2 } : {}),
+      locality: values.locality,
+      ...(values.region ? { region: values.region } : {}),
+      postcode: values.postcode,
+    },
+    openingHours: weekdayFields.map((day, index) => ({
+      dayOfWeek: index + 1,
+      intervals: values[`${day}Closed`] === "yes" ? [] : [{ opensAt: values[`${day}Open`], closesAt: values[`${day}Close`] }],
+    })),
+    workWeekStarts: Number(values.workWeekStarts),
+    operationalDayBoundary: values.operationalDayBoundary,
+  };
 }
 
 export async function acceptLegalDocumentsAction(
@@ -115,7 +152,7 @@ export async function createOrganisationAction(
     payload: parsed.data,
   });
   if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") {
-    redirect("/onboarding/next");
+    redirect("/onboarding/site");
   }
   return {
     ok: false,
@@ -124,6 +161,57 @@ export async function createOrganisationAction(
     fieldErrors: {},
     values,
   };
+}
+
+export async function createFirstSiteAction(
+  _state: OnboardingFormState,
+  formData: FormData,
+): Promise<OnboardingFormState> {
+  const values = firstSiteFormValues(formData);
+  const intent = String(formData.get("intent") ?? "continue");
+  const candidate = firstSitePayload(values);
+  const snapshot = await loadOnboardingBootstrapServer();
+
+  try {
+    requireAal2(await requireCommercialIdentity());
+  } catch (error) {
+    if (error instanceof CommercialIdentityError && error.code === "mfa_required") {
+      return { ok: false, code: "mfa_required", message: "Nothing was saved. Complete multi-factor authentication, then try again.", fieldErrors: {}, values };
+    }
+    throw error;
+  }
+
+  if (intent === "save_exit") {
+    const response = await executeOnboardingBootstrapCommandServer({
+      schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
+      sessionId: snapshot.session.id, commandType: "save_step_draft",
+      idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
+      expectedSessionRevision: String(formData.get("expectedSessionRevision") ?? ""),
+      payload: { stepKey: "first_site", draft: candidate },
+    });
+    if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") {
+      await (await createSupabaseServerClient()).auth.signOut();
+      redirect("/login?onboarding=saved");
+    }
+    return { ok: false, code: response.commandResult.resultCode,
+      message: response.commandResult.issues[0]?.message ?? "Nothing was saved. Reload and try again.", fieldErrors: {}, values };
+  }
+
+  const parsed = firstSitePayloadSchema.safeParse(candidate);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) fieldErrors[issue.path.join(".")] ??= issue.message;
+    return { ok: false, code: "validation_failed", message: "Nothing was saved. Check the highlighted fields.", fieldErrors, values };
+  }
+  const response = await executeOnboardingBootstrapCommandServer({
+    schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
+    sessionId: snapshot.session.id, commandType: "create_first_site",
+    idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
+    expectedSessionRevision: String(formData.get("expectedSessionRevision") ?? ""), payload: parsed.data,
+  });
+  if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") redirect("/onboarding/next");
+  return { ok: false, code: response.commandResult.resultCode,
+    message: response.commandResult.issues[0]?.message ?? "Nothing was saved. Reload and try again.", fieldErrors: {}, values };
 }
 
 export async function resendVerificationAction(): Promise<void> {
