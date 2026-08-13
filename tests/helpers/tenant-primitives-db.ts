@@ -57,6 +57,14 @@ as $$
   );
 $$;
 
+create or replace function auth.role()
+returns text
+language sql
+stable
+as $$
+  select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'authenticated');
+$$;
+
 create table public.staff_profiles (
   id text primary key,
   full_name text not null,

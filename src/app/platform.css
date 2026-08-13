@@ -915,10 +915,65 @@ tbody tr:hover {
 .onboarding-qr code { max-width: 100%; overflow-wrap: anywhere; border-radius: 6px; background: #eef0f5; padding: 8px; color: #24173f; }
 .onboarding-mfa-flow form { display: grid; gap: 14px; }
 
+.manager-invitations { display: grid; gap: 28px; }
+.manager-invitation-intro { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; border: 1px solid #d8d0eb; border-radius: 8px; background: #faf9fd; padding: 18px; }
+.manager-invitation-intro > svg { width: 26px; height: 26px; color: #6657c7; }
+.manager-invitation-intro h2, .manager-invitation-intro p { margin: 0; }
+.manager-invitation-intro h2 { color: #24173f; font-size: 17px; }
+.manager-invitation-intro p { margin-top: 5px; color: #667085; font-size: 14px; line-height: 1.55; }
+.manager-invitation-form { display: grid; gap: 24px; }
+.manager-site-scope { grid-column: 1 / -1; display: grid; gap: 10px; min-width: 0; margin: 0; border: 1px solid #dfe3ea; border-radius: 8px; padding: 16px; }
+.manager-site-scope legend { padding-inline: 5px; color: #24173f; font-weight: 800; }
+.manager-site-scope > p { margin: 0 0 4px; color: #667085; font-size: 13px; line-height: 1.5; }
+.manager-site-scope label { display: flex; min-height: 44px; align-items: center; gap: 12px; border-radius: 7px; padding: 8px 10px; color: #3f4651; font-weight: 700; }
+.manager-site-scope label:hover { background: #f7f5fb; }
+.manager-site-scope input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: #4b2a7a; }
+.manager-organisation-scope { grid-column: 1 / -1; border-left: 3px solid #6657c7; background: #f7f5fb; padding: 14px 16px; }
+.manager-organisation-scope p { margin: 4px 0 0; color: #667085; font-size: 14px; line-height: 1.5; }
+.manager-invitation-list { display: grid; gap: 14px; }
+.manager-invitation-list > div > h2, .manager-invitation-list > div > p { margin: 0; }
+.manager-invitation-list > div > h2 { color: #24173f; font-size: 20px; }
+.manager-invitation-list > div > p { margin-top: 5px; color: #667085; font-size: 14px; }
+.manager-invitation-list ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.manager-invitation-list li { display: grid; gap: 16px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; padding: 18px; }
+.manager-invitation-list li > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.manager-invitation-list li > div:first-child strong { overflow-wrap: anywhere; color: #24173f; }
+.manager-invitation-list li > div:first-child span { color: #4b2a7a; font-size: 13px; font-weight: 800; }
+.manager-invitation-list dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.manager-invitation-list dl > div { border: 1px solid #eaecf0; border-radius: 7px; background: #fafbfc; padding: 10px; }
+.manager-invitation-list dt { color: #667085; font-size: 11px; font-weight: 750; text-transform: uppercase; }
+.manager-invitation-list dd { margin: 4px 0 0; color: #344054; font-size: 13px; font-weight: 750; text-transform: capitalize; }
+.manager-invitation-list li form { display: flex; flex-wrap: wrap; gap: 10px; }
+.manager-invitation-controls { display: grid; gap: 10px; }
+.manager-invitation-controls details { border: 1px solid #dfe3ea; border-radius: 7px; background: #fafbfc; padding: 4px 12px 12px; }
+.manager-invitation-controls summary { display: flex; min-height: 44px; align-items: center; gap: 9px; color: #4b2a7a; font-size: 14px; font-weight: 800; cursor: pointer; }
+.manager-invitation-controls summary svg { width: 18px; height: 18px; }
+.manager-invitation-controls details > p { margin: 4px 0 12px; color: #667085; font-size: 13px; line-height: 1.5; }
+.manager-invitation-empty { display: flex; min-height: 100px; align-items: center; gap: 12px; border: 1px dashed #cfd4de; border-radius: 8px; padding: 18px; color: #667085; }
+.manager-invitation-empty svg { width: 24px; height: 24px; color: #6657c7; }
+.manager-completion { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-top: 1px solid #dfe3ea; padding-top: 22px; }
+
+.invitation-shell { display: grid; min-height: 100dvh; place-items: center; gap: 28px; background: #f7f8fb; padding: 24px; }
+.invitation-card { width: min(100%, 590px); border: 1px solid #dfe3ea; border-radius: 10px; background: #fff; padding: clamp(24px, 5vw, 48px); box-shadow: 0 20px 55px rgba(36, 23, 63, .08); }
+.invitation-card .brand-mark { margin-bottom: 42px; }
+.invitation-actions { display: grid; gap: 14px; }
+.invitation-state { display: grid; gap: 12px; }
+.invitation-state > svg { width: 38px; height: 38px; color: #6657c7; }
+.invitation-state--success > svg { color: #287a55; }
+.invitation-state h1 { margin: 0; color: #24173f; font-size: clamp(1.8rem, 5vw, 2.45rem); line-height: 1.12; letter-spacing: -.03em; }
+.invitation-state p { margin: 0 0 6px; color: #5b6472; line-height: 1.65; }
+.invitation-secondary-link { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; color: #4b2a7a; font-weight: 800; }
+.invitation-shell > aside { max-width: 500px; border-left: 3px solid #6657c7; padding: 4px 0 4px 16px; color: #344054; }
+.invitation-shell > aside p { margin: 5px 0 0; color: #667085; font-size: 14px; line-height: 1.55; }
+
 @media (max-width: 620px) {
   .onboarding-header .brand-mark__text,
   .onboarding-help-link { display: none; }
   .onboarding-signout { padding-inline: 8px; }
+  .manager-invitation-list dl { grid-template-columns: 1fr; }
+  .manager-completion, .manager-completion form, .manager-completion .ui-button { width: 100%; }
+  .invitation-shell { align-content: start; padding: 16px; }
+  .invitation-card { border-radius: 8px; }
 }
 
 @media (min-width: 720px) {
@@ -958,6 +1013,7 @@ tbody tr:hover {
   .onboarding-auth-shell > aside { display: flex; flex-direction: column; justify-content: flex-end; background: #281447; padding: 70px; color: #fff; }
   .onboarding-auth-shell > aside strong { max-width: 420px; font-size: 30px; line-height: 1.2; }
   .onboarding-auth-shell > aside p { max-width: 420px; margin: 14px 0 0; color: #dcd3e9; font-size: 16px; line-height: 1.65; }
+  .invitation-shell { grid-template-columns: minmax(0, 590px) 300px; justify-content: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {

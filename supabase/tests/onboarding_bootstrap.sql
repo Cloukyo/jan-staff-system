@@ -1,6 +1,6 @@
 begin;
 
-select plan(24);
+select plan(33);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -160,6 +160,66 @@ select ok(
 select ok(
   not exists (select 1 from public.staff_kiosk_settings where kiosk_enabled or pin_hash is not null),
   'initial staffing creates no enabled kiosk access or PIN authority'
+);
+
+select ok(
+  to_regclass('public.message_outbox') is not null
+  and to_regclass('public.manager_invitation_audit_events') is not null,
+  'manager invitation delivery and append-only audit tables exist'
+);
+
+select ok(
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='message_outbox' and column_name='delivery_secret_id')
+  and to_regclass('vault.secrets') is not null,
+  'retryable delivery material is referenced through encrypted Supabase Vault storage'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.message_outbox', 'SELECT')
+  and not has_table_privilege('authenticated', 'public.message_outbox', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.manager_invitation_audit_events', 'INSERT'),
+  'browser roles cannot read delivery internals or append manager invitation audit evidence'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.organisation_invitations', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.organisation_invitations', 'UPDATE')
+  and not has_table_privilege('authenticated', 'public.organisation_invitation_roles', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.organisation_invitation_site_access', 'INSERT'),
+  'manager invitation intent and grants cannot be written directly by browser roles'
+);
+
+select ok(
+  has_function_privilege('anon', 'public.inspect_manager_invitation(text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.accept_manager_invitation(text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.accept_manager_invitation(text)', 'EXECUTE'),
+  'safe inspection and authenticated acceptance use separate boundaries'
+);
+
+select ok(
+  has_function_privilege('service_role', 'public.record_manager_invitation_delivery(uuid,text,text)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.claim_manager_invitation_delivery(uuid)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.preview_manager_invitation_token(uuid)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.record_manager_invitation_delivery(uuid,text,text)', 'EXECUTE'),
+  'only the delivery worker role can record provider outcomes'
+);
+
+select ok(
+  not has_function_privilege('authenticated', 'private.execute_manager_invitation_command(jsonb)', 'EXECUTE')
+  and not has_function_privilege('anon', 'private.execute_manager_invitation_command(jsonb)', 'EXECUTE'),
+  'manager invitation command implementation remains private'
+);
+
+select ok(
+  not exists(select 1 from information_schema.columns
+    where table_schema='public' and table_name in('message_outbox','manager_invitation_audit_events')
+      and column_name in('token','raw_token','invitation_token')),
+  'delivery and audit tables contain no raw invitation-token column'
+);
+
+select ok(
+  not has_function_privilege('authenticated', 'public.accept_organisation_invitation(text)', 'EXECUTE'),
+  'the legacy invitation acceptance boundary is unavailable to browser roles'
 );
 
 select * from finish();

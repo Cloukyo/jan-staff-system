@@ -116,6 +116,40 @@ export async function createInitialStaffingOnboardingDatabase(): Promise<PGlite>
   return db;
 }
 
+export async function createManagerInvitationsOnboardingDatabase(): Promise<PGlite> {
+  const db = await createInitialStaffingOnboardingDatabase();
+  await db.exec(`
+    create or replace function extensions.gen_random_bytes(length integer)
+    returns bytea language sql volatile as $$
+      select decode(substr(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 1, length * 2), 'hex')
+    $$;
+    create schema vault;
+    create table vault.secrets (
+      id uuid primary key default gen_random_uuid(), secret text not null, name text unique,
+      description text, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+    );
+    create function vault.create_secret(new_secret text, new_name text default null, new_description text default '')
+    returns uuid language plpgsql security definer as $$
+    declare secret_id uuid;
+    begin
+      insert into vault.secrets(secret,name,description) values(new_secret,new_name,new_description) returning id into secret_id;
+      return secret_id;
+    end $$;
+    create view vault.decrypted_secrets as select id,secret,decrypted_secret,name,description,created_at,updated_at
+      from (select id,secret,secret decrypted_secret,name,description,created_at,updated_at from vault.secrets) secrets;
+  `);
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_commercial_manager_invitations.sql"));
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial manager-invitations migration is missing");
+  }
+  const sql = readFileSync(resolve("supabase/migrations", migration), "utf8")
+    .replace("create extension if not exists supabase_vault with schema vault;", "");
+  await db.exec(sql);
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
   await db.exec(`
     create schema if not exists extensions;

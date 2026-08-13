@@ -17,6 +17,7 @@ export type OnboardingFormState = {
   message: string;
   fieldErrors: Record<string, string>;
   values: Record<string, string>;
+  continuationUrl?: string;
 };
 
 const initialOnboardingFormState: OnboardingFormState = {

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { validatePrivatePassword } from "@/lib/auth/password-validation";
+import { safeCommercialContinuation } from "@/lib/invitations/continuation";
 
 export type AuthActionState = {
   message: string;
@@ -13,16 +14,18 @@ export async function signInAction(_state: AuthActionState, formData: FormData):
   if (!hasSupabaseConfig()) return { message: "Supabase is not configured. Add the environment variables before using production login." };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
+  const nextPath = safeCommercialContinuation(String(formData.get("next") ?? ""));
   if (!email || !password) return { message: "Enter your email address and password." };
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { message: "The email or password was not recognised." };
+  if (nextPath?.startsWith("/invitations/manager?token=")) redirect(nextPath);
   const { data: account, error: accountError } = await supabase.from("staff_accounts").select("active,must_change_password,role").eq("auth_user_id", data.user.id).maybeSingle();
   if (accountError) {
     await supabase.auth.signOut();
     return { message: "Your account could not be loaded. Try again." };
   }
-  if (!account) redirect("/onboarding");
+  if (!account) redirect(nextPath ?? "/onboarding");
   if (!account.active) {
     await supabase.auth.signOut();
     return { message: "This account is inactive." };
@@ -40,6 +43,7 @@ export async function signUpAction(
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const confirmation = String(formData.get("confirmation") ?? "");
+  const nextPath = safeCommercialContinuation(String(formData.get("next") ?? "")) ?? "/onboarding";
   if (!email || !password) return { ok: false, message: "Enter an email address and password.", email };
   if (password !== confirmation) return { ok: false, message: "The password confirmation does not match.", email };
   const passwordIssue = validatePrivatePassword(password, email);
@@ -51,12 +55,12 @@ export async function signUpAction(
     password,
     options: {
       emailRedirectTo: process.env.NEXT_PUBLIC_SITE_URL
-        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`
+        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(nextPath)}`
         : undefined,
     },
   });
   if (error) return { ok: false, message: "Your account could not be created. Try again or sign in if you already registered.", email };
-  if (data.session) redirect("/onboarding");
+  if (data.session) redirect(nextPath);
   return { ok: true, message: "Check your inbox and verify your email address to continue.", email };
 }
 

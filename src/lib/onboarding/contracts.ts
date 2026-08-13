@@ -3,6 +3,7 @@ import {
   manualStaffDraftPayloadSchema, manualStaffPayloadSchema, staffImportCommitPayloadSchema, staffImportDecisionPayloadSchema,
   staffImportUploadPayloadSchema, staffingSkipPayloadSchema, staffingSnapshotSchema,
 } from "./staffing-contracts";
+import { invitationReferencePayloadSchema, managerInvitationPayloadSchema, managerInvitationSnapshotSchema, soleManagerAcknowledgementPayloadSchema } from "./manager-invitation-contracts";
 
 export const ONBOARDING_CONTRACT_SCHEMA_VERSION = 1 as const;
 export const COMMERCIAL_CUSTOMER_WORKFLOW_KEY = "commercial_customer_v1" as const;
@@ -77,6 +78,7 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "first_site",
   "subscription",
   "staffing",
+  "manager_invitations",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([
@@ -258,7 +260,11 @@ export const onboardingCommandTypeSchema = z.enum([
   "commit_staff_import",
   "complete_staffing",
   "skip_staffing",
-  "create_manager_invitations",
+  "create_manager_invitation",
+  "resend_manager_invitation",
+  "revoke_manager_invitation",
+  "acknowledge_sole_manager",
+  "complete_manager_invitation_step",
   "create_staff_invitations",
   "start_kiosk_registration",
   "confirm_kiosk_connection",
@@ -479,6 +485,16 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
   if (command.commandType === "complete_staffing" && Object.keys(command.payload).length !== 0) {
     context.addIssue({ code: "custom", message: "Complete staffing accepts no payload", path: ["payload"] });
   }
+  const managerSchema = command.commandType === "create_manager_invitation" ? managerInvitationPayloadSchema
+    : command.commandType === "resend_manager_invitation" || command.commandType === "revoke_manager_invitation" ? invitationReferencePayloadSchema
+      : command.commandType === "acknowledge_sole_manager" ? soleManagerAcknowledgementPayloadSchema : null;
+  if (managerSchema) {
+    const result = managerSchema.safeParse(command.payload);
+    if (!result.success) for (const issue of result.error.issues) context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+  }
+  if (command.commandType === "complete_manager_invitation_step" && Object.keys(command.payload).length !== 0) {
+    context.addIssue({ code: "custom", message: "Complete manager invitations accepts no payload", path: ["payload"] });
+  }
   if (command.commandType === "save_step_draft") {
     const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
     if (!result.success) {
@@ -502,6 +518,9 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
   }
   if (command.commandType === "save_staff_draft") return { ...command, payload: manualStaffDraftPayloadSchema.parse(command.payload) };
   if (command.commandType === "create_staff") return { ...command, payload: manualStaffPayloadSchema.parse(command.payload) };
+  if (command.commandType === "create_manager_invitation") return { ...command, payload: managerInvitationPayloadSchema.parse(command.payload) };
+  if (command.commandType === "resend_manager_invitation" || command.commandType === "revoke_manager_invitation") return { ...command, payload: invitationReferencePayloadSchema.parse(command.payload) };
+  if (command.commandType === "acknowledge_sole_manager") return { ...command, payload: soleManagerAcknowledgementPayloadSchema.parse(command.payload) };
   if (command.commandType === "preview_staff_import") return { ...command, payload: staffImportUploadPayloadSchema.parse(command.payload) };
   if (command.commandType === "review_staff_import_row") return { ...command, payload: staffImportDecisionPayloadSchema.parse(command.payload) };
   if (command.commandType === "commit_staff_import") return { ...command, payload: staffImportCommitPayloadSchema.parse(command.payload) };
@@ -834,7 +853,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     revision: revisionSchema,
     draftPayload: draftPayloadSchema,
     validationSummary: z.array(validationIssueSchema),
-  }).strict()).length(6),
+  }).strict()).length(7),
   legalDocuments: z.array(z.object({
     documentType: legalDocumentTypeSchema,
     documentVersion: z.string().min(1).max(64),
@@ -852,6 +871,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
   planCatalogue: z.array(commercialPlanCatalogueEntrySchema).max(20),
   subscriptionSummary: organisationSubscriptionSummarySchema.nullable(),
   staffing: staffingSnapshotSchema,
+  managerInvitations: managerInvitationSnapshotSchema,
 }).strict();
 
 export type OnboardingBootstrapSnapshot = z.infer<typeof onboardingBootstrapSnapshotSchema>;

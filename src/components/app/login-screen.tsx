@@ -11,7 +11,7 @@ import Link from "next/link";
 
 const initialState: AuthActionState = { message: "" };
 
-export function LoginScreen({ notice }: { notice?: string }) {
+export function LoginScreen({ notice, nextPath }: { notice?: string; nextPath?: string }) {
   const branding = getPlatformBranding();
   const [loginState, loginFormAction, loginPending] = useActionState(signInAction, initialState);
   const [resetState, resetFormAction, resetPending] = useActionState(resetPasswordAction, initialState);
@@ -24,6 +24,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
         <p className="mt-2 text-sm leading-6 text-slate-600">Sign in with the email address linked to your {branding.siteDisplayName.toLowerCase()} staff account.</p>
         {notice ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{notice}</p> : null}
         <form className="mt-6 grid gap-4" action={loginFormAction}>
+          {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
           <Field label="Email">
             <div className="relative">
               <Mail className="absolute left-3 top-3 h-5 w-5 text-purple-400" aria-hidden />
@@ -52,7 +53,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
             {resetPending ? "Sending..." : "Send reset email"}
           </Button>
         </form>
-        <p className="mt-6 border-t border-purple-100 pt-5 text-center text-sm text-slate-600">Setting up a new commercial account? <Link className="font-bold text-purple-700 underline-offset-4 hover:underline" href="/signup">Create an owner account</Link></p>
+        <p className="mt-6 border-t border-purple-100 pt-5 text-center text-sm text-slate-600">New to the platform? <Link className="font-bold text-purple-700 underline-offset-4 hover:underline" href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : "/signup"}>Create an account</Link></p>
       </Panel>
     </main>
   );

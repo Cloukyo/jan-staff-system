@@ -50,6 +50,11 @@ export async function executeOnboardingBootstrapCommand(
     "commit_staff_import",
     "complete_staffing",
     "skip_staffing",
+    "create_manager_invitation",
+    "resend_manager_invitation",
+    "revoke_manager_invitation",
+    "acknowledge_sole_manager",
+    "complete_manager_invitation_step",
   ].includes(command.commandType)) {
     throw new Error("This command is not part of the available onboarding milestones.");
   }
