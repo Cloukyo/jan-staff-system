@@ -9,10 +9,11 @@ export default async function OnboardingNextPage() {
   const snapshot = await loadOnboardingBootstrapServer();
   if (!snapshot.session.organisationId) redirect("/onboarding");
   if (snapshot.steps.find((step) => step.stepKey === "first_site")?.status !== "complete") redirect("/onboarding/site");
+  if (snapshot.steps.find((step) => step.stepKey === "subscription")?.status !== "complete") redirect("/onboarding/plan");
   return (
-    <OnboardingShell activeStep="first_site" completedSteps={["owner_security", "legal_acceptance", "organisation", "first_site"]}>
-      <div className="onboarding-success"><CheckCircle2 aria-hidden /><span>First site created</span><h1>{snapshot.siteSummary?.displayName ?? "Your first site"} is ready</h1><p>The site, inherited defaults and owner access were created together for {snapshot.siteSummary?.timezone ?? "the organisation time zone"}. Your saved setup will be here when the next onboarding phase becomes available.</p></div>
-      <OnboardingNotice tone="success">Site setup is complete. Subscription selection is the next phase and is not available in this milestone.</OnboardingNotice>
+    <OnboardingShell activeStep="subscription" completedSteps={["owner_security", "legal_acceptance", "organisation", "first_site", "subscription"]}>
+      <div className="onboarding-success"><CheckCircle2 aria-hidden /><span>Trial pending</span><h1>{snapshot.subscriptionSummary?.planDisplayName ?? "Your selected plan"} is reserved</h1><p>Your no-card trial is ready for {snapshot.siteSummary?.displayName ?? "your first site"}. No trial days have been used. The 60-day clock starts only when you Go Live later.</p></div>
+      <OnboardingNotice tone="success">Plan selection is complete. Adding staff is the next phase and is not available in this milestone.</OnboardingNotice>
     </OnboardingShell>
   );
 }

@@ -839,6 +839,28 @@ tbody tr:hover {
 .onboarding-hours__closed input { width: 20px; height: 20px; accent-color: #4b2a7a; }
 .onboarding-site-form small { display: block; margin-top: 5px; color: #667085; font-size: 12px; font-weight: 500; line-height: 1.45; }
 
+.onboarding-plan-form { display: grid; gap: 22px; }
+.onboarding-plan-options { display: grid; gap: 16px; min-width: 0; margin: 0; border: 0; padding: 0; }
+.onboarding-plan-card { position: relative; display: grid; gap: 18px; border: 2px solid #d7dbe3; border-radius: 10px; background: #fff; padding: 22px; box-shadow: 0 10px 32px rgba(45, 30, 77, .07); cursor: pointer; }
+.onboarding-plan-card:has(.onboarding-plan-card__radio:checked) { border-color: #6657c7; }
+.onboarding-plan-card:focus-within { outline: 3px solid #d9d1f4; outline-offset: 3px; }
+.onboarding-plan-card__radio { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.onboarding-plan-card__heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.onboarding-plan-card__heading small { display: block; color: #2f7d62; font-size: 12px; font-weight: 800; letter-spacing: .025em; }
+.onboarding-plan-card__heading strong { display: block; margin-top: 4px; color: #24173f; font-size: 24px; font-weight: 850; }
+.onboarding-plan-card__heading > span:last-child { white-space: nowrap; border-radius: 999px; background: #ebe6f2; padding: 7px 11px; color: #4b2a7a; font-size: 12px; font-weight: 800; }
+.onboarding-plan-card__summary { color: #5b6472; line-height: 1.6; }
+.onboarding-plan-card__price { border-block: 1px solid #e5e2eb; padding-block: 14px; color: #4b2a7a; font-size: 14px; font-weight: 750; }
+.onboarding-plan-card ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.onboarding-plan-card li { display: flex; gap: 9px; align-items: center; color: #3f4651; font-size: 14px; }
+.onboarding-plan-card li svg { width: 18px; height: 18px; flex: 0 0 auto; color: #287a55; }
+.onboarding-trial-policy { display: grid; gap: 12px; }
+.onboarding-trial-policy > div { display: flex; min-height: 72px; align-items: center; gap: 13px; border: 1px solid #dfe3ea; border-radius: 8px; background: #f9fafc; padding: 14px 16px; }
+.onboarding-trial-policy svg { width: 22px; height: 22px; flex: 0 0 auto; color: #6657c7; }
+.onboarding-trial-policy strong, .onboarding-trial-policy small { display: block; }
+.onboarding-trial-policy small { margin-top: 3px; color: #667085; line-height: 1.45; }
+.onboarding-trial-explanation { margin: 0; color: #5b6472; font-size: 14px; line-height: 1.65; }
+
 .onboarding-success { padding: 14px 0 10px; text-align: left; }
 .onboarding-success > svg { width: 46px; height: 46px; margin-bottom: 20px; color: #287a55; }
 
@@ -872,6 +894,7 @@ tbody tr:hover {
   .onboarding-field-span { grid-column: 1 / -1; }
   .onboarding-hours__day { grid-template-columns: minmax(120px, 1fr) 110px minmax(120px, 160px) minmax(120px, 160px); }
   .onboarding-hours__day .ui-field { grid-column: auto; }
+  .onboarding-trial-policy { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1024px) {

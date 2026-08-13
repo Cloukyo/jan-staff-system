@@ -11,6 +11,9 @@ import {
   onboardingWorkflowDefinitionSchema,
   onboardingWorkflowStateSchema,
   firstSitePayloadSchema,
+  planSelectionPayloadSchema,
+  commercialPlanCatalogueEntrySchema,
+  organisationSubscriptionSummarySchema,
 } from "@/lib/onboarding/contracts";
 
 const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -261,6 +264,53 @@ describe("commercial onboarding command and event contracts", () => {
       ...draftCommand,
       payload: { stepKey: "first_site", draft: { postalAddress: { accessToken: "unsafe" } } },
     })).toThrow();
+  });
+
+  it("accepts only a server-resolved free-trial plan selection", () => {
+    const payload = { planKey: "preview_standard", planVersion: 1, selection: "free_trial" } as const;
+    expect(planSelectionPayloadSchema.parse(payload)).toEqual(payload);
+    expect(onboardingBootstrapCommandSchema.parse({
+      ...command,
+      commandType: "select_plan",
+      payload,
+    }).payload).toEqual(payload);
+    expect(() => planSelectionPayloadSchema.parse({ ...payload, organisationId })).toThrow();
+    expect(() => planSelectionPayloadSchema.parse({ ...payload, trialStartedAt: "2026-08-13T00:00:00Z" })).toThrow();
+    expect(() => planSelectionPayloadSchema.parse({ ...payload, entitlements: { offlineAttendance: true } })).toThrow();
+    expect(() => planSelectionPayloadSchema.parse({ ...payload, providerCustomerId: "provider_123" })).toThrow();
+  });
+
+  it("validates Preview catalogue and trial-pending summaries without starting the clock", () => {
+    expect(commercialPlanCatalogueEntrySchema.parse({
+      planKey: "preview_standard",
+      planVersion: 1,
+      displayName: "Preview Standard",
+      summary: "Fictional commercial Preview plan.",
+      trialDurationDays: 60,
+      pricingStatus: "preview_unpriced",
+      featureHighlights: ["Core attendance", "Up to 75 active staff"],
+    })).toMatchObject({ pricingStatus: "preview_unpriced", trialDurationDays: 60 });
+
+    expect(organisationSubscriptionSummarySchema.parse({
+      subscriptionId: "10000000-0000-4000-8000-000000000099",
+      planKey: "preview_standard",
+      planVersion: 1,
+      planDisplayName: "Preview Standard",
+      state: "trial_pending",
+      trialDurationDays: 60,
+      trialStartedAt: null,
+      trialEndsAt: null,
+    })).toMatchObject({ state: "trial_pending", trialStartedAt: null, trialEndsAt: null });
+    expect(() => organisationSubscriptionSummarySchema.parse({
+      subscriptionId: "10000000-0000-4000-8000-000000000099",
+      planKey: "preview_standard",
+      planVersion: 1,
+      planDisplayName: "Preview Standard",
+      state: "trial_pending",
+      trialDurationDays: 60,
+      trialStartedAt: "2026-08-13T00:00:00Z",
+      trialEndsAt: null,
+    })).toThrow(/trial|pending/i);
   });
 
   it("requires replayable command results to state whether data was saved", () => {

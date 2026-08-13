@@ -4,13 +4,14 @@ import { BrandMark } from "@/components/ui/brand";
 import { signOutAction } from "@/lib/auth/actions";
 import type { ReactNode } from "react";
 
-type ProgressKey = "owner_security" | "legal_acceptance" | "organisation" | "first_site";
+type ProgressKey = "owner_security" | "legal_acceptance" | "organisation" | "first_site" | "subscription";
 
 const steps: Array<{ key: ProgressKey; label: string }> = [
   { key: "owner_security", label: "Account security" },
   { key: "legal_acceptance", label: "Legal acceptance" },
   { key: "organisation", label: "Organisation" },
   { key: "first_site", label: "First site" },
+  { key: "subscription", label: "Plan and trial" },
 ];
 
 export function OnboardingShell({

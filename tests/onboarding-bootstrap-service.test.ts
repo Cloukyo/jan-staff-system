@@ -40,6 +40,7 @@ const bootstrap = {
     { stepKey: "legal_acceptance", status: "complete", revision: "1", draftPayload: {}, validationSummary: [] },
     { stepKey: "organisation", status: "in_progress", revision: "0", draftPayload: {}, validationSummary: [] },
     { stepKey: "first_site", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
+    { stepKey: "subscription", status: "not_started", revision: "0", draftPayload: {}, validationSummary: [] },
   ],
   legalDocuments: [
     { documentType: "terms_of_service", documentVersion: "2026-08", locale: "en-GB", title: "Terms of Service", summary: "Commercial platform terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
@@ -47,6 +48,8 @@ const bootstrap = {
     { documentType: "data_processing_agreement", documentVersion: "2026-08", locale: "en-GB", title: "Data Processing Agreement", summary: "Commercial processor terms.", effectiveAt: "2026-08-01T00:00:00+00:00", accepted: true },
   ],
   siteSummary: null,
+  planCatalogue: [],
+  subscriptionSummary: null,
 } as const;
 
 describe("onboarding bootstrap service", () => {
@@ -97,5 +100,29 @@ describe("onboarding bootstrap service", () => {
     await expect(executeOnboardingBootstrapCommand(command, {
       rpc: vi.fn().mockResolvedValue({ data: response, error: null }),
     })).resolves.toEqual(expect.objectContaining({ commandResult: expect.objectContaining({ outcome: "replayed" }) }));
+  });
+
+  it("accepts a strict plan-selection command and rejects client entitlement authority", async () => {
+    const planCommand = {
+      ...command,
+      commandType: "select_plan",
+      payload: { planKey: "preview_standard", planVersion: 1, selection: "free_trial" },
+    } as const;
+    const response = {
+      commandResult: { schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
+        sessionId, commandType: "select_plan", outcome: "succeeded", dataState: "saved",
+        resultCode: "trial_pending_created", resultReference: { subscriptionId: "71000000-0000-4000-8000-000000000010" },
+        sessionRevision: "3", issues: [] },
+      readiness: null,
+      bootstrap: { ...bootstrap, session: { ...bootstrap.session, revision: "3", currentStepKey: "settings" },
+        subscriptionSummary: { subscriptionId: "71000000-0000-4000-8000-000000000010", planKey: "preview_standard",
+          planVersion: 1, planDisplayName: "Preview Standard", state: "trial_pending", trialDurationDays: 60,
+          trialStartedAt: null, trialEndsAt: null } },
+    };
+    await expect(executeOnboardingBootstrapCommand(planCommand, { rpc: vi.fn().mockResolvedValue({ data: response, error: null }) })).resolves
+      .toEqual(expect.objectContaining({ commandResult: expect.objectContaining({ resultCode: "trial_pending_created" }) }));
+    await expect(executeOnboardingBootstrapCommand({ ...planCommand, payload: { ...planCommand.payload, offlineAttendance: true } }, {
+      rpc: vi.fn(),
+    })).rejects.toThrow();
   });
 });

@@ -1,6 +1,6 @@
 begin;
 
-select plan(11);
+select plan(18);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -76,6 +76,53 @@ select ok(
   not has_table_privilege('authenticated', 'public.organisation_sites', 'INSERT')
   and not has_table_privilege('authenticated', 'public.site_settings', 'INSERT'),
   'site and site-default creation are restricted to guarded server boundaries'
+);
+
+select ok(
+  to_regclass('public.plans') is not null
+  and to_regclass('public.plan_entitlements') is not null
+  and to_regclass('public.organisation_subscriptions') is not null
+  and to_regclass('public.organisation_entitlements') is not null
+  and to_regclass('public.organisation_usage') is not null,
+  'provider-neutral plan, subscription, entitlement and usage tables exist'
+);
+
+select is(
+  (select count(*)::bigint from public.plans where active and plan_key = 'preview_standard'),
+  1::bigint,
+  'one fictional active Preview plan is available'
+);
+
+select ok(
+  not exists (select 1 from public.plan_entitlements
+    where capability_key = 'attendance.offline' and boolean_value),
+  'no plan can enable offline attendance'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.organisation_subscriptions', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.organisation_entitlements', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.organisation_usage', 'UPDATE')
+  and not has_table_privilege('authenticated', 'public.organisation_subscription_state_events', 'INSERT'),
+  'subscription, entitlement and usage mutations are denied outside guarded boundaries'
+);
+
+select ok(
+  to_regclass('public.organisation_subscription_state_events') is not null,
+  'subscription lifecycle transitions have an append-only audit table'
+);
+
+select ok(
+  not has_function_privilege('authenticated',
+    'private.transition_commercial_subscription(uuid,text,text,boolean,timestamptz,timestamptz,timestamptz,text,uuid)', 'EXECUTE'),
+  'subscription lifecycle transitions remain behind a private audited boundary'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'public.commercial_capability_decision(uuid,text,jsonb)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.commercial_capability_decision(uuid,text,jsonb)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'private.commercial_capability_decision(uuid,text,jsonb)', 'EXECUTE'),
+  'capability decisions use an authenticated guarded boundary with a private evaluator'
 );
 
 select * from finish();

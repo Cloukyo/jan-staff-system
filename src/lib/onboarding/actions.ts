@@ -5,7 +5,7 @@ import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { requireCommercialIdentity } from "@/lib/commercial-identity/server";
 import { requireAal2 } from "@/lib/commercial-identity/guards";
 import { CommercialIdentityError } from "@/lib/commercial-identity/errors";
-import { firstSitePayloadSchema, organisationCreationPayloadSchema } from "./contracts";
+import { firstSitePayloadSchema, organisationCreationPayloadSchema, planSelectionPayloadSchema } from "./contracts";
 import {
   executeOnboardingBootstrapCommandServer,
   loadOnboardingBootstrapServer,
@@ -206,6 +206,45 @@ export async function createFirstSiteAction(
   const response = await executeOnboardingBootstrapCommandServer({
     schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
     sessionId: snapshot.session.id, commandType: "create_first_site",
+    idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
+    expectedSessionRevision: String(formData.get("expectedSessionRevision") ?? ""), payload: parsed.data,
+  });
+  if (response.commandResult.outcome === "succeeded" || response.commandResult.outcome === "replayed") redirect("/onboarding/plan");
+  return { ok: false, code: response.commandResult.resultCode,
+    message: response.commandResult.issues[0]?.message ?? "Nothing was saved. Reload and try again.", fieldErrors: {}, values };
+}
+
+export async function startFreeTrialAction(
+  _state: OnboardingFormState,
+  formData: FormData,
+): Promise<OnboardingFormState> {
+  const [chosenPlanKey = "", chosenPlanVersion = ""] = String(formData.get("planChoice") ?? "").split(":");
+  const values = { planKey: chosenPlanKey, planVersion: chosenPlanVersion };
+  if (String(formData.get("intent") ?? "continue") === "save_exit") {
+    await (await createSupabaseServerClient()).auth.signOut();
+    redirect("/login?onboarding=saved");
+  }
+  const parsed = planSelectionPayloadSchema.safeParse({
+    planKey: values.planKey,
+    planVersion: Number(values.planVersion),
+    selection: "free_trial",
+  });
+  if (!parsed.success) {
+    return { ok: false, code: "validation_failed", message: "Nothing was saved. Choose an available plan.",
+      fieldErrors: { planKey: "Choose an available plan." }, values };
+  }
+  try {
+    requireAal2(await requireCommercialIdentity());
+  } catch (error) {
+    if (error instanceof CommercialIdentityError && error.code === "mfa_required") {
+      return { ok: false, code: "mfa_required", message: "Nothing was saved. Complete multi-factor authentication, then try again.", fieldErrors: {}, values };
+    }
+    throw error;
+  }
+  const snapshot = await loadOnboardingBootstrapServer();
+  const response = await executeOnboardingBootstrapCommandServer({
+    schemaVersion: 1, workflowKey: "commercial_customer_v1", workflowVersion: 1,
+    sessionId: snapshot.session.id, commandType: "select_plan",
     idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
     expectedSessionRevision: String(formData.get("expectedSessionRevision") ?? ""), payload: parsed.data,
   });

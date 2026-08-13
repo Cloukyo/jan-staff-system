@@ -71,6 +71,7 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "legal_acceptance",
   "organisation",
   "first_site",
+  "subscription",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([
@@ -385,6 +386,33 @@ export const firstSiteDraftPayloadSchema = z.object({
   }).strict(),
 }).strict();
 
+export const planSelectionPayloadSchema = z.object({
+  planKey: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  planVersion: z.number().int().positive(),
+  selection: z.literal("free_trial"),
+}).strict();
+
+export const commercialPlanCatalogueEntrySchema = z.object({
+  planKey: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  planVersion: z.number().int().positive(),
+  displayName: z.string().trim().min(2).max(120),
+  summary: z.string().trim().min(2).max(500),
+  trialDurationDays: z.literal(60),
+  pricingStatus: z.literal("preview_unpriced"),
+  featureHighlights: z.array(z.string().trim().min(2).max(120)).min(1).max(8),
+}).strict();
+
+export const organisationSubscriptionSummarySchema = z.object({
+  subscriptionId: z.uuid(),
+  planKey: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  planVersion: z.number().int().positive(),
+  planDisplayName: z.string().trim().min(2).max(120),
+  state: z.literal("trial_pending"),
+  trialDurationDays: z.literal(60),
+  trialStartedAt: z.null(),
+  trialEndsAt: z.null(),
+}).strict();
+
 export const onboardingCommandSchema = z.object({
   schemaVersion: z.literal(ONBOARDING_CONTRACT_SCHEMA_VERSION),
   workflowKey: z.literal(COMMERCIAL_CUSTOMER_WORKFLOW_KEY),
@@ -421,6 +449,14 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
       }
     }
   }
+  if (command.commandType === "select_plan") {
+    const result = planSelectionPayloadSchema.safeParse(command.payload);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+      }
+    }
+  }
   if (command.commandType === "save_step_draft") {
     const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
     if (!result.success) {
@@ -438,6 +474,9 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema.superRef
   }
   if (command.commandType === "create_first_site") {
     return { ...command, payload: firstSitePayloadSchema.parse(command.payload) };
+  }
+  if (command.commandType === "select_plan") {
+    return { ...command, payload: planSelectionPayloadSchema.parse(command.payload) };
   }
   if (command.commandType === "save_step_draft") {
     return { ...command, payload: firstSiteDraftPayloadSchema.parse(command.payload) };
@@ -546,7 +585,11 @@ export const onboardingEventTypeSchema = z.enum([
   "first_site_validation_failed",
   "first_site_defaults_created",
   "first_site_created",
+  "plan_selection_started",
   "plan_selected",
+  "trial_selected",
+  "trial_pending_created",
+  "subscription_step_completed",
   "trial_activated",
   "settings_completed",
   "staff_import_started",
@@ -757,7 +800,7 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     revision: revisionSchema,
     draftPayload: draftPayloadSchema,
     validationSummary: z.array(validationIssueSchema),
-  }).strict()).length(4),
+  }).strict()).length(5),
   legalDocuments: z.array(z.object({
     documentType: legalDocumentTypeSchema,
     documentVersion: z.string().min(1).max(64),
@@ -772,6 +815,8 @@ export const onboardingBootstrapSnapshotSchema = z.object({
     displayName: z.string().min(1).max(160),
     timezone: z.string().min(1).max(80),
   }).strict().nullable(),
+  planCatalogue: z.array(commercialPlanCatalogueEntrySchema).max(20),
+  subscriptionSummary: organisationSubscriptionSummarySchema.nullable(),
 }).strict();
 
 export type OnboardingBootstrapSnapshot = z.infer<typeof onboardingBootstrapSnapshotSchema>;

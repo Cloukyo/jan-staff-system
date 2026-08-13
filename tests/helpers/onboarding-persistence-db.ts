@@ -65,6 +65,18 @@ export async function createFirstSiteOnboardingDatabase(): Promise<PGlite> {
   return db;
 }
 
+export async function createTrialEntitlementsOnboardingDatabase(): Promise<PGlite> {
+  const db = await createFirstSiteOnboardingDatabase();
+  const migration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_commercial_trial_entitlements.sql"));
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial trial-entitlements migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(db: PGlite): Promise<void> {
   await db.exec(`
     create schema if not exists extensions;
