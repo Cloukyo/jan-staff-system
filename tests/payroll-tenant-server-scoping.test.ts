@@ -275,27 +275,20 @@ describe("commercial payroll site scoping", () => {
       .toBe(ownOnly.snapshot.payArrangementFingerprint);
   });
 
-  it("fails closed instead of reading unowned rota data for a selected site", async () => {
-    const calls: QueryCall[] = [];
+  it("loads only tenant-owned planned shifts through the guarded rota RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        shift_id: "40000000-0000-4000-8000-000000000001",
+        staff_id: "staff-a",
+        shift_date: "2026-08-05",
+        start_time: "09:00:00",
+        end_time: "17:00:00",
+        break_minutes: 30,
+      }],
+      error: null,
+    });
     createServerClient.mockResolvedValue({
-      from(table: string) {
-        if (table === "staff_site_assignments") {
-          return queryResult([{ staff_id: "staff-a" }], calls);
-        }
-        if (table === "rota_shifts") {
-          return queryResult([{
-            id: "shift-at-other-site",
-            staff_id: "staff-a",
-            shift_date: "2026-08-05",
-            start_time: "09:00",
-            end_time: "17:00",
-            break_minutes: 30,
-            status: "scheduled",
-            archived_at: null,
-          }], calls);
-        }
-        throw new Error(`Unexpected table ${table}`);
-      },
+      rpc,
     });
 
     await expect(commercialPayrollRepository.loadRotaShifts({
@@ -303,8 +296,18 @@ describe("commercial payroll site scoping", () => {
       siteId: SITE_A,
       periodStart: "2026-08-01",
       periodEnd: "2026-08-07",
-    })).resolves.toEqual([]);
-    expect(createServerClient).not.toHaveBeenCalled();
+    })).resolves.toEqual([expect.objectContaining({
+      id: "40000000-0000-4000-8000-000000000001",
+      staffId: "staff-a",
+      shiftDate: "2026-08-05",
+    })]);
+    expect(rpc).toHaveBeenCalledWith("get_commercial_planned_shifts", {
+      target_organisation_id: ORGANISATION_A,
+      target_site_id: SITE_A,
+      range_start: "2026-08-01",
+      range_end: "2026-08-07",
+      target_staff_id: null,
+    });
   });
 
   it("loads reporting rows and adjustment evidence only through the guarded report RPC", async () => {

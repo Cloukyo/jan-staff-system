@@ -26,6 +26,7 @@ import {
 } from "@/lib/rota/actions";
 import type { RotaTemplate, RotaTemplateApplyMode, TemplateApplicationPreview } from "@/lib/rota/template-types";
 import type { ProductionRotaDataset } from "@/lib/rota/types";
+import { selectCommercialSite } from "@/lib/commercial-identity/actions";
 
 function hidden(name: string, value: string) {
   return <input type="hidden" name={name} value={value} />;
@@ -69,6 +70,7 @@ export function ProductionRota({
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-purple-950">Weekly rota</h1>
+          {data.site ? <p className="mt-1 text-sm font-black text-purple-700">Editing {data.site.name}</p> : null}
           <p className="mt-2 text-slate-600">Compare each employee&apos;s week and daily staffing coverage in one schedule.</p>
           <ManagerHelpLink taskId="edit-rota" />
         </div>
@@ -76,6 +78,14 @@ export function ProductionRota({
       </div>
 
       <ManagerPageNav items={rotaPageNav} activeId="weekly" label="Rota sections" />
+
+      {data.site && data.membershipId && (data.siteChoices?.length ?? 0) > 1 ? <Panel className="mt-5 p-3">
+        <form action={selectCommercialSite} className="flex flex-wrap items-end gap-3">
+          {hidden("membershipId", data.membershipId)}{hidden("continuation", `/rota?week=${data.weekStart}`)}
+          <Field label="Current site"><select className={inputClassName("min-w-56")} name="siteId" defaultValue={data.site.id}>{data.siteChoices!.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></Field>
+          <button className="min-h-11 rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900 hover:bg-purple-50" type="submit">Change site</button>
+        </form>
+      </Panel> : null}
 
       <div id="weekly-rota" className="scroll-mt-32 pt-5">
       <Panel className="mb-5 p-3">
@@ -99,7 +109,7 @@ export function ProductionRota({
             <>
               {data.week.status === "draft" ? (
                 <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Publish rota" className="inline-flex" confirmMessage="Publish this rota for staff viewing?">
-                  {hidden("weekId", data.week.id)}{hidden("status", "published")}
+                  {hidden("weekId", data.week.id)}{hidden("status", "published")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                 </RotaActionForm>
               ) : null}
               <details className="relative">
@@ -110,18 +120,18 @@ export function ProductionRota({
                   {data.week.status === "published" ? (
                     <>
                       <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Return to draft" variant="secondary" className="grid" confirmMessage="Return this published rota to draft?">
-                        {hidden("weekId", data.week.id)}{hidden("status", "draft")}
+                        {hidden("weekId", data.week.id)}{hidden("status", "draft")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                       </RotaActionForm>
                       <div className="my-4 border-t border-purple-100" />
                     </>
                   ) : null}
-                  <RotaActionForm action={clearRotaDayAction} submitLabel="Clear day" variant="danger" className="grid gap-3" confirmMessage="Archive every draft shift on this day?">
+                  {!data.organisationId ? <RotaActionForm action={clearRotaDayAction} submitLabel="Clear day" variant="danger" className="grid gap-3" confirmMessage="Archive every draft shift on this day?">
                     {hidden("weekId", data.week.id)}
                     <Field label="Day to clear"><select className={inputClassName()} name="shiftDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEEE d MMMM")}</option>)}</select></Field>
-                  </RotaActionForm>
-                  <div className="my-4 border-t border-purple-100" />
+                  </RotaActionForm> : null}
+                  {!data.organisationId ? <div className="my-4 border-t border-purple-100" /> : null}
                   <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Archive week" variant="danger" className="grid" confirmMessage="Archive this rota week?">
-                    {hidden("weekId", data.week.id)}{hidden("status", "archived")}
+                    {hidden("weekId", data.week.id)}{hidden("status", "archived")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                   </RotaActionForm>
                 </div>
               </details>
@@ -136,6 +146,7 @@ export function ProductionRota({
           <EmptyState title="No rota for this week" body={`${activeStaffCount} active staff profiles are available. Create a draft to start scheduling.`} />
           <RotaActionForm action={createRotaWeekAction} submitLabel="Create draft rota" className="mt-5 grid gap-4">
             {hidden("weekStart", data.weekStart)}
+            {hidden("operationId", crypto.randomUUID())}
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Title"><input className={inputClassName()} name="title" placeholder="Optional" /></Field>
               <Field label="Notes"><input className={inputClassName()} name="notes" placeholder="Optional manager note" /></Field>
@@ -143,6 +154,7 @@ export function ProductionRota({
           </RotaActionForm>
           <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="mt-4">
             {hidden("weekStart", data.weekStart)}
+            {hidden("operationId", crypto.randomUUID())}
           </RotaActionForm>
         </Panel>
       ) : (
@@ -160,9 +172,11 @@ export function ProductionRota({
               <div className="mt-4 grid gap-5 lg:grid-cols-2">
                 <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="grid content-start">
                   {hidden("weekStart", data.weekStart)}
+                  {hidden("operationId", crypto.randomUUID())}
                 </RotaActionForm>
                 <RotaActionForm action={copyRotaDayAction} submitLabel="Copy day" variant="secondary" className="grid gap-3">
                   {hidden("weekId", data.week.id)}
+                  {data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Source"><select className={inputClassName()} name="sourceDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>
                     <Field label="Target"><select className={inputClassName()} name="targetDate" defaultValue={dates[1]}>{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEE d MMM")}</option>)}</select></Field>

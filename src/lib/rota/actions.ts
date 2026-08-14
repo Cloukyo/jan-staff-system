@@ -5,6 +5,8 @@ import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { shiftDurationMinutes } from "@/lib/rota/validation";
 import { workAreaPayload } from "@/lib/platform/work-areas";
+import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
+import { executeCommercialRotaCommand } from "@/lib/rota/tenant-service";
 
 export type RotaActionState = { ok: boolean; message: string };
 
@@ -14,6 +16,29 @@ const failure = (message: string): RotaActionState => ({ ok: false, message });
 function text(formData: FormData, key: string): string | null {
   const result = String(formData.get(key) ?? "").trim();
   return result || null;
+}
+
+function numberValue(formData: FormData, key: string): number | null {
+  const value = text(formData, key);
+  return value && /^\d+$/.test(value) ? Number(value) : null;
+}
+
+function operationId(formData: FormData): string {
+  const supplied = text(formData, "operationId");
+  return supplied && /^[0-9a-f-]{36}$/i.test(supplied) ? supplied : crypto.randomUUID();
+}
+
+function commercialResult(result: Awaited<ReturnType<typeof executeCommercialRotaCommand>>, successMessage: string): RotaActionState {
+  if (result.outcome === "success") return success(successMessage);
+  if (result.outcome === "workflow_changed") return failure("The rota changed in another tab. Reload before trying again.");
+  if (result.outcome === "mfa_required") return failure("Complete MFA before changing the rota.");
+  if (result.outcome === "permission_denied") return failure("You do not have permission to change this site's rota.");
+  if (result.code === "cross_site_overlap") return failure("Staff member has an overlapping shift at another site.");
+  if (result.code === "approved_leave_conflict") return failure("This shift overlaps approved leave.");
+  if (result.code === "site_closed") return failure("This site is closed on the selected date.");
+  if (result.code === "assignment_required") return failure("The staff member is not assigned to this site on that date.");
+  if (result.code === "work_area_unavailable") return failure("Choose a work area from the selected site.");
+  return failure("The rota change could not be saved.");
 }
 
 function friendlyDatabaseError(message?: string): string {
@@ -31,9 +56,17 @@ function friendlyDatabaseError(message?: string): string {
 }
 
 export async function createRotaWeekAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  const account = await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const weekStart = text(formData, "weekStart");
   if (!weekStart) return failure("Choose a week starting on Monday.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "create_week", {
+      weekStart, title: text(formData, "title"), notes: text(formData, "notes"),
+    }, { idempotencyKey: operationId(formData) });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, "Draft rota created.");
+  }
+  const account = actor.account;
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("rota_weeks").insert({
     week_start_date: weekStart,
@@ -49,7 +82,7 @@ export async function createRotaWeekAction(_state: RotaActionState, formData: Fo
 }
 
 export async function saveRotaShiftAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  const account = await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const shiftId = text(formData, "shiftId");
   const rotaWeekId = text(formData, "rotaWeekId");
   const staffId = text(formData, "staffId");
@@ -63,6 +96,19 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
   const duration = shiftDurationMinutes(startTime, endTime);
   if (duration <= 0) return failure("Finish time must be after start time. Overnight shifts are not supported.");
   if (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > duration) return failure("Break minutes must be between zero and the shift duration.");
+
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "save_shift", {
+      weekId: rotaWeekId, shiftId, staffId, shiftDate, startTime, endTime, breakMinutes, breakUnspecified,
+      status: text(formData, "status") ?? "scheduled",
+      workAreaId: text(formData, "workAreaId"),
+      roleOnShift: text(formData, "roleOnShift"), notes: text(formData, "notes"),
+      overrideReason: text(formData, "overlapOverrideReason") ?? text(formData, "leaveOverrideReason"),
+    }, { idempotencyKey: operationId(formData), expectedRevision: shiftId ? numberValue(formData, "revision") : null });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, shiftId ? "Shift updated." : "Shift added.");
+  }
+  const account = actor.account;
 
   const payload = {
     rota_week_id: rotaWeekId,
@@ -91,9 +137,17 @@ export async function saveRotaShiftAction(_state: RotaActionState, formData: For
 }
 
 export async function archiveRotaShiftAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  const account = await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const shiftId = text(formData, "shiftId");
   if (!shiftId) return failure("Shift not found.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "archive_shift", { shiftId }, {
+      idempotencyKey: operationId(formData), expectedRevision: numberValue(formData, "revision"),
+    });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, "Shift archived.");
+  }
+  const account = actor.account;
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("rota_shifts").update({
     archived_at: new Date().toISOString(),
@@ -176,10 +230,18 @@ export async function copyShiftHoursToDaysAction(_state: RotaActionState, formDa
 }
 
 export async function setRotaWeekStatusAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  const account = await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const weekId = text(formData, "weekId");
   const status = text(formData, "status");
   if (!weekId || !status || !["draft", "published", "archived"].includes(status)) return failure("Invalid rota status.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "set_week_status", { weekId, status }, {
+      idempotencyKey: operationId(formData), expectedRevision: numberValue(formData, "revision"),
+    });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, status === "published" ? "Rota published." : status === "archived" ? "Rota archived." : "Rota returned to draft.");
+  }
+  const account = actor.account;
   const now = new Date().toISOString();
   const audit = status === "published"
     ? { published_at: now, published_by: account.id }
@@ -194,9 +256,14 @@ export async function setRotaWeekStatusAction(_state: RotaActionState, formData:
 }
 
 export async function copyPreviousRotaWeekAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const weekStart = text(formData, "weekStart");
   if (!weekStart) return failure("Choose a target week.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "copy_previous_week", { weekStart }, { idempotencyKey: operationId(formData) });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, result.copiedShifts === 1 ? "1 shift copied into the draft week." : `${result.copiedShifts ?? 0} shifts copied into the draft week.`);
+  }
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("copy_previous_rota_week", { target_week_start: weekStart });
   if (error) return failure(friendlyDatabaseError(error.message));
@@ -206,11 +273,18 @@ export async function copyPreviousRotaWeekAction(_state: RotaActionState, formDa
 }
 
 export async function copyRotaDayAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const weekId = text(formData, "weekId");
   const sourceDate = text(formData, "sourceDate");
   const targetDate = text(formData, "targetDate");
   if (!weekId || !sourceDate || !targetDate) return failure("Choose a source and target day.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "copy_day", { weekId, sourceDate, targetDate }, {
+      idempotencyKey: operationId(formData), expectedRevision: numberValue(formData, "revision"),
+    });
+    if (result.outcome === "success") revalidatePath("/rota");
+    return commercialResult(result, result.copiedShifts === 1 ? "1 shift copied." : `${result.copiedShifts ?? 0} shifts copied.`);
+  }
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("copy_rota_day", {
     target_week_id: weekId,

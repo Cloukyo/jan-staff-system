@@ -52,6 +52,7 @@ export function TemplateRotaControls({
         </div>
         <RotaActionForm action={saveRotaWeekAsTemplateAction} submitLabel="Save week as template" className="mt-4 grid gap-3">
           {hidden("weekId", data.week.id)}
+          {hidden("operationId", requestKey)}
           <Field label="Template name"><input className={inputClassName()} name="name" required /></Field>
           <Field label="Description"><textarea className={inputClassName("min-h-20")} name="description" /></Field>
           <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="includeCancelled" type="checkbox" /> Include cancelled shifts</label>
@@ -123,7 +124,7 @@ export function TemplateRotaControls({
               className="mt-5 grid gap-3"
               confirmMessage={`Apply ${preview.template.name} using ${modeLabels[preview.mode].toLowerCase()}?`}
             >
-              {hidden("templateId", preview.template.id)}{hidden("weekId", data.week.id)}{hidden("mode", preview.mode)}{hidden("requestKey", requestKey)}
+              {hidden("templateId", preview.template.id)}{hidden("weekId", data.week.id)}{hidden("mode", preview.mode)}{hidden("requestKey", requestKey)}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}
               {preview.approvedLeaveConflicts ? <Field label="Approved leave override reason"><textarea className={inputClassName("min-h-20")} name="leaveOverrideReason" required /></Field> : null}
               {preview.overlappingShifts ? <Field label="Overlap override reason"><textarea className={inputClassName("min-h-20")} name="overlapOverrideReason" required /></Field> : null}
               {preview.mode === "replace" ? <label className="flex min-h-11 items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 font-bold text-red-800"><input name="confirmReplace" type="checkbox" required /> I confirm existing draft shifts on template days will be archived and replaced.</label> : null}

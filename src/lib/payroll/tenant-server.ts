@@ -115,9 +115,7 @@ export async function loadCommercialPayrollWorkspace(
   const scopedPayArrangements = payArrangements.filter((arrangement) => (
     scopedStaffIds.has(arrangement.staffId)
   ));
-  const scopedRotaShifts = scope.siteId
-    ? []
-    : rotaShifts.filter((shift) => scopedStaffIds.has(shift.staffId));
+  const scopedRotaShifts = rotaShifts.filter((shift) => scopedStaffIds.has(shift.staffId));
 
   return {
     snapshot: buildCommercialPayrollSnapshot({
@@ -638,9 +636,25 @@ export const commercialPayrollRepository: CommercialPayrollRepository = {
     }));
   },
 
-  async loadRotaShifts() {
-    // Commercial rota tenancy is not available yet. The inherited rota tables
-    // have no organisation/site ownership, so commercial payroll fails closed.
-    return [];
+  async loadRotaShifts(scope) {
+    const supabase = await createSupabaseServerClient();
+    const result = await supabase.rpc("get_commercial_planned_shifts", {
+      target_organisation_id: scope.organisationId,
+      target_site_id: scope.siteId,
+      range_start: scope.periodStart,
+      range_end: scope.periodEnd,
+      target_staff_id: null,
+    });
+    const rows = rowsOrThrow<Record<string, unknown>>(result, "Production rota data could not be loaded.");
+    return rows.map((row) => ({
+      id: String(row.shift_id),
+      staffId: String(row.staff_id),
+      shiftDate: String(row.shift_date),
+      startTime: String(row.start_time).slice(0, 5),
+      endTime: String(row.end_time).slice(0, 5),
+      breakMinutes: Number(row.break_minutes),
+      status: "scheduled" as const,
+      archivedAt: null,
+    }));
   },
 };

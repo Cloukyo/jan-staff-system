@@ -17,6 +17,7 @@ import {
 import { ATTENDANCE_RANGE_MAX_DAYS } from "@/lib/attendance/date-range";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
 import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
+import { loadCommercialPlannedShifts } from "@/lib/rota/tenant-service";
 
 export const STAFF_HOURS_MAX_RANGE_DAYS = ATTENDANCE_RANGE_MAX_DAYS;
 export { loadAllPostgrestPages as loadAllPages };
@@ -510,7 +511,18 @@ async function loadStaffHoursRange(
       if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
       return query;
     }),
-    actor.kind === "commercial" ? Promise.resolve([] as StaffHoursShiftSourceRow[]) : loadAllPostgrestPages<StaffHoursShiftSourceRow>((from, to) => {
+    actor.kind === "commercial" ? loadCommercialPlannedShifts(actor.context, {
+      from: range.from,
+      to: range.to,
+      staffId,
+    }).then((rows) => rows.map((row) => ({
+      id: row.shift_id,
+      staff_id: row.staff_id,
+      shift_date: row.shift_date,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      break_minutes: row.break_minutes,
+    }))) : loadAllPostgrestPages<StaffHoursShiftSourceRow>((from, to) => {
       let query = supabase.from("rota_shifts")
         .select("id,staff_id,shift_date,start_time,end_time,break_minutes,rota_weeks!inner(status)")
         .gte("shift_date", range.from)

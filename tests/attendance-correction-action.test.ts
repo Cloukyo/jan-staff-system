@@ -222,6 +222,22 @@ describe("bound manager attendance correction actions", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("uses the tenant-fenced planned-hours RPC for a commercial manager", async () => {
+    mocks.requireAttendanceActor.mockResolvedValue({ kind: "commercial", context: { organisationId: "org-a", selectedSiteId: "site-a" } });
+    const form = new FormData();
+    form.set("reason", "Using the published rota");
+    const result = await useBoundPlannedHoursAction(context(), initialState, form);
+    expect(mocks.rpc).toHaveBeenCalledWith("use_commercial_planned_hours", {
+      target_organisation_id: "org-a",
+      target_site_id: "site-a",
+      target_staff_id: "staff-1",
+      target_date: "2026-07-28",
+      reason: "Using the published rota",
+      expected_revision: "events:event-1|corrections:correction-1",
+    });
+    expect(result).toMatchObject({ ok: true, code: "saved" });
+  });
+
   it("checks manager access before rejecting malformed form data", async () => {
     mocks.requireAttendanceActor.mockRejectedValueOnce(new Error("Manager access required"));
 
@@ -356,6 +372,23 @@ describe("bound manager attendance correction actions", () => {
       code: "reset",
       message: "Attendance was reset to published planned hours.",
     });
+  });
+
+  it("resets commercial attendance through the append-only tenant boundary", async () => {
+    mocks.requireAttendanceActor.mockResolvedValue({ kind: "commercial", context: { organisationId: "org-a", selectedSiteId: "site-a" } });
+    const result = await resetBoundAttendanceToPlannedHoursAction(context(), initialState, resetForm());
+    expect(mocks.rpc).toHaveBeenCalledWith("reset_commercial_attendance_to_planned_hours", {
+      target_organisation_id: "org-a",
+      target_site_id: "site-a",
+      target_staff_id: "staff-1",
+      target_date: "2026-07-28",
+      reason: "Return the day to the published rota",
+      expected_revision: "events:event-1|corrections:correction-1",
+      operation_id: "40000000-0000-4000-8000-000000000000",
+      expected_planned_start: "08:00",
+      expected_planned_finish: "17:00",
+    });
+    expect(result).toMatchObject({ ok: true, code: "reset" });
   });
 
   it("rejects missing or malformed bound reset boundaries before opening a database client", async () => {

@@ -23,3 +23,22 @@ export async function selectCommercialOrganisation(formData: FormData): Promise<
   createLogger("commercial-identity", { correlationId: requestId }).info("Commercial organisation preference updated");
   redirect(safeCommercialContinuation(String(formData.get("continuation") ?? "/dashboard")));
 }
+
+export async function selectCommercialSite(formData: FormData): Promise<never> {
+  const requestId = correlationId((await headers()).get("x-request-id"));
+  const membershipId = String(formData.get("membershipId") ?? "");
+  const siteId = String(formData.get("siteId") ?? "");
+  const identity = await resolveAuthenticatedCommercialIdentity(await createSupabaseCommercialIdentityDependencies());
+  const context = resolveMembershipContext(identity, {
+    requestedMembershipId: membershipId,
+    requestedSiteId: siteId,
+    selectionMode: "sensitive",
+  });
+  await writeCommercialPreference({
+    membershipId: context.membershipId,
+    siteId: context.selectedSiteId,
+    authorisationRevision: context.authorisationRevision,
+  });
+  createLogger("commercial-identity", { correlationId: requestId }).info("Commercial site preference updated");
+  redirect(safeCommercialContinuation(String(formData.get("continuation") ?? "/dashboard")));
+}

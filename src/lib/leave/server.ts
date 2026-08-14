@@ -5,6 +5,10 @@ import type { LeaveRequest, LeaveStatus, LeaveType, LeaveDayPart, StaffAccount }
 import { canAccessStaffRecord, mapStaffAccount, requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { calculateLeaveMinutes, findOverlappingLeave, validateLeaveRequestInput } from "@/lib/calculations/leave";
+import { resolveAttendanceActor } from "@/lib/attendance/tenant-actor";
+import { requireActiveMembership } from "@/lib/commercial-identity/server";
+import { executeCommercialLeaveCommand, loadCommercialLeaveSnapshot } from "@/lib/rota/tenant-service";
+import type { CommercialMembershipContext } from "@/types/tenancy";
 
 type LeaveRequestRow = {
   id: string;
@@ -18,12 +22,13 @@ type LeaveRequestRow = {
   requested_minutes: number;
   staff_note: string | null;
   status: LeaveStatus;
-  manager_note: string | null;
+  manager_note?: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+  revision?: number;
 };
 
 export type ActionResult = {
@@ -44,13 +49,37 @@ function mapLeaveRequest(row: LeaveRequestRow): LeaveRequest {
     requestedMinutes: row.requested_minutes,
     staffNote: row.staff_note ?? "",
     status: row.status,
-    managerNote: row.manager_note,
+    managerNote: row.manager_note ?? null,
     reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at,
     cancelledAt: row.cancelled_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    revision: row.revision,
   };
+}
+
+export async function requireLeaveActor() {
+  return resolveAttendanceActor({
+    loadCommercial: () => requireActiveMembership({ selectionMode: "sensitive" }),
+    loadLegacy: () => requireAccount(["manager", "staff"]),
+  });
+}
+
+export async function listCommercialLeaveRequests(context: CommercialMembershipContext): Promise<LeaveRequest[]> {
+  const snapshot = await loadCommercialLeaveSnapshot(context);
+  return (Array.isArray(snapshot.requests) ? snapshot.requests : []).map((value) => mapLeaveRequest(value as LeaveRequestRow));
+}
+
+export async function listCommercialLeaveStaff(context: CommercialMembershipContext): Promise<StaffAccount[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.from("staff_profiles").select("id,full_name,active")
+    .eq("organisation_id", context.organisationId).order("full_name");
+  if (error) throw new Error("Staff profiles could not be loaded.");
+  return data.map((row) => ({
+    id: row.id, authUserId: null, staffId: row.id, fullName: row.full_name, email: "", role: "staff" as const,
+    active: row.active, mustChangePassword: false, createdAt: "", updatedAt: "",
+  }));
 }
 
 export async function listLeaveRequestsForAccount(account: StaffAccount): Promise<LeaveRequest[]> {
@@ -71,7 +100,28 @@ export async function listStaffAccounts(): Promise<StaffAccount[]> {
 }
 
 export async function createLeaveRequestAction(_state: ActionResult, formData: FormData): Promise<ActionResult> {
-  const account = await requireAccount(["manager", "staff"]);
+  const actor = await requireLeaveActor();
+  if (actor.kind === "commercial") {
+    const staffId = actor.context.staffId ?? String(formData.get("staffId") || "");
+    const input = {
+      staffId, leaveType: String(formData.get("leaveType") ?? "") as LeaveType,
+      startDate: String(formData.get("startDate") ?? ""), endDate: String(formData.get("endDate") ?? ""),
+      dayPart: String(formData.get("dayPart") ?? "full_day") as LeaveDayPart,
+      startTime: String(formData.get("startTime") || "") || null, endTime: String(formData.get("endTime") || "") || null,
+      staffNote: String(formData.get("staffNote") ?? "").trim(),
+    };
+    const errors = validateLeaveRequestInput(input);
+    const requestedMinutes = calculateLeaveMinutes(input);
+    if (!requestedMinutes) errors.push("The selected dates do not include any working time.");
+    if (errors.length) return { ok: false, message: errors[0] };
+    const result = await executeCommercialLeaveCommand(actor.context, "create_leave", {
+      ...input, requestedMinutes, sourceSiteId: actor.context.selectedSiteId,
+    }, { idempotencyKey: String(formData.get("operationId") || crypto.randomUUID()) });
+    if (result.outcome !== "success") return { ok: false, message: result.code === "leave_overlap" ? "This overlaps an existing pending or approved leave request." : "Leave request could not be saved." };
+    revalidatePath("/leave"); revalidatePath("/leave/requests");
+    return { ok: true, message: "Leave request submitted." };
+  }
+  const account = actor.account;
   const staffId = account.role === "manager" ? String(formData.get("staffId") || account.staffId) : account.staffId;
   if (!canAccessStaffRecord(account, staffId)) return { ok: false, message: "You cannot submit leave for another staff member." };
   const input = {
@@ -119,8 +169,17 @@ export async function createLeaveRequestAction(_state: ActionResult, formData: F
 }
 
 export async function cancelLeaveRequestAction(_state: ActionResult, formData: FormData): Promise<ActionResult> {
-  const account = await requireAccount(["manager", "staff"]);
+  const actor = await requireLeaveActor();
   const requestId = String(formData.get("requestId") ?? "");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialLeaveCommand(actor.context, "cancel_leave", { leaveRequestId: requestId }, {
+      idempotencyKey: String(formData.get("operationId") || crypto.randomUUID()), expectedRevision: Number(formData.get("revision")) || null,
+    });
+    if (result.outcome !== "success") return { ok: false, message: result.outcome === "workflow_changed" ? "This request changed. Reload before trying again." : "Leave request could not be cancelled." };
+    revalidatePath("/leave"); revalidatePath("/leave/requests");
+    return { ok: true, message: "Leave request cancelled." };
+  }
+  const account = actor.account;
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("leave_requests").select("*").eq("id", requestId).maybeSingle();
   if (error || !data) return { ok: false, message: "Leave request not found." };
@@ -135,11 +194,24 @@ export async function cancelLeaveRequestAction(_state: ActionResult, formData: F
 }
 
 export async function reviewLeaveRequestAction(_state: ActionResult, formData: FormData): Promise<ActionResult> {
-  const account = await requireAccount(["manager"]);
+  const actor = await requireLeaveActor();
   const requestId = String(formData.get("requestId") ?? "");
   const status = String(formData.get("status") ?? "") as Extract<LeaveStatus, "approved" | "rejected">;
   const managerNote = String(formData.get("managerNote") ?? "").trim();
   if (!["approved", "rejected"].includes(status)) return { ok: false, message: "Choose approve or reject." };
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialLeaveCommand(actor.context, "review_leave", { leaveRequestId: requestId, status, managerNote }, {
+      idempotencyKey: String(formData.get("operationId") || crypto.randomUUID()), expectedRevision: Number(formData.get("revision")) || null,
+    });
+    if (result.outcome !== "success") {
+      if (result.outcome === "mfa_required") return { ok: false, message: "Complete MFA before reviewing leave." };
+      if (result.outcome === "workflow_changed") return { ok: false, message: "This request changed. Reload before trying again." };
+      return { ok: false, message: "Leave request could not be reviewed." };
+    }
+    revalidatePath("/leave"); revalidatePath("/leave/requests");
+    return { ok: true, message: status === "approved" ? `Leave approved. ${result.affectedShiftCount ?? 0} existing shifts need review.` : "Leave rejected." };
+  }
+  const account = actor.account;
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase
     .from("leave_requests")

@@ -9,6 +9,7 @@ export type ProductionRotaWeek = {
   notes: string | null;
   publishedAt: string | null;
   archivedAt: string | null;
+  revision?: number;
 };
 
 export type ProductionRotaStaff = {
@@ -29,6 +30,7 @@ export type ProductionRotaShift = {
   breakMinutes: number;
   breakUnspecified: boolean;
   workArea?: string | null;
+  workAreaId?: string | null;
   /** @deprecated Use workArea. */
   roomOrArea: string | null;
   roleOnShift: string | null;
@@ -38,6 +40,7 @@ export type ProductionRotaShift = {
   leaveOverrideReason: string | null;
   overlapOverrideReason: string | null;
   archivedAt: string | null;
+  revision?: number;
 };
 
 export type RotaLeaveWarning = {
@@ -52,6 +55,10 @@ export type RotaLeaveWarning = {
 };
 
 export type ProductionRotaDataset = {
+  organisationId?: string;
+  membershipId?: string;
+  site?: { id: string; name: string };
+  siteChoices?: Array<{ id: string; name: string }>;
   weekStart: string;
   week: ProductionRotaWeek | null;
   shifts: ProductionRotaShift[];
@@ -63,6 +70,7 @@ export type ProductionRotaDataset = {
     defaultBreakMinutes: number;
     shiftIntervalMinutes: number;
     availableWorkAreas?: string[];
+    workAreaOptions?: Array<{ id: string; name: string }>;
     /** @deprecated Use availableWorkAreas. */
     availableRooms: string[];
     allowOverlapOverride: boolean;

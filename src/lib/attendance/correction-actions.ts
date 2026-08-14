@@ -253,21 +253,22 @@ async function applyPlannedHours(input: PlannedHoursActionInput): Promise<Correc
   if (!isPlannedHoursActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
   if (!input.staffId || !validDate(input.attendanceDate) || reason.length < 5) return invalidCorrection;
-  if (actor.kind === "commercial") {
-    return {
-      ok: false,
-      code: "planned_hours_not_converted",
-      message: "Planned-hours attendance changes are unavailable until rota tenancy is completed.",
-    };
-  }
-
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("use_planned_hours", {
+  const { data, error } = actor.kind === "commercial"
+    ? await supabase.rpc("use_commercial_planned_hours", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      reason,
+      expected_revision: input.expectedRevision,
+    })
+    : await supabase.rpc("use_planned_hours", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     reason,
     expected_revision: input.expectedRevision,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) return { ok: false, code: "save_failed", message: "Planned hours could not be applied." };
   if (!data) return { ok: true, code: "no_changes", message: "Attendance already matches the published planned hours." };
@@ -377,16 +378,20 @@ async function resetAttendanceToPlannedHours(
     return invalidCorrection;
   }
 
-  if (actor.kind === "commercial") {
-    return {
-      ok: false,
-      code: "planned_hours_not_converted",
-      message: "Reset to planned hours is unavailable until rota tenancy is completed. Use attendance corrections instead.",
-    };
-  }
-
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("reset_attendance_to_planned_hours", {
+  const { error } = actor.kind === "commercial"
+    ? await supabase.rpc("reset_commercial_attendance_to_planned_hours", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      reason,
+      expected_revision: input.expectedRevision,
+      operation_id: input.correctionId,
+      expected_planned_start: input.plannedStart,
+      expected_planned_finish: input.plannedFinish,
+    })
+    : await supabase.rpc("reset_attendance_to_planned_hours", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     reason,
@@ -394,7 +399,7 @@ async function resetAttendanceToPlannedHours(
     operation_id: input.correctionId,
     expected_planned_start: input.plannedStart,
     expected_planned_finish: input.plannedFinish,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) {
     return {

@@ -184,6 +184,7 @@ export interface LeaveRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision?: number;
 }
 
 export interface PayRateHistory {

@@ -57,6 +57,8 @@ function ShiftEditorDrawer({
   onClose: () => void;
 }) {
   const shift = editor.shift;
+  const [saveOperationId] = useState(() => crypto.randomUUID());
+  const [archiveOperationId] = useState(() => crypto.randomUUID());
   const previousDate = format(addDays(parseISO(editor.date), -1), "yyyy-MM-dd");
   const previousShifts = previousDayShifts(editor.staff.id, editor.date, data.shifts);
   const laterDates = shift ? laterWeekDates(data.weekStart, editor.date) : [];
@@ -94,7 +96,7 @@ function ShiftEditorDrawer({
             </div>
           </div>
 
-          <RotaActionForm
+          {!data.organisationId ? <RotaActionForm
             action={copyPreviousDayPatternAction}
             submitLabel="Copy previous day"
             pendingLabel="Copying..."
@@ -112,9 +114,9 @@ function ShiftEditorDrawer({
                 ? "Previous-day copying is available from Tuesday onwards."
                 : `Use ${format(parseISO(previousDate), "EEEE")}'s ${previousShifts.length ? previousShifts.map((item) => `${item.startTime} to ${item.endTime}`).join(" and ") : "not working"} pattern.`}
             </p>
-          </RotaActionForm>
+          </RotaActionForm> : null}
 
-          {shift && shift.status !== "cancelled" && laterDates.length ? (
+          {!data.organisationId && shift && shift.status !== "cancelled" && laterDates.length ? (
             <RotaActionForm
               action={copyShiftHoursToDaysAction}
               submitLabel="Copy to other days"
@@ -147,7 +149,9 @@ function ShiftEditorDrawer({
           onSuccess={onClose}
         >
           {hidden("rotaWeekId", data.week?.id ?? "")}
+          {hidden("operationId", saveOperationId)}
           {shift ? hidden("shiftId", shift.id) : null}
+          {shift?.revision ? hidden("revision", String(shift.revision)) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Staff member">
               <select className={inputClassName()} name="staffId" defaultValue={editor.staff.id} required>
@@ -186,7 +190,12 @@ function ShiftEditorDrawer({
               </select>
             </Field>
             <Field label={industryProfile.workAreaSingular}>
-              <input className={inputClassName()} name="workArea" list="rota-work-areas" defaultValue={shift?.workArea ?? shift?.roomOrArea ?? ""} />
+              {data.settings.workAreaOptions ? (
+                <select className={inputClassName()} name="workAreaId" defaultValue={shift?.workAreaId ?? ""}>
+                  <option value="">No work area</option>
+                  {data.settings.workAreaOptions.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+              ) : <input className={inputClassName()} name="workArea" list="rota-work-areas" defaultValue={shift?.workArea ?? shift?.roomOrArea ?? ""} />}
             </Field>
             <Field label="Role on shift">
               <input className={inputClassName()} name="roleOnShift" defaultValue={shift?.roleOnShift ?? ""} />
@@ -219,6 +228,8 @@ function ShiftEditorDrawer({
             onSuccess={onClose}
           >
             {hidden("shiftId", shift.id)}
+            {hidden("operationId", archiveOperationId)}
+            {shift.revision ? hidden("revision", String(shift.revision)) : null}
           </RotaActionForm>
         ) : null}
       </section>
