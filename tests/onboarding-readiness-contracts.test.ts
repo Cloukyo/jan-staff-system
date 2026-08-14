@@ -37,6 +37,17 @@ describe("commercial readiness and Go Live contracts", () => {
       items: [item],
     };
     expect(commercialReadinessSnapshotSchema.parse(value)).toEqual(value);
+    expect(
+      commercialReadinessSnapshotSchema.parse({
+        ...value,
+        items: [
+          {
+            ...item,
+            evidenceRevision: "heartbeat:2026-08-14 05:52:39.599902+00",
+          },
+        ],
+      }).items[0].evidenceRevision,
+    ).toContain("+00");
   });
 
   it("rejects client-added authority and malformed fingerprints", () => {

@@ -58,7 +58,7 @@ export const commercialReadinessItemSchema = z
     title: z.string().trim().min(2).max(120),
     explanation: z.string().trim().min(2).max(300),
     remediationRoute: z.string().regex(/^\/[a-z0-9/_-]*$/).max(240).nullable(),
-    evidenceRevision: z.string().regex(/^[a-z0-9][a-z0-9_.:-]{0,191}$/),
+    evidenceRevision: z.string().regex(/^[a-z0-9][a-z0-9_.:+ -]{0,191}$/),
   })
   .strict();
 
