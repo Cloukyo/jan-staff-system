@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(21);
 
 select has_table('public','billing_provider_customers','provider customer mappings exist');
 select has_table('public','billing_provider_prices','environment-scoped provider prices exist');
@@ -14,6 +14,17 @@ select has_column('public','organisation_subscriptions','last_provider_subscript
 select has_column('public','organisation_subscriptions','last_provider_subscription_state','subscription-object state supports contradictory-event fencing');
 select has_column('public','organisation_subscriptions','over_limit','downgrades preserve and identify excess footprint');
 select has_function('public','commercial_billing_snapshot',array['uuid'],'billing status uses a guarded customer snapshot');
+select has_function('commercial_api_private','commercial_billing_snapshot',array['uuid'],'privileged billing snapshot implementation is outside the exposed schema');
+select ok(
+  not (select prosecdef from pg_proc where oid='public.commercial_billing_snapshot(uuid)'::regprocedure)
+  and (select prosecdef from pg_proc where oid='commercial_api_private.commercial_billing_snapshot(uuid)'::regprocedure),
+  'public billing snapshot is invoker-only while its guarded implementation retains required privilege'
+);
+select ok(
+  (select coalesce(proconfig,array[]::text[]) @> array['search_path=""']
+   from pg_proc where oid='commercial_api_private.commercial_billing_snapshot(uuid)'::regprocedure),
+  'private billing snapshot implementation keeps an empty search path'
+);
 select ok(has_function_privilege('authenticated','public.commercial_billing_snapshot(uuid)','EXECUTE')
   and not has_function_privilege('anon','public.commercial_billing_snapshot(uuid)','EXECUTE'),'billing snapshot is authenticated only');
 select ok(not has_function_privilege('authenticated','public.commercial_process_billing_event(text,jsonb)','EXECUTE')

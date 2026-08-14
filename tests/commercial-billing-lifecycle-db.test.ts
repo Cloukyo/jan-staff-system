@@ -214,6 +214,28 @@ describe("commercial billing lifecycle persistence", () => {
     expect((await db.query<{ changed: number }>("select private.reconcile_commercial_billing(to_timestamp($1)+interval '1 second') changed", [changed.periodEnd])).rows[0].changed).toBe(0);
   });
 
+  it("exposes billing snapshots through an invoker wrapper while retaining the guarded private implementation", async () => {
+    const functions = (await db.query<{ schema: string; securityDefiner: boolean; configuration: string[] | null }>(`
+      select namespace.nspname as schema, procedure.prosecdef as "securityDefiner",
+        procedure.proconfig as configuration
+      from pg_proc procedure
+      join pg_namespace namespace on namespace.oid = procedure.pronamespace
+      where procedure.proname = 'commercial_billing_snapshot'
+      order by namespace.nspname
+    `)).rows;
+
+    expect(functions).toEqual([
+      { schema: "commercial_api_private", securityDefiner: true, configuration: ['search_path=""'] },
+      { schema: "public", securityDefiner: false, configuration: ['search_path=""'] },
+    ]);
+    expect((await db.query<{ allowed: boolean }>(
+      "select has_function_privilege('authenticated','public.commercial_billing_snapshot(uuid)','EXECUTE') allowed",
+    )).rows[0].allowed).toBe(true);
+    expect((await db.query<{ allowed: boolean }>(
+      "select has_function_privilege('anon','public.commercial_billing_snapshot(uuid)','EXECUTE') allowed",
+    )).rows[0].allowed).toBe(false);
+  });
+
   it("denies cross-organisation billing reads and direct audit mutation", async () => {
     await seedSubscription(db);
     await setTenantAuthUser(db, USER_A_OWNER, "aal2");

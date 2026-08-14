@@ -285,7 +285,8 @@ export async function createReadinessOnboardingDatabase(): Promise<PGlite> {
 
 export async function createBillingLifecycleDatabase(): Promise<PGlite> {
   const db = await createReadinessOnboardingDatabase();
-  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+  const migrationNames = readdirSync(resolve("supabase/migrations"));
+  const migration = migrationNames.find((name) =>
     name.endsWith("_commercial_billing_lifecycle.sql"),
   );
   if (!migration) {
@@ -293,6 +294,14 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
     throw new Error("commercial billing-lifecycle migration is missing");
   }
   await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  const hardeningMigration = migrationNames.find((name) =>
+    name.endsWith("_harden_commercial_billing_snapshot.sql"),
+  );
+  if (hardeningMigration) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", hardeningMigration), "utf8"),
+    );
+  }
   return db;
 }
 
