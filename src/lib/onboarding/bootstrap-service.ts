@@ -6,6 +6,7 @@ import {
   onboardingReadinessSnapshotSchema,
   type OnboardingBootstrapSnapshot,
 } from "./contracts";
+import { commercialReadinessSnapshotSchema } from "./readiness-contracts";
 
 type RpcResult = Promise<{ data: unknown; error: { message?: string } | null }>;
 
@@ -18,7 +19,7 @@ export type OnboardingBootstrapDependencies = { rpc: OnboardingBootstrapRpc };
 
 const commandResponseSchema = z.object({
   commandResult: onboardingCommandResultSchema,
-  readiness: onboardingReadinessSnapshotSchema.nullable(),
+  readiness: z.union([onboardingReadinessSnapshotSchema, commercialReadinessSnapshotSchema]).nullable(),
   bootstrap: onboardingBootstrapSnapshotSchema.nullable(),
   oneTimeRegistrationCode: z.string().regex(/^[A-HJ-NP-Z2-9]{16}$/).optional(),
   registrationExpiresAt: z.string().datetime({ offset: true }).optional(),
@@ -67,6 +68,8 @@ export async function executeOnboardingBootstrapCommand(
     "revoke_kiosk_device",
     "set_kiosk_staff_pin",
     "confirm_kiosk_connection",
+    "evaluate_readiness",
+    "go_live",
   ].includes(command.commandType)) {
     throw new Error("This command is not part of the available onboarding milestones.");
   }

@@ -6,6 +6,7 @@ export default defineConfig({
     environment: "jsdom",
     exclude: [...configDefaults.exclude, ".worktrees/**"],
     globals: true,
+    hookTimeout: 30_000,
   },
   resolve: {
     alias: {

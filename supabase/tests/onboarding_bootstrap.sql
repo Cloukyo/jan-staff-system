@@ -1,6 +1,6 @@
 begin;
 
-select plan(38);
+select plan(46);
 
 select ok(
   to_regclass('public.legal_document_versions') is not null
@@ -253,6 +253,56 @@ select ok(
   not has_function_privilege('authenticated','private.execute_staff_invitation_command(jsonb)','EXECUTE')
   and not has_function_privilege('anon','private.execute_staff_invitation_command(jsonb)','EXECUTE'),
   'staff invitation mutation implementation remains private'
+);
+
+select ok(
+  to_regclass('public.onboarding_readiness_snapshots') is not null
+  and to_regclass('public.organisation_lifecycle_audit_events') is not null,
+  'readiness evaluations and organisation lifecycle transitions retain audit evidence'
+);
+
+select ok(
+  not has_table_privilege('authenticated','public.onboarding_readiness_snapshots','INSERT')
+  and not has_table_privilege('authenticated','public.organisation_lifecycle_audit_events','INSERT'),
+  'browser roles cannot forge readiness or lifecycle evidence'
+);
+
+select ok(
+  has_function_privilege('authenticated','public.execute_onboarding_bootstrap_command(jsonb)','EXECUTE')
+  and not has_function_privilege('authenticated','private.execute_readiness_go_live_command(jsonb)','EXECUTE'),
+  'Go Live is exposed only through the guarded onboarding command boundary'
+);
+
+select ok(
+  exists(select 1 from pg_trigger where tgname='organisations_protect_live_state' and not tgisinternal)
+  and exists(select 1 from pg_trigger where tgname='organisation_lifecycle_no_mutation' and not tgisinternal),
+  'organisation live state and lifecycle evidence are protected from direct mutation'
+);
+
+select is(
+  (select count(*)::bigint from public.organisation_entitlements where capability_key='attendance.offline' and boolean_value),
+  0::bigint,
+  'Go Live cannot materialise an offline attendance entitlement'
+);
+
+select ok(
+  not has_function_privilege('authenticated','public.perform_commercial_kiosk_attendance_action_7h(text,text,text,text,text,uuid)','EXECUTE')
+  and has_function_privilege('authenticated','public.perform_commercial_kiosk_attendance_action(text,text,text,text,text,uuid)','EXECUTE'),
+  'online attendance uses the current live-state and entitlement gate'
+);
+
+select ok(
+  not has_column_privilege('authenticated','public.organisations','operational_state','UPDATE')
+  and not has_column_privilege('authenticated','public.organisations','went_live_at','UPDATE')
+  and has_column_privilege('authenticated','public.organisations','display_name','UPDATE'),
+  'browser roles may update safe organisation fields but cannot forge live state'
+);
+
+select ok(
+  exists(select 1 from pg_constraint where conrelid='public.organisation_subscriptions'::regclass
+    and conname='organisation_subscriptions_exact_trial_window_check'
+    and pg_get_constraintdef(oid) like '%1440 hours%'),
+  'trial-active rows require one exact 1440-hour initial trial window'
 );
 
 select * from finish();

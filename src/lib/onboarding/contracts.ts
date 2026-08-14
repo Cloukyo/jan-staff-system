@@ -26,6 +26,11 @@ import {
   kioskRegistrationReferencePayloadSchema,
   kioskSnapshotSchema,
 } from "./kiosk-contracts";
+import {
+  commercialLiveSummarySchema,
+  commercialReadinessSnapshotSchema,
+  goLivePayloadSchema,
+} from "./readiness-contracts";
 
 export const ONBOARDING_CONTRACT_SCHEMA_VERSION = 1 as const;
 export const COMMERCIAL_CUSTOMER_WORKFLOW_KEY =
@@ -644,12 +649,20 @@ export const organisationSubscriptionSummarySchema = z
     planKey: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
     planVersion: z.number().int().positive(),
     planDisplayName: z.string().trim().min(2).max(120),
-    state: z.literal("trial_pending"),
+    state: z.enum(["trial_pending", "trial_active"]),
     trialDurationDays: z.literal(60),
-    trialStartedAt: z.null(),
-    trialEndsAt: z.null(),
+    trialStartedAt: z.iso.datetime({ offset: true }).nullable(),
+    trialEndsAt: z.iso.datetime({ offset: true }).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((subscription, context) => {
+    const active = subscription.state === "trial_active";
+    const timestampsComplete = subscription.trialStartedAt !== null && subscription.trialEndsAt !== null;
+    const timestampsEmpty = subscription.trialStartedAt === null && subscription.trialEndsAt === null;
+    if ((active && !timestampsComplete) || (!active && !timestampsEmpty)) {
+      context.addIssue({ code: "custom", message: "Trial timestamps must match the subscription state", path: ["trialStartedAt"] });
+    }
+  });
 
 export const onboardingCommandSchema = z
   .object({
@@ -807,6 +820,15 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema
         path: ["payload"],
       });
     }
+    if (command.commandType === "evaluate_readiness" && Object.keys(command.payload).length !== 0) {
+      context.addIssue({ code: "custom", message: "Readiness evaluation accepts no payload", path: ["payload"] });
+    }
+    if (command.commandType === "go_live") {
+      const result = goLivePayloadSchema.safeParse(command.payload);
+      if (!result.success)
+        for (const issue of result.error.issues)
+          context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+    }
     if (command.commandType === "save_step_draft") {
       const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
       if (!result.success) {
@@ -905,6 +927,8 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema
         ...command,
         payload: kioskPinSetupPayloadSchema.parse(command.payload),
       };
+    if (command.commandType === "go_live")
+      return { ...command, payload: goLivePayloadSchema.parse(command.payload) };
     if (command.commandType === "preview_staff_import")
       return {
         ...command,
@@ -1307,7 +1331,7 @@ export const onboardingBootstrapSnapshotSchema = z
           .strict(),
       )
       .min(8)
-      .max(9),
+      .max(11),
     legalDocuments: z
       .array(
         z
@@ -1337,6 +1361,8 @@ export const onboardingBootstrapSnapshotSchema = z
     managerInvitations: managerInvitationSnapshotSchema,
     staffInvitations: staffInvitationSnapshotSchema,
     kiosk: kioskSnapshotSchema.optional(),
+    readiness: commercialReadinessSnapshotSchema.nullable().optional(),
+    liveSummary: commercialLiveSummarySchema.nullable().optional(),
   })
   .strict();
 

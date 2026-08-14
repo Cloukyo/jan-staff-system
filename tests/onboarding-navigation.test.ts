@@ -167,5 +167,9 @@ describe("authoritative onboarding resume route", () => {
     );
     complete.steps[7].status = "skipped";
     expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/kiosk");
+    complete.steps.push({ stepKey: "kiosk", status: "complete", revision: "1", draftPayload: {}, validationSummary: [] });
+    expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/readiness");
+    complete.session.status = "live";
+    expect(authoritativeOnboardingRoute(complete)).toBe("/commercial/welcome");
   });
 });

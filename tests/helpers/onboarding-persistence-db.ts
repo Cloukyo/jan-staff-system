@@ -95,7 +95,8 @@ export async function createInitialStaffingOnboardingDatabase(): Promise<PGlite>
   await db.exec(`
     alter table public.staff_profiles
       add column if not exists email text,
-      add column if not exists appointment_date date;
+      add column if not exists appointment_date date,
+      add column if not exists auth_user_id uuid;
     do $$ begin create type public.staff_import_batch_status as enum ('previewing','preview_ready','invalid','committed'); exception when duplicate_object then null; end $$;
     do $$ begin create type public.staff_import_row_status as enum ('valid','invalid','committed'); exception when duplicate_object then null; end $$;
     create table if not exists public.staff_import_batches (
@@ -240,7 +241,15 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
       revoked_at timestamptz
     );
     create or replace function public.perform_commercial_kiosk_attendance_action(device_token text,target_staff_id text,candidate_pin text,requested_action text,expected_revision text,idempotency_key uuid)
-    returns jsonb language sql as $$ select jsonb_build_object('ok',true,'code','fixture') $$;
+    returns jsonb language plpgsql security definer set search_path='' as $$
+    declare device public.kiosk_devices%rowtype;event_id uuid;
+    begin
+      select * into device from public.kiosk_devices where token_hash=sha256(convert_to(device_token,'UTF8')) and active;
+      if not found then return jsonb_build_object('ok',false,'code','device_required');end if;
+      if requested_action not in('clock_in','clock_out') then return jsonb_build_object('ok',false,'code','invalid_action');end if;
+      insert into public.clock_events(organisation_id,site_id,staff_id,event_type) values(device.organisation_id,device.site_id,target_staff_id,requested_action) returning id into event_id;
+      return jsonb_build_object('ok',true,'code','fixture','eventId',event_id,'state',case when requested_action='clock_in' then 'clocked_in' else 'clocked_out' end);
+    end$$;
   `);
   const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
     name.endsWith("_commercial_online_kiosk_onboarding.sql"),
@@ -248,6 +257,19 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
   if (!migration) {
     await db.close();
     throw new Error("commercial online-kiosk onboarding migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
+export async function createReadinessOnboardingDatabase(): Promise<PGlite> {
+  const db = await createKioskOnboardingDatabase();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_readiness_go_live.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial readiness and Go Live migration is missing");
   }
   await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
   return db;
