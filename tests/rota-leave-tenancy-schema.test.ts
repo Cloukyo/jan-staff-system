@@ -31,6 +31,17 @@ describe("rota and leave tenancy migration contract", () => {
     expect(sql).toContain("source_site_id uuid");
   });
 
+  it("persists unspecified-break evidence on commercial template shifts", () => {
+    const followUp = readFileSync(
+      resolve("supabase/migrations/20260814144500_commercial_rota_template_breaks.sql"),
+      "utf8",
+    );
+
+    expect(followUp).toMatch(
+      /alter table public\.rota_template_shifts[\s\S]*break_unspecified boolean not null default false/,
+    );
+  });
+
   it("declares guarded commands, audit evidence and replay receipts", () => {
     const sql = migrationSql();
     for (const boundary of [
