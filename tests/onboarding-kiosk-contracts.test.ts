@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   kioskClaimPayloadSchema,
@@ -9,6 +11,14 @@ import {
 import { onboardingBootstrapCommandSchema } from "@/lib/onboarding/contracts";
 
 describe("commercial kiosk onboarding contracts", () => {
+  it("repairs renamed attendance-RPC self references without changing attendance logic", () => {
+    const repair = readFileSync(
+      resolve("supabase/migrations/20260814015451_fix_commercial_kiosk_attendance_wrapper.sql"),
+      "utf8",
+    );
+    expect(repair).toContain("perform_commercial_kiosk_attendance_action_7g.idempotency_key");
+    expect(repair).toContain("pg_get_functiondef");
+  });
   it("accepts only the approved site-bound registration fields", () => {
     expect(
       kioskRegistrationPayloadSchema.parse({
