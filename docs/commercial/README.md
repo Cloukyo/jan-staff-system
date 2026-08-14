@@ -8,6 +8,8 @@ These documents describe implemented commercial tenancy milestones on `codex/com
 - [Customer domain conversion](customer-domain-conversion.md): commercial staff, compliance, settings, site operations and the Jan compatibility boundary.
 - [Attendance tenancy](attendance-tenancy.md): organisation and occurrence-site attendance ownership, effective evidence and Jan attendance compatibility.
 - [Payroll and reporting tenancy](payroll-reporting-tenancy.md): revisioned commercial payroll preparation, reporting, imports and exports, with the retained Jan payroll path.
+- [Rota and leave tenancy](rota-leave-tenancy.md): site-owned commercial rota, leave, templates and planned-hours boundaries.
+- [Post-live customer administration](post-live-administration.md): normal live-customer administration, audit and command boundaries.
 - [Platform neutrality](platform-neutrality.md): neutral core terminology and presentation profiles.
 - [Environments and releases](environments-and-releases.md): environment and release safeguards.
 - [Repository protection](repository-protection.md): repository and delivery controls.

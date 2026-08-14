@@ -16,8 +16,10 @@ import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { signOutAction } from "@/lib/auth/actions";
 import {
+  commercialAdminNavigation,
   itemIsActive,
   managerNavigation,
+  navigationForPermissions,
   type NavGroup,
 } from "@/lib/navigation/manager-navigation";
 import type { AppRole } from "@/types";
@@ -36,13 +38,16 @@ const staffNavigation: NavGroup[] = [
   },
 ];
 
-export function AppShell({ children, role = "manager" }: { children: React.ReactNode; role?: AppRole }) {
+export function AppShell({ children, role = "manager", commercialPermissions }: { children: React.ReactNode; role?: AppRole; commercialPermissions?: readonly string[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const navigation = role === "staff" ? staffNavigation : managerNavigation;
+  const roleNavigation = role === "staff" ? staffNavigation : managerNavigation;
+  const navigation = commercialPermissions
+    ? navigationForPermissions(commercialAdminNavigation, commercialPermissions)
+    : roleNavigation;
 
   useEffect(() => {
     function handlePageScroll(event: KeyboardEvent) {
