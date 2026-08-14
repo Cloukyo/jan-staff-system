@@ -1,0 +1,2 @@
+import { CommercialKioskRegistration } from "@/components/kiosk/commercial-kiosk-registration";
+export default async function KioskRegisterPage({ searchParams }: { searchParams: Promise<Record<string,string|string[]|undefined>> }) { const params = await searchParams; return <CommercialKioskRegistration registrationId={typeof params.id === "string" ? params.id : ""} registrationCode={typeof params.code === "string" ? params.code : ""}/>; }

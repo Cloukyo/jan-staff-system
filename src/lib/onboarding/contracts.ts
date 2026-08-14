@@ -20,6 +20,12 @@ import {
   staffInvitationSkipPayloadSchema,
   staffInvitationSnapshotSchema,
 } from "./staff-invitation-contracts";
+import {
+  kioskPinSetupPayloadSchema,
+  kioskRegistrationPayloadSchema,
+  kioskRegistrationReferencePayloadSchema,
+  kioskSnapshotSchema,
+} from "./kiosk-contracts";
 
 export const ONBOARDING_CONTRACT_SCHEMA_VERSION = 1 as const;
 export const COMMERCIAL_CUSTOMER_WORKFLOW_KEY =
@@ -109,6 +115,7 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "staffing",
   "manager_invitations",
   "staff_invitations",
+  "kiosk",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([
@@ -422,6 +429,9 @@ export const onboardingCommandTypeSchema = z.enum([
   "skip_staff_invitation_step",
   "complete_staff_invitation_step",
   "start_kiosk_registration",
+  "replace_kiosk_registration",
+  "revoke_kiosk_device",
+  "set_kiosk_staff_pin",
   "confirm_kiosk_connection",
   "evaluate_readiness",
   "go_live",
@@ -772,6 +782,31 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema
         path: ["payload"],
       });
     }
+    const kioskSchema =
+      command.commandType === "start_kiosk_registration"
+        ? kioskRegistrationPayloadSchema
+        : command.commandType === "replace_kiosk_registration" ||
+            command.commandType === "revoke_kiosk_device"
+          ? kioskRegistrationReferencePayloadSchema
+          : command.commandType === "set_kiosk_staff_pin"
+            ? kioskPinSetupPayloadSchema
+            : null;
+    if (kioskSchema) {
+      const result = kioskSchema.safeParse(command.payload);
+      if (!result.success)
+        for (const issue of result.error.issues)
+          context.addIssue({ ...issue, path: ["payload", ...issue.path] });
+    }
+    if (
+      command.commandType === "confirm_kiosk_connection" &&
+      Object.keys(command.payload).length !== 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Confirm kiosk connection accepts no payload",
+        path: ["payload"],
+      });
+    }
     if (command.commandType === "save_step_draft") {
       const result = firstSiteDraftPayloadSchema.safeParse(command.payload);
       if (!result.success) {
@@ -851,6 +886,24 @@ export const onboardingBootstrapCommandSchema = onboardingCommandSchema
       return {
         ...command,
         payload: staffInvitationSkipPayloadSchema.parse(command.payload),
+      };
+    if (command.commandType === "start_kiosk_registration")
+      return {
+        ...command,
+        payload: kioskRegistrationPayloadSchema.parse(command.payload),
+      };
+    if (
+      command.commandType === "replace_kiosk_registration" ||
+      command.commandType === "revoke_kiosk_device"
+    )
+      return {
+        ...command,
+        payload: kioskRegistrationReferencePayloadSchema.parse(command.payload),
+      };
+    if (command.commandType === "set_kiosk_staff_pin")
+      return {
+        ...command,
+        payload: kioskPinSetupPayloadSchema.parse(command.payload),
       };
     if (command.commandType === "preview_staff_import")
       return {
@@ -1253,7 +1306,8 @@ export const onboardingBootstrapSnapshotSchema = z
           })
           .strict(),
       )
-      .length(8),
+      .min(8)
+      .max(9),
     legalDocuments: z
       .array(
         z
@@ -1282,6 +1336,7 @@ export const onboardingBootstrapSnapshotSchema = z
     staffing: staffingSnapshotSchema,
     managerInvitations: managerInvitationSnapshotSchema,
     staffInvitations: staffInvitationSnapshotSchema,
+    kiosk: kioskSnapshotSchema.optional(),
   })
   .strict();
 

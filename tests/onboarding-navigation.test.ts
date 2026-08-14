@@ -166,6 +166,6 @@ describe("authoritative onboarding resume route", () => {
       "/onboarding/staff-invitations",
     );
     complete.steps[7].status = "skipped";
-    expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/next");
+    expect(authoritativeOnboardingRoute(complete)).toBe("/onboarding/kiosk");
   });
 });

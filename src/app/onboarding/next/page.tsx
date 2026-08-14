@@ -40,6 +40,7 @@ export default async function OnboardingNextPage() {
     staffInvitationStatus !== "skipped"
   )
     redirect("/onboarding/staff-invitations");
+  if (snapshot.steps.find((step) => step.stepKey === "kiosk")?.status !== "complete") redirect("/onboarding/kiosk");
   const activeInvitations = snapshot.managerInvitations.invitations.filter(
     (invitation) =>
       invitation.status === "pending" || invitation.status === "accepted",
@@ -52,7 +53,7 @@ export default async function OnboardingNextPage() {
   ).length;
   return (
     <OnboardingShell
-      activeStep="staff_invitations"
+      activeStep="kiosk"
       completedSteps={[
         "owner_security",
         "legal_acceptance",

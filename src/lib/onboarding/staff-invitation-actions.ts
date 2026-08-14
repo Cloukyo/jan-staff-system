@@ -121,7 +121,7 @@ export async function finishStaffInvitationsAction(formData: FormData) {
     formData,
   );
   if (["succeeded", "replayed"].includes(response.commandResult.outcome))
-    redirect("/onboarding/next");
+    redirect("/onboarding/kiosk");
   redirect(
     `/onboarding/staff-invitations?error=${encodeURIComponent(response.commandResult.resultCode)}`,
   );

@@ -187,6 +187,72 @@ export async function createStaffInvitationsOnboardingDatabase(): Promise<PGlite
   return db;
 }
 
+export async function createKioskOnboardingDatabase(): Promise<PGlite> {
+  const db = await createStaffInvitationsOnboardingDatabase();
+  await db.exec(`
+    create or replace function extensions.gen_salt(kind text, rounds integer default 12)
+    returns text language sql volatile as $$ select '$2a$12$fictionalcommercialsalt'::text $$;
+    create or replace function extensions.crypt(candidate text, salt text)
+    returns text language sql immutable as $$ select encode(extensions.digest(candidate || salt, 'sha256'), 'hex') $$;
+    create or replace function public.kiosk_pin_is_acceptable(candidate text)
+    returns boolean language sql immutable as $$
+      select candidate ~ '^[0-9]{4,6}$'
+        and candidate not in ('0000','1111','1234','4321','0123','9999')
+        and candidate !~ '^([0-9])\\1+$'
+        and not(length(candidate)=4 and candidate::integer between 1900 and 2099)
+    $$;
+    create table if not exists public.kiosk_devices (
+      id uuid primary key default gen_random_uuid(),
+      device_name text not null,
+      token_hash bytea not null unique,
+      active boolean not null default true,
+      expires_at timestamptz not null,
+      last_used_at timestamptz,
+      activated_by uuid,
+      activated_at timestamptz not null default now(),
+      revoked_by uuid,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      organisation_id uuid,
+      site_id uuid,
+      activated_by_membership_id uuid,
+      revoked_by_membership_id uuid,
+      offline_enabled boolean not null default false,
+      hardware_verified_at timestamptz,
+      unique(organisation_id,id), unique(organisation_id,site_id,id),
+      foreign key(organisation_id,site_id) references public.organisation_sites(organisation_id,id),
+      foreign key(organisation_id,activated_by_membership_id) references public.organisation_memberships(organisation_id,id),
+      foreign key(organisation_id,revoked_by_membership_id) references public.organisation_memberships(organisation_id,id)
+    );
+    create table if not exists public.clock_events (
+      id uuid primary key default gen_random_uuid(),
+      organisation_id uuid,
+      site_id uuid,
+      staff_id text,
+      event_type text,
+      event_timestamp timestamptz not null default now()
+    );
+    create table if not exists public.kiosk_offline_authorisations (
+      id uuid primary key default gen_random_uuid(),
+      kiosk_device_id uuid not null references public.kiosk_devices(id),
+      expires_at timestamptz not null,
+      revoked_at timestamptz
+    );
+    create or replace function public.perform_commercial_kiosk_attendance_action(device_token text,target_staff_id text,candidate_pin text,requested_action text,expected_revision text,idempotency_key uuid)
+    returns jsonb language sql as $$ select jsonb_build_object('ok',true,'code','fixture') $$;
+  `);
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_online_kiosk_onboarding.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial online-kiosk onboarding migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(
   db: PGlite,
 ): Promise<void> {

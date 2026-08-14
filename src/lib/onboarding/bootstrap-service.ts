@@ -20,6 +20,8 @@ const commandResponseSchema = z.object({
   commandResult: onboardingCommandResultSchema,
   readiness: onboardingReadinessSnapshotSchema.nullable(),
   bootstrap: onboardingBootstrapSnapshotSchema.nullable(),
+  oneTimeRegistrationCode: z.string().regex(/^[A-HJ-NP-Z2-9]{16}$/).optional(),
+  registrationExpiresAt: z.string().datetime({ offset: true }).optional(),
 }).strict();
 
 export async function loadOnboardingBootstrap(
@@ -55,6 +57,16 @@ export async function executeOnboardingBootstrapCommand(
     "revoke_manager_invitation",
     "acknowledge_sole_manager",
     "complete_manager_invitation_step",
+    "create_staff_invitations",
+    "resend_staff_invitation",
+    "revoke_staff_invitation",
+    "skip_staff_invitation_step",
+    "complete_staff_invitation_step",
+    "start_kiosk_registration",
+    "replace_kiosk_registration",
+    "revoke_kiosk_device",
+    "set_kiosk_staff_pin",
+    "confirm_kiosk_connection",
   ].includes(command.commandType)) {
     throw new Error("This command is not part of the available onboarding milestones.");
   }

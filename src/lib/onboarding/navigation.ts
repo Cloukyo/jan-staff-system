@@ -9,6 +9,7 @@ export type OnboardingRoute =
   | "/onboarding/staffing"
   | "/onboarding/managers"
   | "/onboarding/staff-invitations"
+  | "/onboarding/kiosk"
   | "/onboarding/next";
 
 export function authoritativeOnboardingRoute(
@@ -38,9 +39,9 @@ export function authoritativeOnboardingRoute(
     const staffInvitations = snapshot.steps.find(
       (step) => step.stepKey === "staff_invitations",
     )?.status;
-    return staffInvitations === "complete" || staffInvitations === "skipped"
-      ? "/onboarding/next"
-      : "/onboarding/staff-invitations";
+    if (staffInvitations !== "complete" && staffInvitations !== "skipped") return "/onboarding/staff-invitations";
+    const kiosk = snapshot.steps.find((step) => step.stepKey === "kiosk")?.status;
+    return kiosk === "complete" ? "/onboarding/next" : "/onboarding/kiosk";
   }
   if (
     !snapshot.security.emailVerified ||

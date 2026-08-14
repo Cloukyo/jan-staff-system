@@ -3,6 +3,8 @@ import { ProductionKiosk } from "@/components/kiosk/production-kiosk";
 import { getAppMode } from "@/lib/app-mode";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { KioskDeviceAccessError, loadProductionKioskRoster } from "@/lib/kiosk/server";
+import { loadCommercialKioskPreLiveState } from "@/lib/kiosk/server";
+import { CommercialPreLiveKiosk } from "@/components/kiosk/commercial-kiosk-registration";
 import { getKioskDeviceToken } from "@/lib/kiosk/device-session";
 import { exitKioskModeAction } from "@/lib/kiosk/device-actions";
 import Link from "next/link";
@@ -15,6 +17,10 @@ export default async function ClockPage() {
     return <main className="min-h-screen bg-purple-950 p-8 text-center text-white"><h1 className="text-3xl font-black">Staff Clock unavailable</h1><p className="mt-4">Production Supabase configuration is missing. Please ask a manager for help.</p></main>;
   }
   const hasSavedDevice = Boolean(await getKioskDeviceToken());
+  if (hasSavedDevice) {
+    const preLive = await loadCommercialKioskPreLiveState();
+    if (preLive?.preLive) return <CommercialPreLiveKiosk siteName={preLive.siteName} staffCount={preLive.staffCount}/>;
+  }
   let roster;
   try {
     roster = await loadProductionKioskRoster();

@@ -61,6 +61,18 @@ export function createPublicKioskClient() {
   });
 }
 
+export async function loadCommercialKioskPreLiveState(): Promise<{ preLive: boolean; siteName: string; staffCount: number } | null> {
+  const deviceToken = await getKioskDeviceToken();
+  if (!deviceToken) return null;
+  const client = createPublicKioskClient();
+  const { data: health, error: healthError } = await client.rpc("record_commercial_kiosk_heartbeat", { device_token: deviceToken, app_version: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 12) || "0.1.0", protocol_version: 1, platform_category: "tablet" });
+  if (healthError || !health || typeof health !== "object" || !(health as { preLive?: boolean }).preLive) return null;
+  const { data: roster, error: rosterError } = await client.rpc("verify_commercial_kiosk_roster", { device_token: deviceToken });
+  if (rosterError || !roster || typeof roster !== "object") throw new KioskDeviceAccessError("roster_failed", "The commercial kiosk roster could not be verified.");
+  const result = roster as { siteName?: string; staff?: unknown[] };
+  return { preLive: true, siteName: result.siteName ?? "your location", staffCount: Array.isArray(result.staff) ? result.staff.length : 0 };
+}
+
 export async function loadProductionKioskRoster(): Promise<KioskRosterEntry[]> {
   if (kioskRepositorySource() !== "supabase") return [];
   const deviceToken = await getKioskDeviceToken();
