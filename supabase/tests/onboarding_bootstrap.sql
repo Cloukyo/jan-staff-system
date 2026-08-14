@@ -301,7 +301,7 @@ select ok(
 select ok(
   exists(select 1 from pg_constraint where conrelid='public.organisation_subscriptions'::regclass
     and conname='organisation_subscriptions_exact_trial_window_check'
-    and pg_get_constraintdef(oid) like '%1440 hours%'),
+    and pg_get_constraintdef(oid) like '%1440:00:00%'),
   'trial-active rows require one exact 1440-hour initial trial window'
 );
 
