@@ -159,6 +159,19 @@ describe("rota and leave tenancy executable migration", () => {
     expect(another.rows[0].result).toMatchObject({ outcome: "permission_denied" });
   });
 
+  it("blocks inactive staff on the commercial path", async () => {
+    await resetTenantDatabaseRole(db);
+    await db.query("update public.staff_profiles set active=false where organisation_id=$1 and id=$2", [ORG_A, STAFF_A2]);
+    await setTenantAuthUser(db, USER_A_OWNER, "aal2");
+    const blocked = await db.query<{ result: Record<string, unknown> }>(
+      "select public.execute_commercial_rota_command($1,$2,'save_shift',$3::jsonb,$4::uuid,null) result",
+      [ORG_A, SITE_A1, JSON.stringify({ weekId: weekA1, staffId: STAFF_A2, shiftDate: "2026-08-23", startTime: "09:00", endTime: "13:00" }), randomUUID()],
+    );
+    expect(blocked.rows[0].result).toMatchObject({ outcome: "conflict", code: "staff_inactive" });
+    await resetTenantDatabaseRole(db);
+    await db.query("update public.staff_profiles set active=true where organisation_id=$1 and id=$2", [ORG_A, STAFF_A2]);
+  });
+
   it("applies a site closure only to that occurrence site", async () => {
     await resetTenantDatabaseRole(db);
     await db.query(

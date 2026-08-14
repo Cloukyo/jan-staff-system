@@ -173,6 +173,10 @@ export async function createRotaLeaveTenancyDatabase(): Promise<PGlite> {
     .find((name) => name.endsWith("_rota_leave_tenancy.sql"));
   if (!migration) throw new Error("rota and leave tenancy migration is missing");
   await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  const activeGuardMigration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_commercial_rota_active_staff_guard.sql"));
+  if (!activeGuardMigration) throw new Error("commercial active-staff rota guard migration is missing");
+  await db.exec(readFileSync(resolve("supabase/migrations", activeGuardMigration), "utf8"));
   await db.exec(fixtureSql);
   return db;
 }
