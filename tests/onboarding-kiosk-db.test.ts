@@ -15,7 +15,7 @@ type Snapshot = {
   kiosk: {
     registration: { registrationId: string; status: string } | null;
     device: { deviceId: string; active: boolean; status: string } | null;
-    readiness: { complete: boolean; pinReadyStaffCount: number; offlineDisabled: true; offlineAuthorisationCount: number };
+    readiness: { complete: boolean; registrationReady: boolean; pinReadyStaffCount: number; offlineDisabled: true; offlineAuthorisationCount: number };
     staff: Array<{ staffId: string; pinReady: boolean; visibleOnKiosk: boolean }>;
   };
 };
@@ -49,6 +49,19 @@ describe("commercial online kiosk onboarding database", () => {
   let db: PGlite;
   beforeEach(async () => { db = await createKioskOnboardingDatabase(); await setTenantAuthUser(db, USER_A_OWNER, "aal2"); }, 30000);
   afterEach(async () => db?.close());
+
+  it("returns a contract-safe false registration state for a new owner", async () => {
+    const snapshot = (await db.query<{ x: Snapshot }>(
+      "select public.get_or_create_onboarding_bootstrap()x",
+    )).rows[0].x;
+
+    expect(snapshot.kiosk.readiness).toMatchObject({
+      complete: false,
+      registrationReady: false,
+      offlineDisabled: true,
+      offlineAuthorisationCount: 0,
+    });
+  });
 
   it("creates one short-lived site-bound registration without storing the secret", async () => {
     const s = await ready(db);

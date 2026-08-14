@@ -3,6 +3,7 @@ import {
   commercialReadinessSnapshotSchema,
   goLivePayloadSchema,
 } from "@/lib/onboarding/readiness-contracts";
+import { onboardingBootstrapStepKeySchema } from "@/lib/onboarding/contracts";
 
 const item = {
   key: "owner_security",
@@ -16,6 +17,11 @@ const item = {
 } as const;
 
 describe("commercial readiness and Go Live contracts", () => {
+  it("accepts the final review and Go Live bootstrap steps", () => {
+    expect(onboardingBootstrapStepKeySchema.parse("readiness")).toBe("readiness");
+    expect(onboardingBootstrapStepKeySchema.parse("go_live")).toBe("go_live");
+  });
+
   it("accepts a strict authoritative readiness snapshot", () => {
     const value = {
       evaluatorVersion: 2,

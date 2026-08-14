@@ -121,6 +121,8 @@ export const onboardingBootstrapStepKeySchema = z.enum([
   "manager_invitations",
   "staff_invitations",
   "kiosk",
+  "readiness",
+  "go_live",
 ]);
 
 export const legalDocumentTypeSchema = z.enum([

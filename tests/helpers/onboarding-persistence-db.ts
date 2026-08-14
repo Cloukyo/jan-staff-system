@@ -259,6 +259,14 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
     throw new Error("commercial online-kiosk onboarding migration is missing");
   }
   await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  const emptyReadinessFix = readdirSync(resolve("supabase/migrations")).find(
+    (name) => name.endsWith("_fix_empty_kiosk_readiness.sql"),
+  );
+  if (emptyReadinessFix) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", emptyReadinessFix), "utf8"),
+    );
+  }
   return db;
 }
 
