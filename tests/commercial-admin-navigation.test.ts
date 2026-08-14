@@ -22,6 +22,15 @@ describe("commercial administration navigation", () => {
     expect(shell).toContain("navigationForPermissions(commercialAdminNavigation, commercialPermissions)");
   });
 
+  it("shows billing only to billing-authorised commercial members", () => {
+    const billing = navigationForPermissions(commercialAdminNavigation, ["billing.manage"])
+      .flatMap((group) => group.items.map((item) => item.href));
+    const siteOnly = navigationForPermissions(commercialAdminNavigation, ["site.manage"])
+      .flatMap((group) => group.items.map((item) => item.href));
+    expect(billing).toContain("/admin/billing");
+    expect(siteOnly).not.toContain("/admin/billing");
+  });
+
   it("surfaces the approved post-live security controls", () => {
     const controls = readFileSync(resolve("src/components/commercial-admin/admin-extra-controls.tsx"), "utf8");
     for (const command of [

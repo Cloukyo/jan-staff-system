@@ -283,6 +283,19 @@ export async function createReadinessOnboardingDatabase(): Promise<PGlite> {
   return db;
 }
 
+export async function createBillingLifecycleDatabase(): Promise<PGlite> {
+  const db = await createReadinessOnboardingDatabase();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_commercial_billing_lifecycle.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("commercial billing-lifecycle migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function applyOnboardingServiceMigration(
   db: PGlite,
 ): Promise<void> {

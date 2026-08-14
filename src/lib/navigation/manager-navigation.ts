@@ -14,6 +14,7 @@ import {
   MapPin,
   ShieldCheck,
   MonitorSmartphone,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -119,6 +120,7 @@ export const commercialAdminNavigation: NavGroup[] = [
       { href: "/admin/devices", label: "Clocking-in devices", icon: MonitorSmartphone, permission: "kiosk.manage" },
       { href: "/admin/settings", label: "Operational settings", icon: Settings, permission: "settings.manage" },
       { href: "/admin/settings/sites", label: "Site hours", icon: Clock3, permission: "settings.manage" },
+      { href: "/admin/billing", label: "Plan and billing", icon: CreditCard, permission: "billing.manage" },
     ],
   },
   {

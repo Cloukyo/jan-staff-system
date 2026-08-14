@@ -122,6 +122,8 @@ Managers create further staff account links from `/accounts`, then invite the ma
 
 Commercial preview, staging and production must use a separate commercial Vercel project and separate Supabase projects. Do not configure the commercial workflows with Jan production credentials. See `docs/commercial/environments-and-releases.md` for environment variables, protected environments, staging promotion, release and rollback.
 
+Commercial billing uses server-only Stripe configuration. Preview and staging accept test credentials only; the Workstream 9 implementation deliberately refuses live billing. See `docs/commercial/billing-lifecycle.md` for required variables, webhook events and the safe test lifecycle.
+
 1. Push the repository to GitHub.
 2. Import the project into Vercel.
 3. Add the Supabase environment variables in Vercel Project Settings.

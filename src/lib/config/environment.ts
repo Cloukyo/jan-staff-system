@@ -84,6 +84,19 @@ export function validateEnvironment(
   if (commercialEnvironments.has(appEnvironment) && appMode !== "production") {
     issues.push(`${appEnvironment} requires APP_MODE=production.`);
   }
+  const billingValues = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_MAP_JSON"].map((key) => value(env, key));
+  if (value(env, "NEXT_PUBLIC_STRIPE_SECRET_KEY") || value(env, "NEXT_PUBLIC_STRIPE_WEBHOOK_SECRET")) {
+    issues.push("Stripe secrets must never use a NEXT_PUBLIC_ variable.");
+  }
+  if (billingValues.some(Boolean) && billingValues.some((configured) => !configured)) {
+    issues.push("Stripe billing configuration must include the secret key, webhook secret and environment price map together.");
+  }
+  if (["preview", "staging"].includes(appEnvironment) && billingValues[0] && !billingValues[0].startsWith("sk_test_")) {
+    issues.push(`${appEnvironment} billing requires a Stripe test secret key.`);
+  }
+  if (appEnvironment === "production" && billingValues.some(Boolean)) {
+    issues.push("Live commercial billing is not enabled in this milestone.");
+  }
 
   const required = commercialEnvironments.has(appEnvironment)
     ? [

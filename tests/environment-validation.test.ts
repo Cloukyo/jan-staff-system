@@ -137,4 +137,18 @@ describe("commercial environment validation", () => {
       ),
     ).toThrow("APP_ENV=production requires VERCEL_ENV=production");
   });
+
+  it("keeps billing secrets server-only and Preview test-mode only", () => {
+    expect(() => validateEnvironment(productionEnvironment({
+      APP_ENV: "preview", VERCEL_ENV: "preview", NEXT_PUBLIC_SITE_URL: "https://feature.example-preview.com",
+      NEXT_PUBLIC_SUPABASE_URL: "https://previewref.supabase.co", SUPABASE_PROJECT_REF: "previewref",
+      NEXT_PUBLIC_STRIPE_SECRET_KEY: "forbidden",
+    }))).toThrow("must never use a NEXT_PUBLIC_ variable");
+    expect(() => validateEnvironment(productionEnvironment({
+      APP_ENV: "preview", VERCEL_ENV: "preview", NEXT_PUBLIC_SITE_URL: "https://feature.example-preview.com",
+      NEXT_PUBLIC_SUPABASE_URL: "https://previewref.supabase.co", SUPABASE_PROJECT_REF: "previewref",
+      STRIPE_SECRET_KEY: "sk_live_forbidden", STRIPE_WEBHOOK_SECRET: "whsec_fictional",
+      STRIPE_PRICE_MAP_JSON: "{}",
+    }))).toThrow("requires a Stripe test secret key");
+  });
 });

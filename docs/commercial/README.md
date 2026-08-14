@@ -12,6 +12,7 @@ These documents describe implemented commercial tenancy milestones on `codex/com
 - [Post-live customer administration](post-live-administration.md): normal live-customer administration, audit and command boundaries.
 - [Platform neutrality](platform-neutrality.md): neutral core terminology and presentation profiles.
 - [Environments and releases](environments-and-releases.md): environment and release safeguards.
+- [Billing lifecycle](billing-lifecycle.md): Stripe test-mode setup, lifecycle policy, reconciliation and recovery.
 - [Repository protection](repository-protection.md): repository and delivery controls.
 
 All commercial documents preserve the same constraints: inherited Jan records are not silently backfilled, production connection and deployment are separate approvals, and offline attendance remains disabled.
