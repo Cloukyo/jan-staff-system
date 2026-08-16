@@ -11,17 +11,17 @@ Workstream 9 integrates Stripe behind provider-neutral contracts. Stripe is the 
 - Restricted mode preserves existing-footprint attendance, necessary clock-out, attendance review/correction, essential reports, complete customer export and billing recovery. It blocks growth and premium mutations according to the frozen matrix.
 - Cancellation is requested for period end. It does not delete customer data; final retention and deletion belong to the later offboarding workstream.
 
-## Preview configuration
+## Staging configuration
 
-Configure only Vercel Preview and the isolated `commercial-dev` Supabase branch:
+Configure only the dedicated `sh-workforce-staging` Vercel project and independent Commercial Staging Supabase project:
 
 1. `STRIPE_SECRET_KEY`: Stripe test secret beginning `sk_test_`.
 2. `STRIPE_WEBHOOK_SECRET`: signing secret for `/api/billing/stripe/webhook`.
-3. `STRIPE_PRICE_MAP_JSON`: environment-scoped mapping, for example `{"preview":{"preview_standard":{"1":"price_test_..."}}}`.
-4. Register the Preview webhook destination for Checkout completion, subscription create/update/delete, invoice paid and invoice payment failed.
+3. `STRIPE_PRICE_MAP_JSON`: environment-scoped mapping, for example `{"staging":{"preview_standard":{"1":"price_test_..."}}}`.
+4. Register the staging webhook destination for Checkout completion, subscription create/update/delete, invoice paid and invoice payment failed.
 5. Configure the Stripe test Customer Portal for payment-method update, invoices and period-end cancellation.
 
-The application refuses live billing in this milestone. None of these values use a `NEXT_PUBLIC_` prefix. Do not reuse Preview keys, signing secrets, products or Prices for future Production.
+The application refuses live billing in this milestone. None of these values use a `NEXT_PUBLIC_` prefix. Do not reuse staging keys, signing secrets, products or Prices for future Production. The retained `commercial-dev` branch and old PR Preview are rollback references only and have no staging authority.
 
 ## Reconciliation and ordering
 
@@ -33,7 +33,7 @@ An hourly Supabase Cron job advances expired trials and grace intervals using da
 
 ## Test-mode lifecycle checklist
 
-Use a fictional Preview organisation and official Stripe test methods only:
+Use a fictional staging organisation and official Stripe test methods only:
 
 1. Confirm the Go Live trial dates remain unchanged when Checkout is created.
 2. Complete hosted Checkout and confirm the signed webhook links the customer and subscription.

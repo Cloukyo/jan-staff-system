@@ -26,14 +26,18 @@ concurrency:
 jobs:
   release:
     name: Promote verified commercial artifact
-    if: inputs.confirmation == 'RELEASE COMMERCIAL'
+    if: >-
+      github.repository == 'Cloukyo/sh-workforce-platform' &&
+      inputs.confirmation == 'RELEASE COMMERCIAL'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: commercial-production
     steps:
       - name: Enforce commercial-only credential guard
         shell: bash
-        run: test "${{ secrets.COMMERCIAL_RELEASE_GUARD }}" = "commercial-only"
+        run: |
+          test "${{ github.repository }}" = "Cloukyo/sh-workforce-platform"
+          test "${{ secrets.COMMERCIAL_RELEASE_GUARD }}" = "commercial-only"
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
       - name: Inspect candidate artifact

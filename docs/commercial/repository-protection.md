@@ -1,10 +1,10 @@
 # Commercial Repository Protection Recommendations
 
-These settings must be applied through GitHub rulesets by a repository administrator after the commercial release branch and separate commercial deployment environments exist. This workstream does not change repository settings.
+These settings apply to the private `Cloukyo/sh-workforce-platform` repository. The current GitHub plan reports that rulesets and classic branch protection are not enforced for private repositories in this organisation. Move the repository to an organisation with GitHub Team or Enterprise before treating `main` as protected, then apply the controls below and verify them with a non-admin test.
 
 ## Commercial release branch ruleset
 
-Apply the ruleset to the future commercial release branch, not Jan's current `main`, until the repositories or release lines are formally separated.
+Apply the ruleset to commercial `main`. Never apply this commercial ruleset to Jan's repository.
 
 Recommended rules:
 

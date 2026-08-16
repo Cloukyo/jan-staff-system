@@ -14,6 +14,17 @@ This runbook describes the commercial application environments and release contr
 
 Preview and staging must never use the production Supabase project reference or production site host. Production must match both. The startup validator enforces these rules before Next.js starts.
 
+The current separated staging topology is:
+
+- GitHub repository: `Cloukyo/sh-workforce-platform`
+- Vercel project: `sh-workforce-staging`
+- Supabase project: `Commercial Staging` (`vytfzjreiptfapybtanx`, London `eu-west-2`)
+- Vercel target: Preview, used as the non-public staging target because `APP_ENV=staging` must never identify itself as Vercel Production
+- automatic Vercel deployment from `main`: disabled; staging is deployed manually from an exact verified SHA, while pull-request Preview branches remain enabled
+- future production comparison values: deliberately unprovisioned, non-routable identifiers until the Commercial Production readiness milestone
+
+The Jan repository, Jan Vercel project, Jan alias, Jan Supabase project, retained PR #8 Preview and retained `commercial-dev` branch are not deployment authorities for this topology.
+
 Required non-local variables:
 
 - `APP_ENV`
@@ -77,6 +88,8 @@ The `Promote Commercial Staging` workflow is manual and accepts an exact 40-char
 6. Verify liveness, readiness, login isolation and the current milestone's smoke tests against staging.
 
 The GitHub `commercial-staging` environment should require an authorised reviewer and restrict deployments to the future protected commercial release branch.
+
+Both deployment workflows also fail closed unless `github.repository` is exactly `Cloukyo/sh-workforce-platform`. A copied workflow in the Jan repository therefore cannot use the commercial deployment path.
 
 ## Commercial production release
 

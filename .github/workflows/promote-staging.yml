@@ -18,6 +18,7 @@ concurrency:
 jobs:
   staging:
     name: Build and deploy commercial staging
+    if: github.repository == 'Cloukyo/sh-workforce-platform'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: commercial-staging
@@ -29,7 +30,9 @@ jobs:
           persist-credentials: false
       - name: Verify exact commit
         shell: bash
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.git_ref }}"
+        run: |
+          test "${{ github.repository }}" = "Cloukyo/sh-workforce-platform"
+          test "$(git rev-parse HEAD)" = "${{ inputs.git_ref }}"
       - name: Use Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
