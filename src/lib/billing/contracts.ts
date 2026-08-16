@@ -64,5 +64,6 @@ export const billingProviderEventSchema = z.object({
   periodEnd: z.number().int().nonnegative().nullable(),
   cancelAtPeriodEnd: z.boolean().nullable(),
   priceId: providerId.nullable(),
+  amountPaid: z.number().int().nonnegative().nullable(),
 }).strict();
 export type BillingProviderEvent = z.infer<typeof billingProviderEventSchema>;

@@ -37,6 +37,7 @@ describe("Stripe billing provider adapter", () => {
     const secret = "whsec_fictional_test_signature";
     const payload = JSON.stringify({ id: "evt_test_signed", object: "event", type: "invoice.paid", created: 1786723200, livemode: false,
       data: { object: { id: "in_test_signed", object: "invoice", customer: "cus_test_signed",
+        amount_paid: 4900,
         parent: { subscription_details: { subscription: "sub_test_signed" } },
         lines: { data: [{ period: { start: 1786723200, end: 1789401600 }, pricing: { price_details: { price: "price_test_signed" } } }] } } } });
     const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret, timestamp: Math.floor(Date.now() / 1000) });
@@ -46,6 +47,7 @@ describe("Stripe billing provider adapter", () => {
       id: "evt_test_signed", type: "invoice.paid", created: 1786723200, livemode: false, objectId: "in_test_signed",
       customerId: "cus_test_signed", subscriptionId: "sub_test_signed", providerState: null,
       periodStart: 1786723200, periodEnd: 1789401600, cancelAtPeriodEnd: null, priceId: "price_test_signed",
+      amountPaid: 4900,
     });
   });
 });

@@ -67,6 +67,39 @@ describe("commercial billing lifecycle persistence", () => {
     expect((await db.query<{ state: string; events: number }>("select state,(select count(*)::int from public.billing_lifecycle_events where subscription_id=$1 and event_type='renewal_succeeded') events from public.organisation_subscriptions where id=$1", [subscriptionId])).rows[0]).toEqual({ state: "active", events: 1 });
   });
 
+  it("activates a preserved trial only after a verified positive paid invoice", async () => {
+    const subscriptionId = await seedSubscription(db, "trial_active", false);
+    await db.query("select public.commercial_record_provider_customer($1,$2,'preview','cus_test_trial_conversion')", [ORG_A, MEMBERSHIP_A_OWNER]);
+    const before = (await db.query<{ started: string; ends: string }>(
+      "select trial_started_at::text started,trial_ends_at::text ends from public.organisation_subscriptions where id=$1",
+      [subscriptionId],
+    )).rows[0];
+    const paid = {
+      id: "evt_test_trial_conversion_paid",
+      type: "invoice.paid",
+      created: Math.floor(Date.now() / 1000),
+      livemode: false,
+      objectId: "in_test_trial_conversion_paid",
+      customerId: "cus_test_trial_conversion",
+      subscriptionId: "sub_test_trial_conversion",
+      providerState: null,
+      periodStart: Math.floor(Date.now() / 1000),
+      periodEnd: Math.floor(Date.now() / 1000) + 31 * 86_400,
+      cancelAtPeriodEnd: null,
+      priceId: "price_test_1",
+      amountPaid: 4900,
+    };
+
+    expect((await db.query<{ result: string }>(
+      "select public.commercial_process_billing_event('preview',$1::jsonb) result",
+      [JSON.stringify(paid)],
+    )).rows[0].result).toBe("subscription_activated");
+    expect((await db.query<{ state: string; started: string; ends: string; ordinary: boolean }>(
+      "select state,trial_started_at::text started,trial_ends_at::text ends,ordinary_initial_trial ordinary from public.organisation_subscriptions where id=$1",
+      [subscriptionId],
+    )).rows[0]).toEqual({ state: "active", ...before, ordinary: true });
+  });
+
   it("uses a 14-day paid-payment grace and restores active service without restarting trial", async () => {
     const subscriptionId = await seedSubscription(db, "active");
     await db.query("select public.commercial_record_provider_customer($1,$2,'preview','cus_test_recovery')", [ORG_A, MEMBERSHIP_A_OWNER]);

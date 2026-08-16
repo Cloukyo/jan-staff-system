@@ -38,6 +38,7 @@ function normaliseEvent(event: Stripe.Event): BillingProviderEvent {
     periodEnd: typeof subscription?.current_period_end === "number" ? subscription.current_period_end : firstLine?.period?.end ?? null,
     cancelAtPeriodEnd: typeof subscription?.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : null,
     priceId: identifier((subscription?.items as { data?: Array<{ price?: unknown }> } | undefined)?.data?.[0]?.price) ?? firstLine?.pricing?.price_details?.price ?? null,
+    amountPaid: typeof invoice?.amount_paid === "number" ? invoice.amount_paid : null,
   });
 }
 

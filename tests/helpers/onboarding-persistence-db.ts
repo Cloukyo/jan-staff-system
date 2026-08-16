@@ -302,6 +302,14 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
       readFileSync(resolve("supabase/migrations", hardeningMigration), "utf8"),
     );
   }
+  const paidConversionMigration = migrationNames.find((name) =>
+    name.endsWith("_activate_paid_commercial_trial.sql"),
+  );
+  if (paidConversionMigration) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", paidConversionMigration), "utf8"),
+    );
+  }
   return db;
 }
 
