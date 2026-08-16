@@ -50,4 +50,16 @@ describe("Stripe billing provider adapter", () => {
       amountPaid: 4900,
     });
   });
+
+  it("drops a zero-length invoice-line period instead of forwarding invalid billing dates", () => {
+    const secret = "whsec_fictional_equal_period";
+    const payload = JSON.stringify({ id: "evt_test_equal_period", object: "event", type: "invoice.paid", created: 1786723200, livemode: false,
+      data: { object: { id: "in_test_equal_period", object: "invoice", customer: "cus_test_equal_period", amount_paid: 200,
+        parent: { subscription_details: { subscription: "sub_test_equal_period" } },
+        lines: { data: [{ period: { start: 1786723200, end: 1786723200 }, pricing: { price_details: { price: "price_test_equal_period" } } }] } } } });
+    const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret, timestamp: Math.floor(Date.now() / 1000) });
+    const provider = createStripeBillingProvider({ checkoutCreate: vi.fn(), portalCreate: vi.fn(), customerCreate: vi.fn(),
+      subscriptionRetrieve: vi.fn(), subscriptionUpdate: vi.fn(), webhookConstruct: (body, header, signingSecret) => Stripe.webhooks.constructEvent(body, header, signingSecret) });
+    expect(provider.verifyWebhook(payload, signature, secret)).toMatchObject({ periodStart: null, periodEnd: null, amountPaid: 200 });
+  });
 });

@@ -25,6 +25,9 @@ function normaliseEvent(event: Stripe.Event): BillingProviderEvent {
   const parent = invoice?.parent as { subscription_details?: { subscription?: unknown } } | undefined;
   const lines = (invoice?.lines as { data?: Array<{ pricing?: { price_details?: { price?: string } }; period?: { start?: number; end?: number } }> } | undefined)?.data ?? [];
   const firstLine = lines[0];
+  const periodStart = typeof subscription?.current_period_start === "number" ? subscription.current_period_start : firstLine?.period?.start;
+  const periodEnd = typeof subscription?.current_period_end === "number" ? subscription.current_period_end : firstLine?.period?.end;
+  const hasValidPeriod = typeof periodStart === "number" && typeof periodEnd === "number" && periodEnd > periodStart;
   return billingProviderEventSchema.parse({
     id: event.id,
     type: event.type,
@@ -34,8 +37,8 @@ function normaliseEvent(event: Stripe.Event): BillingProviderEvent {
     customerId: identifier(object.customer),
     subscriptionId: identifier(subscription?.id) ?? identifier(checkout?.subscription) ?? identifier(parent?.subscription_details?.subscription),
     providerState: typeof subscription?.status === "string" ? subscription.status : null,
-    periodStart: typeof subscription?.current_period_start === "number" ? subscription.current_period_start : firstLine?.period?.start ?? null,
-    periodEnd: typeof subscription?.current_period_end === "number" ? subscription.current_period_end : firstLine?.period?.end ?? null,
+    periodStart: hasValidPeriod ? periodStart : null,
+    periodEnd: hasValidPeriod ? periodEnd : null,
     cancelAtPeriodEnd: typeof subscription?.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : null,
     priceId: identifier((subscription?.items as { data?: Array<{ price?: unknown }> } | undefined)?.data?.[0]?.price) ?? firstLine?.pricing?.price_details?.price ?? null,
     amountPaid: typeof invoice?.amount_paid === "number" ? invoice.amount_paid : null,
