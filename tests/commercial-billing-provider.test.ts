@@ -62,4 +62,19 @@ describe("Stripe billing provider adapter", () => {
       subscriptionRetrieve: vi.fn(), subscriptionUpdate: vi.fn(), webhookConstruct: (body, header, signingSecret) => Stripe.webhooks.constructEvent(body, header, signingSecret) });
     expect(provider.verifyWebhook(payload, signature, secret)).toMatchObject({ periodStart: null, periodEnd: null, amountPaid: 200 });
   });
+
+  it("selects the positive replacement line from a Stripe proration invoice", () => {
+    const secret = "whsec_fictional_proration";
+    const payload = JSON.stringify({ id: "evt_test_proration", object: "event", type: "invoice.paid", created: 1786723200, livemode: false,
+      data: { object: { id: "in_test_proration", object: "invoice", customer: "cus_test_proration", amount_paid: 5000,
+        parent: { subscription_details: { subscription: "sub_test_proration" } },
+        lines: { data: [
+          { amount: -4900, period: { start: 1786723200, end: 1789401600 }, pricing: { price_details: { price: "price_test_old" } } },
+          { amount: 9900, period: { start: 1786723200, end: 1789401600 }, pricing: { price_details: { price: "price_test_new" } } },
+        ] } } } });
+    const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret, timestamp: Math.floor(Date.now() / 1000) });
+    const provider = createStripeBillingProvider({ checkoutCreate: vi.fn(), portalCreate: vi.fn(), customerCreate: vi.fn(),
+      subscriptionRetrieve: vi.fn(), subscriptionUpdate: vi.fn(), webhookConstruct: (body, header, signingSecret) => Stripe.webhooks.constructEvent(body, header, signingSecret) });
+    expect(provider.verifyWebhook(payload, signature, secret)).toMatchObject({ priceId: "price_test_new", amountPaid: 5000 });
+  });
 });

@@ -23,10 +23,11 @@ function normaliseEvent(event: Stripe.Event): BillingProviderEvent {
   const invoice = object.object === "invoice" ? object : null;
   const checkout = object.object === "checkout.session" ? object : null;
   const parent = invoice?.parent as { subscription_details?: { subscription?: unknown } } | undefined;
-  const lines = (invoice?.lines as { data?: Array<{ pricing?: { price_details?: { price?: string } }; period?: { start?: number; end?: number } }> } | undefined)?.data ?? [];
-  const firstLine = lines[0];
-  const periodStart = typeof subscription?.current_period_start === "number" ? subscription.current_period_start : firstLine?.period?.start;
-  const periodEnd = typeof subscription?.current_period_end === "number" ? subscription.current_period_end : firstLine?.period?.end;
+  const lines = (invoice?.lines as { data?: Array<{ amount?: number; pricing?: { price_details?: { price?: string } }; period?: { start?: number; end?: number } }> } | undefined)?.data ?? [];
+  const invoiceLine = lines.find((line) => typeof line.amount === "number" && line.amount > 0 && identifier(line.pricing?.price_details?.price))
+    ?? lines.find((line) => identifier(line.pricing?.price_details?.price));
+  const periodStart = typeof subscription?.current_period_start === "number" ? subscription.current_period_start : invoiceLine?.period?.start;
+  const periodEnd = typeof subscription?.current_period_end === "number" ? subscription.current_period_end : invoiceLine?.period?.end;
   const hasValidPeriod = typeof periodStart === "number" && typeof periodEnd === "number" && periodEnd > periodStart;
   return billingProviderEventSchema.parse({
     id: event.id,
@@ -40,7 +41,7 @@ function normaliseEvent(event: Stripe.Event): BillingProviderEvent {
     periodStart: hasValidPeriod ? periodStart : null,
     periodEnd: hasValidPeriod ? periodEnd : null,
     cancelAtPeriodEnd: typeof subscription?.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : null,
-    priceId: identifier((subscription?.items as { data?: Array<{ price?: unknown }> } | undefined)?.data?.[0]?.price) ?? firstLine?.pricing?.price_details?.price ?? null,
+    priceId: identifier((subscription?.items as { data?: Array<{ price?: unknown }> } | undefined)?.data?.[0]?.price) ?? invoiceLine?.pricing?.price_details?.price ?? null,
     amountPaid: typeof invoice?.amount_paid === "number" ? invoice.amount_paid : null,
   });
 }
