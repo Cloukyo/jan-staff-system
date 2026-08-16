@@ -26,7 +26,7 @@
 - Create: `tests/commercial-post-live-admin-schema.test.ts`
 - Create: `tests/commercial-post-live-admin-db.test.ts`
 - Create: `tests/helpers/commercial-post-live-admin-db.ts`
-- Create: `supabase/migrations/20260814170000_commercial_post_live_administration.sql`
+- Create: `supabase/migrations/20260814155613_commercial_post_live_administration.sql`
 - Create: `supabase/tests/commercial_post_live_administration.sql`
 
 **Interfaces:**

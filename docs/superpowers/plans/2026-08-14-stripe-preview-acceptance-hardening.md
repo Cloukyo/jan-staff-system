@@ -22,7 +22,7 @@
 ### Task 1: Prove and remediate the billing snapshot advisor finding
 
 **Files:**
-- Create: `supabase/migrations/20260814195107_harden_commercial_billing_snapshot.sql`
+- Create: `supabase/migrations/20260814195308_harden_commercial_billing_snapshot.sql`
 - Modify: `tests/commercial-billing-lifecycle-schema.test.ts`
 - Modify: `supabase/tests/commercial_billing_lifecycle.sql`
 

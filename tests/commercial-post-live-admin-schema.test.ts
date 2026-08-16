@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migrationPath = resolve(
-  "supabase/migrations/20260814170000_commercial_post_live_administration.sql",
+  "supabase/migrations/20260814155613_commercial_post_live_administration.sql",
 );
 
 function migrationSql(): string {
@@ -22,7 +22,7 @@ describe("commercial post-live administration migration contract", () => {
     expect(sql).toContain("commercial_admin_events");
     expect(sql).toMatch(/revoke all on function[\s\S]*public\.execute_commercial_admin_command[\s\S]+from public,anon,authenticated/i);
     expect(sql).toMatch(/grant execute on function[\s\S]*public\.execute_commercial_admin_command[\s\S]+to authenticated/i);
-    const hardening = readFileSync(resolve("supabase/migrations/20260814175000_harden_commercial_admin_rpc_surface.sql"), "utf8");
+    const hardening = readFileSync(resolve("supabase/migrations/20260814161920_harden_commercial_admin_rpc_surface.sql"), "utf8");
     expect(hardening).toContain("commercial_api_private");
     expect(hardening).toContain("security invoker");
   });
