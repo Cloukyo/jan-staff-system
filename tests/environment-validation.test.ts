@@ -151,4 +151,13 @@ describe("commercial environment validation", () => {
       STRIPE_PRICE_MAP_JSON: "{}",
     }))).toThrow("requires a Stripe test secret key");
   });
+
+  it("accepts a least-privilege Stripe sandbox restricted key in staging", () => {
+    expect(() => validateEnvironment(productionEnvironment({
+      APP_ENV: "staging", VERCEL_ENV: "preview", NEXT_PUBLIC_SITE_URL: "https://staging.example.com",
+      NEXT_PUBLIC_SUPABASE_URL: "https://stagingref.supabase.co", SUPABASE_PROJECT_REF: "stagingref",
+      STRIPE_SECRET_KEY: "rk_test_fictional", STRIPE_WEBHOOK_SECRET: "whsec_fictional",
+      STRIPE_PRICE_MAP_JSON: '{"staging":{}}',
+    }))).not.toThrow();
+  });
 });

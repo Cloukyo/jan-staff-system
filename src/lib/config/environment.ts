@@ -91,7 +91,10 @@ export function validateEnvironment(
   if (billingValues.some(Boolean) && billingValues.some((configured) => !configured)) {
     issues.push("Stripe billing configuration must include the secret key, webhook secret and environment price map together.");
   }
-  if (["preview", "staging"].includes(appEnvironment) && billingValues[0] && !billingValues[0].startsWith("sk_test_")) {
+  const stripeSandboxKey = billingValues[0] && (
+    billingValues[0].startsWith("sk_test_") || billingValues[0].startsWith("rk_test_")
+  );
+  if (["preview", "staging"].includes(appEnvironment) && billingValues[0] && !stripeSandboxKey) {
     issues.push(`${appEnvironment} billing requires a Stripe test secret key.`);
   }
   if (appEnvironment === "production" && billingValues.some(Boolean)) {
