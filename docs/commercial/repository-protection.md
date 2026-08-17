@@ -2,6 +2,8 @@
 
 These settings apply to the private `Cloukyo/sh-workforce-platform` repository. The current GitHub plan reports that rulesets and classic branch protection are not enforced for private repositories in this organisation. Move the repository to an organisation with GitHub Team or Enterprise before treating `main` as protected, then apply the controls below and verify them with a non-admin test.
 
+Native GitHub Code Scanning is also unavailable on the current private-repository plan. The committed CodeQL workflow therefore performs the analysis without an API upload and retains the generated SARIF as a private workflow artifact for 30 days. If the organisation plan is upgraded, enable GitHub Code Security, restore the CodeQL upload, and make the native CodeQL check required before merge.
+
 ## Commercial release branch ruleset
 
 Apply the ruleset to commercial `main`. Never apply this commercial ruleset to Jan's repository.

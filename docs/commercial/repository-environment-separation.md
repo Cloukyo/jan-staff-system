@@ -44,3 +44,5 @@ Provider acceptance, final CI/security evidence and the before/after Jan compari
 ## Protection limitation
 
 GitHub currently states that branch rulesets and classic branch protection are not enforced for this private repository under the organisation's present plan. Before commercial production work, move the repository to an organisation with GitHub Team or Enterprise, require pull requests and the documented checks, require CODEOWNERS review, block force pushes/deletion, and protect the `commercial-staging` and `commercial-production` environments.
+
+Until GitHub Code Security is available, CodeQL runs with API upload disabled and retains its SARIF result as a private 30-day workflow artifact. This preserves analysis evidence without pretending that native Code Scanning is enabled.

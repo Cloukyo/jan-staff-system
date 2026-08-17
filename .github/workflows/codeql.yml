@@ -10,8 +10,8 @@ on:
     - cron: "43 4 * * 2"
 
 permissions:
+  actions: read
   contents: read
-  security-events: write
 
 jobs:
   analyse:
@@ -31,3 +31,14 @@ jobs:
         uses: github/codeql-action/analyze@24c7eb380a2dc368f2d129e4c65e51d172983a1e # v4
         with:
           category: /language:javascript-typescript
+          output: codeql-sarif
+          upload: never
+          upload-database: false
+      - name: Retain private CodeQL SARIF
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codeql-sarif-${{ github.sha }}
+          path: codeql-sarif
+          if-no-files-found: error
+          retention-days: 30
