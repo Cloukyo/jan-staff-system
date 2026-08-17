@@ -160,4 +160,10 @@ describe("commercial environment validation", () => {
       STRIPE_PRICE_MAP_JSON: '{"staging":{}}',
     }))).not.toThrow();
   });
+
+  it("uses an explicit deployment SHA for a controlled manual deployment", () => {
+    expect(validateEnvironment(productionEnvironment({
+      DEPLOYMENT_SHA: "fedcba9876543210fedcba9876543210fedcba98",
+    })).deploymentSha).toBe("fedcba9876543210fedcba9876543210fedcba98");
+  });
 });

@@ -179,9 +179,9 @@ export function validateEnvironment(
   }
 
   const deploymentSha =
+    value(env, "DEPLOYMENT_SHA") ??
     value(env, "VERCEL_GIT_COMMIT_SHA") ??
     value(env, "GITHUB_SHA") ??
-    value(env, "DEPLOYMENT_SHA") ??
     (appEnvironment === "local" ? "development" : null);
   if (!deploymentSha) issues.push("A deployment SHA is required outside local development.");
 
