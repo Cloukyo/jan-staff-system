@@ -39,7 +39,37 @@ No Jan credential may be copied into commercial provider configuration. Future C
 - Offline-enabled staging devices: zero
 - Staging offline authorisations: zero
 
-Provider acceptance, final CI/security evidence and the before/after Jan comparison must be appended to the completion report after staging deployment. Do not record secrets in this file.
+### Provider acceptance
+
+- Verified staging application SHA: `1dfa68cf8a909edcdd17dc6824bbed70bac0143a`
+- Stable staging URL: `https://sh-workforce-staging.vercel.app`
+- Staging deployment: `dpl_3uijH2FY7fidxyn2SyyJwEvnCW9F`, Vercel Preview target, READY
+- Live and readiness endpoints: HTTP 200, environment `staging`, Supabase Auth ready
+- Staging Supabase project ref: `vytfzjreiptfapybtanx`; server administration verified through a signed fictional billing event
+- Stripe account: `SH Digital Works sandbox`; all configured products, prices, customers, subscriptions and webhooks have `livemode=false`
+- Stripe restricted key permissions are limited to Customers, Products read, Prices read, Customer Portal, Subscriptions and Checkout Sessions
+- Active staging webhook listens only for the six approved billing events and delivered a fictional subscription update successfully
+- Stripe and Supabase server credentials are Sensitive and scoped only to the staging Vercel Preview environment
+- No Vercel Production variable or deployment was created
+
+Two credentials created during setup were visible in transient automation diagnostics. The affected Stripe restricted key was expired and the affected webhook endpoint was deleted immediately. Neither value was committed or retained in Vercel. Fresh replacements were created and transferred directly before final deployment.
+
+### Final repository verification
+
+- Commercial Security: passed
+- Private CodeQL/SARIF: passed; native GitHub Code Scanning remains upgrade-ready
+- Commercial CI: passed
+- Application tests: passed
+- Commercial build: passed
+- Docker-backed migration replay and pgTAP: passed
+- Commercial remote `main` matched the verified application SHA before this evidence-only documentation update
+
+### Jan before/after comparison
+
+- Jan Production repository `main` remained `8f03702f229530839f127e825bfbbb871f26a646`
+- Jan Production Vercel project, alias and Supabase project were not modified
+- No Jan Production deployment, migration, credential access or attendance write occurred
+- Offline attendance remained disabled throughout commercial staging work
 
 ## Protection limitation
 
