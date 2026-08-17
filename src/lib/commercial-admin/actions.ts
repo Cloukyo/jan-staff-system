@@ -4,9 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { commercialAdminCommandNameSchema } from "./contracts";
 import { executeCommercialAdminCommandServer } from "./server";
-
-export type CommercialAdminActionState = { ok: boolean; message: string; oneTimeCode?: string };
-export const initialCommercialAdminActionState: CommercialAdminActionState = { ok: false, message: "" };
+import type { CommercialAdminActionState } from "./action-state";
 
 function scalar(value: FormDataEntryValue): string | boolean {
   const text = String(value).trim();

@@ -310,6 +310,22 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
       readFileSync(resolve("supabase/migrations", paidConversionMigration), "utf8"),
     );
   }
+  const stagingGrantHardeningMigration = migrationNames.find((name) =>
+    name.endsWith("_harden_commercial_staging_function_grants.sql"),
+  );
+  if (stagingGrantHardeningMigration) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", stagingGrantHardeningMigration), "utf8"),
+    );
+  }
+  const guardedRlsHelperMigration = migrationNames.find((name) =>
+    name.endsWith("_permit_guarded_rls_helpers.sql"),
+  );
+  if (guardedRlsHelperMigration) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", guardedRlsHelperMigration), "utf8"),
+    );
+  }
   return db;
 }
 

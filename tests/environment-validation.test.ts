@@ -161,6 +161,13 @@ describe("commercial environment validation", () => {
     }))).not.toThrow();
   });
 
+  it("fails closed if the staging identity is used for a Vercel Production deployment", () => {
+    expect(() => validateEnvironment(productionEnvironment({
+      APP_ENV: "staging", VERCEL_ENV: "production", NEXT_PUBLIC_SITE_URL: "https://staging.example.com",
+      NEXT_PUBLIC_SUPABASE_URL: "https://stagingref.supabase.co", SUPABASE_PROJECT_REF: "stagingref",
+    }))).toThrow("staging must not run with VERCEL_ENV=production");
+  });
+
   it("uses an explicit deployment SHA for a controlled manual deployment", () => {
     expect(validateEnvironment(productionEnvironment({
       DEPLOYMENT_SHA: "fedcba9876543210fedcba9876543210fedcba98",

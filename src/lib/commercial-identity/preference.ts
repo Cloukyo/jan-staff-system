@@ -68,6 +68,8 @@ export async function decodeCommercialPreference(
 const continuationPaths = new Set([
   "/dashboard", "/attendance", "/rota", "/staff", "/my-attendance", "/my-rota", "/organisations/select", "/mfa",
   "/payroll", "/payroll/arrangements", "/payroll/review",
+  "/admin", "/admin/access", "/admin/billing", "/admin/devices", "/admin/organisation", "/admin/settings",
+  "/admin/settings/sites", "/admin/sites", "/admin/staff",
 ]);
 
 export function safeCommercialContinuation(candidate: string | null | undefined): string {

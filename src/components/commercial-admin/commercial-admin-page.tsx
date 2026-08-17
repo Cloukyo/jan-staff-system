@@ -2,8 +2,9 @@ import { AppShell } from "@/components/layout/app-shell";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { loadCommercialAdminServer } from "@/lib/commercial-admin/server";
 import { CommercialAdminScreen, type CommercialAdminArea } from "./commercial-admin-screen";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { BillingNotice } from "@/components/billing/billing-notice";
+import { commercialProtectedRouteRecovery } from "@/lib/commercial-identity/route-recovery";
 
 const requiredPermission: Partial<Record<CommercialAdminArea, string>> = {
   organisation: "organisation.manage", sites: "site.manage", staff: "staff.manage",
@@ -11,7 +12,16 @@ const requiredPermission: Partial<Record<CommercialAdminArea, string>> = {
 };
 
 export async function CommercialAdminPage({ area }: { area: CommercialAdminArea }) {
-  const snapshot = await loadCommercialAdminServer();
+  const continuation = area === "overview" ? "/admin" : area === "site-settings" ? "/admin/settings/sites" : `/admin/${area}`;
+  let snapshot;
+  try {
+    snapshot = await loadCommercialAdminServer();
+  } catch (error) {
+    const recovery = commercialProtectedRouteRecovery(error, continuation);
+    if (recovery.kind === "redirect") redirect(recovery.destination);
+    if (recovery.kind === "not_found") notFound();
+    throw error;
+  }
   const required = requiredPermission[area];
   if (required && !snapshot.actor.permissions.includes(required)) notFound();
   return <AppShell commercialPermissions={snapshot.actor.permissions}>

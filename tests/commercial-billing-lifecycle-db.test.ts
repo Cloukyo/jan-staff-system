@@ -269,6 +269,62 @@ describe("commercial billing lifecycle persistence", () => {
     )).rows[0].allowed).toBe(false);
   });
 
+  it("limits anonymous definer execution to explicit token-authenticated public workflows", async () => {
+    const unexpectedAnonymous = (await db.query<{ signature: string }>(`
+      select namespace.nspname || '.' || procedure.proname || '(' || pg_get_function_identity_arguments(procedure.oid) || ')' signature
+      from pg_proc procedure
+      join pg_namespace namespace on namespace.oid = procedure.pronamespace
+      where procedure.prosecdef
+        and namespace.nspname in ('public', 'private')
+        and has_function_privilege('anon', procedure.oid, 'execute')
+        and procedure.proname not in (
+          'claim_commercial_kiosk',
+          'change_tenant_aware_device_kiosk_pin',
+          'get_tenant_aware_device_kiosk_roster',
+          'inspect_manager_invitation',
+          'inspect_staff_invitation',
+          'perform_commercial_kiosk_attendance_action',
+          'perform_tenant_aware_kiosk_attendance_action',
+          'record_commercial_kiosk_heartbeat',
+          'verify_commercial_device_kiosk_pin',
+          'verify_commercial_kiosk_roster',
+          'verify_tenant_aware_device_kiosk_pin'
+        )
+      order by signature
+    `)).rows;
+    expect(unexpectedAnonymous).toEqual([]);
+
+    const unexpectedPrivateExecution = (await db.query<{ role_name: string; function_name: string }>(`
+      select role_name, procedure.proname function_name
+      from unnest(array['public','anon','authenticated']) role_name
+      cross join pg_proc procedure
+      join pg_namespace namespace on namespace.oid = procedure.pronamespace
+      where namespace.nspname = 'private'
+        and has_function_privilege(role_name, procedure.oid, 'execute')
+        and not (
+          role_name = 'authenticated'
+          and procedure.proname in (
+            'attendance_row_is_readable', 'can_access_staff', 'can_read_onboarding_session',
+            'current_membership', 'current_membership_id', 'has_permission',
+            'has_site_permission', 'is_active_member', 'is_linked_staff'
+          )
+        )
+      order by role_name, function_name
+    `)).rows;
+    expect(unexpectedPrivateExecution).toEqual([]);
+    expect((await db.query<{ allowed: boolean }>(
+      "select has_function_privilege('authenticated','private.is_active_member(uuid)','EXECUTE') allowed",
+    )).rows[0].allowed).toBe(true);
+
+    const updateTriggers = (await db.query<{ configuration: string[] | null }>(`
+      select proconfig configuration
+      from pg_proc procedure
+      join pg_namespace namespace on namespace.oid = procedure.pronamespace
+      where namespace.nspname = 'public' and procedure.proname = 'set_updated_at'
+    `)).rows;
+    expect(updateTriggers.every((trigger) => trigger.configuration?.includes('search_path=""'))).toBe(true);
+  });
+
   it("denies cross-organisation billing reads and direct audit mutation", async () => {
     await seedSubscription(db);
     await setTenantAuthUser(db, USER_A_OWNER, "aal2");

@@ -1,6 +1,6 @@
 begin;
 
-select plan(21);
+select plan(25);
 
 select has_table('public','billing_provider_customers','provider customer mappings exist');
 select has_table('public','billing_provider_prices','environment-scoped provider prices exist');
@@ -35,6 +35,36 @@ select ok(not has_table_privilege('authenticated','public.billing_webhook_events
 select ok((select relrowsecurity from pg_class where oid='public.billing_provider_customers'::regclass),'provider customer mappings have RLS');
 select ok((select relrowsecurity from pg_class where oid='public.billing_webhook_events'::regclass),'webhook ledger has RLS');
 select is((select boolean_value from public.plan_entitlements where plan_key='preview_standard' and plan_version=1 and capability_key='attendance.offline'),false,'billing preserves the offline-disabled entitlement');
+
+select is((
+  select count(*)::bigint
+  from pg_proc procedure
+  join pg_namespace namespace on namespace.oid=procedure.pronamespace
+  where procedure.prosecdef and namespace.nspname in('public','private')
+    and has_function_privilege('anon',procedure.oid,'EXECUTE')
+    and procedure.proname not in(
+      'claim_commercial_kiosk','change_tenant_aware_device_kiosk_pin','get_tenant_aware_device_kiosk_roster',
+      'inspect_manager_invitation','inspect_staff_invitation','perform_commercial_kiosk_attendance_action',
+      'perform_tenant_aware_kiosk_attendance_action','record_commercial_kiosk_heartbeat',
+      'verify_commercial_device_kiosk_pin','verify_commercial_kiosk_roster','verify_tenant_aware_device_kiosk_pin'
+    )
+),0::bigint,'anonymous definer execution is limited to explicit token-authenticated workflows');
+select is((
+  select count(*)::bigint from pg_proc procedure join pg_namespace namespace on namespace.oid=procedure.pronamespace
+  where namespace.nspname='private'
+    and (
+      has_function_privilege('anon',procedure.oid,'EXECUTE')
+      or (
+        has_function_privilege('authenticated',procedure.oid,'EXECUTE')
+        and procedure.proname not in(
+          'attendance_row_is_readable','can_access_staff','can_read_onboarding_session','current_membership',
+          'current_membership_id','has_permission','has_site_permission','is_active_member','is_linked_staff'
+        )
+      )
+    )
+),0::bigint,'private execution is limited to guarded RLS policy helpers');
+select ok(has_function_privilege('authenticated','private.is_active_member(uuid)','EXECUTE'),'guarded membership helper remains available to RLS policies');
+select ok((select coalesce(proconfig,array[]::text[]) @> array['search_path=""'] from pg_proc where oid='public.set_updated_at()'::regprocedure),'generic update trigger has an immutable empty search path');
 
 select * from finish();
 rollback;

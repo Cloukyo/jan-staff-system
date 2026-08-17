@@ -4,6 +4,8 @@ import { Button, Panel, StatusPill } from "@/components/ui/primitives";
 import { changeBillingPlan, openBillingPortal, requestSubscriptionCancellation, resumeSubscription, startBillingCheckout } from "@/lib/billing/actions";
 import { loadBillingServer } from "@/lib/billing/server";
 import type { BillingSnapshot } from "@/lib/billing/contracts";
+import { commercialProtectedRouteRecovery } from "@/lib/commercial-identity/route-recovery";
+import { notFound, redirect } from "next/navigation";
 
 function date(value: string | null) {
   return value ? new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: "Europe/London" }).format(new Date(value)) : "Not scheduled";
@@ -81,6 +83,15 @@ export function BillingScreen({ snapshot, permissions }: { snapshot: BillingSnap
 }
 
 export async function BillingPage() {
-  const { context, snapshot } = await loadBillingServer();
+  let loaded;
+  try {
+    loaded = await loadBillingServer();
+  } catch (error) {
+    const recovery = commercialProtectedRouteRecovery(error, "/admin/billing");
+    if (recovery.kind === "redirect") redirect(recovery.destination);
+    if (recovery.kind === "not_found") notFound();
+    throw error;
+  }
+  const { context, snapshot } = loaded;
   return <BillingScreen snapshot={snapshot} permissions={context.permissions}/>;
 }

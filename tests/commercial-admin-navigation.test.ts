@@ -43,4 +43,16 @@ describe("commercial administration navigation", () => {
       "replace_kiosk_device",
     ]) expect(controls).toContain(`commandName=\"${command}\"`);
   });
+
+  it("keeps the staging project manual-only at the repository boundary", () => {
+    const vercel = JSON.parse(readFileSync(resolve("vercel.json"), "utf8"));
+    expect(vercel.git.deploymentEnabled).toBe(false);
+  });
+
+  it("keeps non-function action state outside the use-server module", () => {
+    const actions = readFileSync(resolve("src/lib/commercial-admin/actions.ts"), "utf8");
+    const state = readFileSync(resolve("src/lib/commercial-admin/action-state.ts"), "utf8");
+    expect(actions).not.toContain("export const initialCommercialAdminActionState");
+    expect(state).toContain("initialCommercialAdminActionState");
+  });
 });

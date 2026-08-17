@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { commercialAdminAction, initialCommercialAdminActionState } from "@/lib/commercial-admin/actions";
+import { commercialAdminAction } from "@/lib/commercial-admin/actions";
+import { initialCommercialAdminActionState } from "@/lib/commercial-admin/action-state";
 import type { CommercialAdminCommandName } from "@/lib/commercial-admin/contracts";
 import { Button } from "@/components/ui/primitives";
 
