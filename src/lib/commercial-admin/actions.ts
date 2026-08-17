@@ -65,8 +65,16 @@ export async function commercialAdminAction(
       idempotencyKey: String(formData.get("idempotencyKey") || crypto.randomUUID()),
     });
     if (result.outcome === "success") {
-      revalidatePath("/admin", "layout");
-      return { ok: true, message: messageFor(result.outcome, result.code), oneTimeCode };
+      // Revalidating here would immediately remove the now-revoked device's
+      // replacement form, taking its one-time registration code with it.
+      if (command.data !== "replace_kiosk_device") revalidatePath("/admin", "layout");
+      return {
+        ok: true,
+        message: command.data === "replace_kiosk_device"
+          ? "The old device is revoked. Copy the replacement code now, then reload this page."
+          : messageFor(result.outcome, result.code),
+        oneTimeCode,
+      };
     }
     return { ok: false, message: messageFor(result.outcome, "code" in result ? result.code : undefined) };
   } catch {

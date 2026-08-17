@@ -326,6 +326,14 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
       readFileSync(resolve("supabase/migrations", guardedRlsHelperMigration), "utf8"),
     );
   }
+  const kioskOperationalStateMigration = migrationNames.find((name) =>
+    name.endsWith("_align_commercial_kiosk_operational_state.sql"),
+  );
+  if (kioskOperationalStateMigration) {
+    await db.exec(
+      readFileSync(resolve("supabase/migrations", kioskOperationalStateMigration), "utf8"),
+    );
+  }
   return db;
 }
 

@@ -19,7 +19,7 @@ export function AdminCommandForm({ commandName, revision, submitLabel = "Save ch
       {children}
       {state.message ? <div role="status" className={`rounded-lg px-4 py-3 text-sm font-semibold ${state.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-950"}`}>{state.message}</div> : null}
       {state.oneTimeCode ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><p className="text-sm font-bold text-amber-950">Copy this code now</p><code className="mt-2 block break-all text-sm text-amber-950">{state.oneTimeCode}</code><p className="mt-2 text-xs text-amber-900">For security, it will not be shown again.</p></div> : null}
-      <Button type="submit" variant={tone} disabled={pending}>{pending ? "Saving…" : submitLabel}</Button>
+      <Button type="submit" variant={tone} disabled={pending || Boolean(state.ok && state.oneTimeCode)}>{pending ? "Saving…" : submitLabel}</Button>
     </form>
   );
 }

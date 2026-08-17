@@ -56,6 +56,21 @@ describe("commercial billing lifecycle persistence", () => {
     await expect(decision("attendance.offline")).resolves.toMatchObject({ allowed: false, decisionCode: "offline_disabled" });
   });
 
+  it("keeps a historically live kiosk operational while cancellation is scheduled", async () => {
+    const subscriptionId = await seedSubscription(db, "active");
+    await resetTenantDatabaseRole(db);
+    await db.query("with guard as (select set_config('app.commercial_go_live',$1::text,true)) update public.organisations set operational_state='live',went_live_at=now() from guard where id=$1::uuid", [ORG_A]);
+    await db.query("with guard as (select set_config('app.commercial_subscription_transition',$1::text,true)) update public.organisation_subscriptions set state='cancelled_at_period_end',cancel_at_period_end=true,current_period_started_at=now(),current_period_ends_at=now()+interval '20 days' from guard where id=$1::uuid", [subscriptionId]);
+    await db.query(`insert into public.kiosk_devices(device_name,token_hash,active,expires_at,organisation_id,site_id,activated_by_membership_id,offline_enabled)
+      select 'Cancellation-safe kiosk',sha256(convert_to('fictional-cancellation-kiosk-token','UTF8')),true,now()+interval '30 days',$1,s.id,m.id,false
+      from public.organisation_sites s join public.organisation_memberships m on m.organisation_id=s.organisation_id
+      where s.organisation_id=$1 and m.auth_user_id=$2 order by s.created_at limit 1`, [ORG_A, USER_A_OWNER]);
+    const heartbeat = (await db.query<{ result: { outcome: string; preLive: boolean } }>(
+      "select public.record_commercial_kiosk_heartbeat('fictional-cancellation-kiosk-token','0.1.0',1,'tablet') result",
+    )).rows[0].result;
+    expect(heartbeat).toMatchObject({ outcome: "connected", preLive: false });
+  });
+
   it("records duplicate and stale provider events once and recovers payment idempotently", async () => {
     const subscriptionId = await seedSubscription(db, "active");
     await db.query("select public.commercial_record_provider_customer($1,$2,'preview','cus_test_fictional')", [ORG_A, MEMBERSHIP_A_OWNER]);

@@ -55,4 +55,9 @@ describe("commercial administration navigation", () => {
     expect(actions).not.toContain("export const initialCommercialAdminActionState");
     expect(state).toContain("initialCommercialAdminActionState");
   });
+
+  it("keeps a replacement registration code visible until the manager copies it", () => {
+    const actions = readFileSync(resolve("src/lib/commercial-admin/actions.ts"), "utf8");
+    expect(actions).toContain('command.data !== "replace_kiosk_device"');
+  });
 });
