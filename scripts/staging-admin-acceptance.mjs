@@ -1,4 +1,6 @@
 import { chromium } from "playwright";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const baseUrl = process.env.STAGING_BASE_URL;
 const storagePath = process.env.STAGING_STORAGE_PATH;
@@ -13,6 +15,13 @@ const context = await browser.newContext({
   viewport: { width: 1440, height: 1000 },
 });
 const page = await context.newPage();
+
+async function selectOrganisation(name, continuation) {
+  await page.goto(`${baseUrl}/organisations/select?next=${encodeURIComponent(continuation)}`, { waitUntil: "networkidle" });
+  await page.getByLabel(name).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.waitForURL((url) => url.pathname === continuation, { timeout: 30_000 });
+}
 
 async function claimDevice(registrationCode) {
   const kioskContext = await browser.newContext({ viewport: { width: 1024, height: 768 } });
@@ -30,7 +39,7 @@ async function claimDevice(registrationCode) {
 
 try {
   if (action === "transfer-staff") {
-    await page.goto(`${baseUrl}/admin/staff`, { waitUntil: "networkidle" });
+    await selectOrganisation("Northstar Staging Operations", "/admin/staff");
     const record = page.locator("[data-admin-search]", { hasText: "Morgan Example" });
     await record.getByText("Manage record").click();
     const form = record.locator('form:has(input[name="commandName"][value="upsert_assignment"])');
@@ -42,12 +51,12 @@ try {
     await form.getByRole("status").waitFor({ timeout: 30_000 });
     process.stdout.write(`TRANSFER_RESULT ${(await form.getByRole("status").innerText()).trim()}\n`);
   } else if (action === "inspect") {
-    await page.goto(`${baseUrl}/admin`, { waitUntil: "networkidle" });
+    await selectOrganisation("Northstar Staging Operations", "/admin");
     process.stdout.write(`ADMIN_TITLE ${(await page.locator("h1").first().innerText()).trim()}\n`);
   } else if (action === "replace-device") {
     const originalName = `Closure Test Tablet ${Date.now()}`;
     const replacementName = `${originalName} replacement`;
-    await page.goto(`${baseUrl}/admin/devices`, { waitUntil: "networkidle" });
+    await selectOrganisation("Northstar Staging Operations", "/admin/devices");
     for (;;) {
       const stale = page.getByRole("heading", { name: /^Closure Test Tablet/ }).first();
       if (!(await stale.count())) break;
@@ -63,7 +72,10 @@ try {
     await form.locator('input[name="deviceName"]').fill(originalName);
     await form.locator('select[name="siteId"]').selectOption({ label: "Northstar East Staging" });
     await form.getByRole("button", { name: "Generate registration code" }).click();
-    await form.locator("code").waitFor({ timeout: 30_000 });
+    await form.getByRole("status").waitFor({ timeout: 30_000 });
+    if (!(await form.locator("code").count())) {
+      throw new Error(`Device registration failed: ${(await form.getByRole("status").innerText()).trim()}`);
+    }
     const originalCode = (await form.locator("code").innerText()).trim();
     const original = await claimDevice(originalCode);
     process.stdout.write("INITIAL_DEVICE_CLAIMED true\n");
@@ -75,7 +87,10 @@ try {
     await form.locator('input[name="deviceName"]').fill(replacementName);
     page.once("dialog", (dialog) => dialog.accept());
     await form.getByRole("button", { name: "Revoke and create replacement code" }).click();
-    await form.locator("code").waitFor({ timeout: 30_000 });
+    await form.getByRole("status").waitFor({ timeout: 30_000 });
+    if (!(await form.locator("code").count())) {
+      throw new Error(`Device replacement failed: ${(await form.getByRole("status").innerText()).trim()}`);
+    }
     const replacementCode = (await form.locator("code").innerText()).trim();
 
     await original.kioskPage.reload({ waitUntil: "networkidle" });
@@ -86,6 +101,52 @@ try {
     process.stdout.write("REPLACEMENT_DEVICE_CLAIMED true\n");
     await original.kioskContext.close();
     await replacement.kioskContext.close();
+  } else if (action === "inspect-checkout") {
+    await page.goto(`${baseUrl}/organisations/select?next=%2Fadmin%2Fbilling`, { waitUntil: "networkidle" });
+    await page.getByLabel("Checkout Acceptance Staging").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.waitForURL(/\/admin\/billing/, { timeout: 30_000 });
+    await page.getByRole("button", { name: "Set up payment" }).click();
+    await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
+    await page.waitForLoadState("networkidle");
+    await page.getByText("I am an AI agent acting on behalf of someone else", { exact: true }).evaluate((element) => element.click());
+    await page.locator('input[name="payment-method-accordion-item-title"]').first().evaluate((element) => element.click());
+    await page.waitForTimeout(750);
+    process.stdout.write(`CHECKOUT_HOST ${new URL(page.url()).host}\n`);
+    process.stdout.write(`CHECKOUT_TITLE ${(await page.title()).trim()}\n`);
+    await page.screenshot({ path: join(tmpdir(), "commercial-staging-checkout.png"), fullPage: true });
+  } else if (action === "visual-acceptance") {
+    await selectOrganisation("Northstar Staging Operations", "/admin");
+    const routes = [
+      "/commercial/welcome", "/admin", "/admin/staff", "/rota", "/attendance",
+      "/leave/requests", "/payroll", "/admin/sites", "/admin/access", "/admin/devices",
+      "/admin/settings", "/admin/billing", "/onboarding/readiness",
+    ];
+    const viewports = [
+      { label: "desktop", width: 1440, height: 1000 },
+      { label: "tablet", width: 1024, height: 768 },
+      { label: "mobile", width: 390, height: 844 },
+    ];
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      for (const route of routes) {
+        await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle" });
+        const result = await page.evaluate(() => ({
+          overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+          heading: document.querySelector("h1")?.textContent?.trim() ?? "",
+          hasInternalError: /internal server error|application error|stack trace/i.test(document.body.innerText),
+        }));
+        if (!result.heading || result.overflow || result.hasInternalError) {
+          throw new Error(`${viewport.label} ${route} failed visual acceptance: ${JSON.stringify(result)}`);
+        }
+      }
+      await page.goto(`${baseUrl}/admin/devices`, { waitUntil: "networkidle" });
+      await page.screenshot({
+        path: join(tmpdir(), `commercial-staging-${viewport.label}.png`),
+        fullPage: true,
+      });
+      process.stdout.write(`VISUAL_${viewport.label.toUpperCase()} ${routes.length} routes passed\n`);
+    }
   } else {
     throw new Error(`Unknown staging acceptance action: ${action ?? "missing"}`);
   }

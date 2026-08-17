@@ -77,6 +77,25 @@ describe("commercial online kiosk onboarding database", () => {
     expect(stored).toEqual({ raw: 0, devices: 0, offline: 0 });
   });
 
+  it("expires a stale pending registration before accepting its replacement", async () => {
+    const s = await ready(db);
+    await resetTenantDatabaseRole(db);
+    await db.query(`insert into public.commercial_kiosk_registrations(
+      organisation_id,site_id,requested_by_membership_id,intended_device_name,secret_hash,expires_at,created_at,updated_at
+    ) select $1,$2,id,'Expired tablet',decode($3,'hex'),now()-interval '1 minute',now()-interval '2 minutes',now()-interval '2 minutes'
+      from public.organisation_memberships where organisation_id=$1 and auth_user_id=$4`,
+    [s.session.organisationId, s.siteSummary!.siteId, "a".repeat(64), USER_A_OWNER]);
+    await db.query(`insert into public.commercial_kiosk_registrations(
+      organisation_id,site_id,requested_by_membership_id,intended_device_name,secret_hash,expires_at
+    ) select $1,$2,id,'Replacement tablet',decode($3,'hex'),now()+interval '10 minutes'
+      from public.organisation_memberships where organisation_id=$1 and auth_user_id=$4`,
+    [s.session.organisationId, s.siteSummary!.siteId, "b".repeat(64), USER_A_OWNER]);
+    expect((await db.query<{ status: string; count: number }>(
+      "select min(status) status,count(*)::int count from public.commercial_kiosk_registrations where organisation_id=$1",
+      [s.session.organisationId],
+    )).rows[0]).toEqual({ status: "expired", count: 2 });
+  });
+
   it("claims atomically, recovers a lost response for the same browser, and rejects another browser", async () => {
     const s = await ready(db);
     const started = await command(db, s, "start_kiosk_registration", 20, { siteId: s.siteSummary!.siteId, deviceName: "Reception" });

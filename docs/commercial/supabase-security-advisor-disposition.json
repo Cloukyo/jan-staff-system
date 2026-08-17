@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "Commercial Staging",
+    "reference": "vytfzjreiptfapybtanx",
+    "region": "eu-west-2"
+  },
+  "reviewedAt": "2026-08-17",
+  "baseline": {
+    "reportedWarningsApproximate": 126,
+    "note": "The opening count was recorded from the dashboard before grant and Auth hardening."
+  },
+  "final": {
+    "totalNotices": 113,
+    "categoryAUnresolved": 0,
+    "categories": [
+      {
+        "advisor": "rls_enabled_no_policy",
+        "count": 9,
+        "classification": "B",
+        "disposition": "retained",
+        "reason": "These are deliberately client-denied internal evidence, receipt, rate-limit, outbox, or catalogue tables. RLS is enabled and no client policy is the deny-all control; browser writes are revoked and guarded server/database commands own mutation.",
+        "evidence": [
+          "tests/attendance-tenant-security-db.test.ts",
+          "tests/attendance-tenancy-db.test.ts",
+          "tests/onboarding-kiosk-db.test.ts",
+          "tests/commercial-billing-lifecycle-db.test.ts"
+        ],
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy"
+      },
+      {
+        "advisor": "anon_security_definer_function_executable",
+        "count": 11,
+        "classification": "B",
+        "disposition": "retained",
+        "reason": "The remaining anonymous functions are intentional token-authentication boundaries for kiosk credentials and invitation tokens. They use fixed empty search paths, validate hashed opaque credentials inside the function, return bounded results, and do not accept tenant authority from the caller.",
+        "evidence": [
+          "tests/onboarding-kiosk-db.test.ts",
+          "tests/invitation-acceptance-db.test.ts",
+          "tests/manager-invitation-acceptance-db.test.ts",
+          "tests/attendance-tenant-state-machine-db.test.ts"
+        ],
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable"
+      },
+      {
+        "advisor": "authenticated_security_definer_function_executable",
+        "count": 93,
+        "classification": "B/C",
+        "disposition": "retained_and_tested",
+        "reason": "Authenticated application RPCs are the intended mutation boundary. All 93 have a fixed search_path. Commercial RPCs resolve the authenticated membership and permission/site scope inside the function. Compatibility RPCs remain for the legacy adapter and are covered by commercial route and tenant-isolation tests; unguarded internal helpers had EXECUTE revoked during the closure pass.",
+        "evidence": [
+          "tests/tenant-primitives-db.test.ts",
+          "tests/rota-leave-tenancy-db.test.ts",
+          "tests/payroll-tenant-server-scoping.test.ts",
+          "tests/commercial-admin-service.test.ts",
+          "tests/commercial-identity-guards.test.ts",
+          "tests/customer-domain-db.test.ts"
+        ],
+        "followUp": "Retire compatibility-only public RPCs in a later compatibility-removal security task after Jan compatibility is no longer required.",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+      }
+    ],
+    "resolved": [
+      {
+        "advisor": "auth_leaked_password_protection",
+        "classification": "A",
+        "resolution": "Enabled leaked-password protection in Commercial Staging Auth configuration and confirmed the advisor warning cleared.",
+        "remediation": "https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection"
+      },
+      {
+        "advisor": "implicit_or_internal_function_execute",
+        "classification": "A",
+        "resolution": "Revoked implicit PUBLIC and client execution from internal helpers and regranted only the guarded RLS helpers and intentional public application boundaries."
+      },
+      {
+        "advisor": "mutable_function_search_path",
+        "classification": "A",
+        "resolution": "Fixed the remaining mutable helper search path and verified all retained authenticated SECURITY DEFINER functions have a fixed search_path."
+      }
+    ]
+  },
+  "acceptance": {
+    "criterion": "No unresolved Critical or Important commercial security issue suitable for exploitation by an external customer.",
+    "result": "pass",
+    "notes": "Advisor warnings are retained only where the architecture intentionally uses a token-authenticated or membership-guarded function boundary, or where no-policy RLS is the deny-all control."
+  }
+}
