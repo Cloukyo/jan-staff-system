@@ -16,7 +16,8 @@ export function loadBillingConfiguration() {
   const environment = appEnvironment as BillingEnvironment;
   const secretKey = required("STRIPE_SECRET_KEY");
   const webhookSecret = required("STRIPE_WEBHOOK_SECRET");
-  if (environment !== "production" && !secretKey.startsWith("sk_test_")) throw new Error("Preview and staging billing require a Stripe test secret key.");
+  const sandboxKey = secretKey.startsWith("sk_test_") || secretKey.startsWith("rk_test_");
+  if (environment !== "production" && !sandboxKey) throw new Error("Preview and staging billing require a Stripe test secret key.");
   if (environment !== "production" && !webhookSecret.startsWith("whsec_")) throw new Error("A Stripe test webhook signing secret is required.");
   if (environment === "production") throw new Error("Live commercial billing is not enabled in this milestone.");
   let rawPrices: unknown;

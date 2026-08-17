@@ -12,6 +12,12 @@ describe("commercial billing environment separation", () => {
     expect(configuredPrice({ planKey: "preview_standard", planVersion: 1 }, configuration)).toBe("price_test_standard_v1");
   });
 
+  it("accepts a least-privilege Stripe sandbox restricted key", () => {
+    Object.assign(process.env, { APP_ENV: "staging", STRIPE_SECRET_KEY: "rk_test_fictional", STRIPE_WEBHOOK_SECRET: "whsec_fictional",
+      STRIPE_PRICE_MAP_JSON: JSON.stringify({ preview: {}, staging: { preview_standard: { 1: "price_test_standard_v1" } } }) });
+    expect(loadBillingConfiguration().environment).toBe("staging");
+  });
+
   it("rejects live secrets in Preview and refuses Production billing in this milestone", () => {
     Object.assign(process.env, { APP_ENV: "preview", STRIPE_SECRET_KEY: ["sk", "live", "forbidden"].join("_"), STRIPE_WEBHOOK_SECRET: "whsec_fictional",
       STRIPE_PRICE_MAP_JSON: JSON.stringify({ preview: { preview_standard: { 1: "price_test_standard_v1" } } }) });
