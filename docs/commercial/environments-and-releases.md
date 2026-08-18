@@ -87,7 +87,7 @@ Application responses include `x-request-id`. Preserve this value in support tic
 
 `Commercial CI` runs locked installation, lint, type checking, the complete Vitest suite and a production-mode preview build. Its migration job starts a clean local Postgres instance, applies every migration, lists migration history, runs pgTAP tests and lints the resulting schema.
 
-`Commercial Security` runs a high-severity npm audit, pull-request dependency review and a pinned Gitleaks scan. `CodeQL` analyses JavaScript and TypeScript on pull requests, commercial branch pushes and weekly schedules.
+`Commercial Security` always runs a high-severity npm audit and a pinned Gitleaks scan. Native pull-request dependency review is retained behind the repository variable `COMMERCIAL_NATIVE_DEPENDENCY_REVIEW=enabled` because it is unavailable on the current private-repository plan. `CodeQL` analyses JavaScript and TypeScript on pull requests, commercial branch pushes and weekly schedules, retaining private SARIF evidence while native Code Scanning is unavailable.
 
 No workflow receives deployment credentials during ordinary CI.
 

@@ -32,7 +32,10 @@ jobs:
 
   dependency-review:
     name: Dependency change review
-    if: github.event_name == 'pull_request'
+    # Native dependency review requires GitHub Code Security for this private
+    # repository. Keep the check upgrade-ready without making current private
+    # repository CI fail solely because that paid capability is unavailable.
+    if: github.event_name == 'pull_request' && vars.COMMERCIAL_NATIVE_DEPENDENCY_REVIEW == 'enabled'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
