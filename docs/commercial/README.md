@@ -15,5 +15,6 @@ These documents describe implemented commercial tenancy milestones on `codex/com
 - [Billing lifecycle](billing-lifecycle.md): Stripe test-mode setup, lifecycle policy, reconciliation and recovery.
 - [Repository protection](repository-protection.md): repository and delivery controls.
 - [Repository and environment separation](repository-environment-separation.md): the independent commercial GitHub, Supabase and Vercel boundary and its verification evidence.
+- [Workstream 9.5 completion report](workstream-9-5-completion-report.md): independent staging acceptance, evidence invariants, security disposition and closure decision.
 
 All commercial documents preserve the same constraints: inherited Jan records are not silently backfilled, production connection and deployment are separate approvals, and offline attendance remains disabled.
