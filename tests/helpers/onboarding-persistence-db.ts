@@ -360,6 +360,22 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
 
 export async function createPilotReadinessBillingDatabase(): Promise<PGlite> {
   const db = await createBillingLifecycleDatabase();
+  // The production Workstream 5 implementation self-qualifies both
+  // idempotency-key references. Preserve that detail in this focused fixture
+  // so a later function rename cannot leave an invalid PL/pgSQL body behind.
+  await db.exec(`
+    create or replace function public.perform_commercial_kiosk_attendance_action_7g(
+      device_token text,target_staff_id text,candidate_pin text,requested_action text,expected_revision text,idempotency_key uuid
+    ) returns jsonb language plpgsql security definer set search_path='' as $$
+    declare observed_key uuid;
+    begin
+      observed_key := perform_commercial_kiosk_attendance_action_7g.idempotency_key;
+      if observed_key is distinct from perform_commercial_kiosk_attendance_action_7g.idempotency_key then
+        raise exception 'fixture idempotency mismatch';
+      end if;
+      return jsonb_build_object('ok',true,'code','fixture');
+    end$$;
+  `);
   const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
     name.endsWith("_pilot_readiness_finalisation.sql"),
   );

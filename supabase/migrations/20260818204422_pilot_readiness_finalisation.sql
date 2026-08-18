@@ -42,7 +42,30 @@ end
 $$;
 
 alter function public.perform_commercial_kiosk_attendance_action_7g(text,text,text,text,text,uuid)
-  rename to perform_commercial_kiosk_attendance_action_before_pilot_pin_guard;
+  rename to perform_commercial_kiosk_attendance_action_pre_pin_guard;
+
+-- PostgreSQL renames the routine but does not rewrite PL/pgSQL parameter
+-- qualifications embedded in its body. Repair the two Workstream 5
+-- idempotency references before the renamed implementation can be called.
+do $repair_renamed_kiosk_attendance$
+declare
+  definition text;
+  old_reference constant text := 'perform_commercial_kiosk_attendance_action_7g.idempotency_key';
+  new_reference constant text := 'perform_commercial_kiosk_attendance_action_pre_pin_guard.idempotency_key';
+  reference_count integer;
+begin
+  select pg_get_functiondef(
+    'public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid)'::regprocedure
+  ) into definition;
+  reference_count := (
+    length(definition) - length(replace(definition, old_reference, ''))
+  ) / length(old_reference);
+  if reference_count <> 2 then
+    raise exception 'Expected two commercial attendance idempotency references, found %', reference_count;
+  end if;
+  execute replace(definition, old_reference, new_reference);
+end
+$repair_renamed_kiosk_attendance$;
 
 create or replace function public.perform_commercial_kiosk_attendance_action_7g(
   device_token text, target_staff_id text, candidate_pin text,
@@ -74,7 +97,7 @@ begin
   if not private.verify_commercial_kiosk_pin_attempt(target_staff_id, candidate_pin) then
     return jsonb_build_object('ok', false, 'code', 'invalid_pin');
   end if;
-  return public.perform_commercial_kiosk_attendance_action_before_pilot_pin_guard(
+  return public.perform_commercial_kiosk_attendance_action_pre_pin_guard(
     device_token, target_staff_id, candidate_pin, requested_action, expected_revision, idempotency_key
   );
 end
@@ -194,7 +217,7 @@ $$;
 
 revoke all on function private.verify_commercial_kiosk_pin_attempt(text,text),
   private.purge_commercial_kiosk_claim_attempts(),
-  public.perform_commercial_kiosk_attendance_action_before_pilot_pin_guard(text,text,text,text,text,uuid),
+  public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid),
   public.perform_commercial_kiosk_attendance_action_7g(text,text,text,text,text,uuid)
 from public,anon,authenticated,service_role;
 revoke all on function public.claim_commercial_kiosk(uuid,text,text) from public,anon,authenticated,service_role;

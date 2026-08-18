@@ -1,6 +1,6 @@
 begin;
 
-select plan(22);
+select plan(23);
 
 select has_table('public','customer_export_audits','owner exports have immutable audit evidence');
 select has_column('public','message_outbox','notification_key','notification outbox has a durable idempotency key');
@@ -30,6 +30,11 @@ select ok(not has_function_privilege('anon','public.prepare_customer_export(uuid
 
 select has_function('public','claim_commercial_kiosk',array['uuid','text','text'],'kiosk claim requires a registration UUID');
 select ok(not has_function_privilege('authenticated','private.verify_commercial_kiosk_pin_attempt(text,text)','EXECUTE'),'PIN attempt state is protected behind kiosk boundaries');
+select ok(
+  position('perform_commercial_kiosk_attendance_action_pre_pin_guard.idempotency_key' in pg_get_functiondef('public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid)'::regprocedure)) > 0
+  and position('perform_commercial_kiosk_attendance_action_7g.idempotency_key' in pg_get_functiondef('public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid)'::regprocedure)) = 0,
+  'renamed kiosk attendance implementation keeps valid self-qualified parameters'
+);
 select ok(exists(select 1 from pg_trigger where tgrelid='public.organisation_invitations'::regclass and tgname='organisation_invitations_enforce_privileged_capacity' and not tgisinternal),'pending manager invitations reserve privileged capacity');
 select ok(not (select prosecdef from pg_proc where oid='public.execute_commercial_admin_command(uuid,text,jsonb,uuid,bigint)'::regprocedure)
   and (select prosecdef from pg_proc where oid='commercial_api_private.execute_commercial_admin_command(uuid,text,jsonb,uuid,bigint)'::regprocedure),'post-live admin keeps an invoker wrapper and guarded implementation');

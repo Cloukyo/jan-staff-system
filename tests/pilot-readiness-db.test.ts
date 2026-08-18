@@ -107,4 +107,21 @@ describe("pilot readiness database boundaries", () => {
     await expect(db.query("delete from public.customer_export_audits where id=$1", [id]))
       .rejects.toThrow(/immutable/i);
   });
+
+  it("keeps the renamed kiosk attendance implementation self-qualified", async () => {
+    const definition = (
+      await db.query<{ definition: string }>(
+        `select pg_get_functiondef(
+          'public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid)'::regprocedure
+        ) definition`,
+      )
+    ).rows[0].definition;
+
+    expect(definition).toContain(
+      "perform_commercial_kiosk_attendance_action_pre_pin_guard.idempotency_key",
+    );
+    expect(definition).not.toContain(
+      "perform_commercial_kiosk_attendance_action_7g.idempotency_key",
+    );
+  });
 });
