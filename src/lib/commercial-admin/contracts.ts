@@ -33,7 +33,7 @@ export const commercialAdminSnapshotSchema = z.object({
     id: uuid, email: nullableText, status: z.string(), staffId: nullableText, revision: z.number().int().nonnegative(),
     roles: z.array(z.object({ role: z.string(), scopeType: z.string(), siteId: uuid.nullable() })), siteIds: z.array(uuid),
   })),
-  invitations: z.array(z.object({ id: uuid, email: z.string(), kind: z.string(), status: z.string(), expiresAt: z.string(), staffId: nullableText })),
+  invitations: z.array(z.object({ id: uuid, email: z.string(), kind: z.string(), status: z.string(), expiresAt: z.string(), staffId: nullableText, deliveryStatus: z.enum(["queued","processing","accepted_by_provider","retrying","permanently_failed","not_queued"]) })),
   workAreas: z.array(z.object({ id: uuid, siteId: uuid, name: z.string(), code: z.string(), active: z.boolean(), revision: z.number().int().positive() })),
   closures: z.array(z.object({ id: uuid, siteId: uuid, label: z.string(), startsOn: z.string(), endsOn: z.string(), revision: z.number().int().positive() })),
   devices: z.array(z.object({ id: uuid, siteId: uuid, deviceName: z.string(), active: z.boolean(), lastSeenAt: nullableText, appVersion: nullableText, protocolVersion: z.number().int().nullable(), reprovisionRequired: z.boolean(), offlineEnabled: z.literal(false) })),

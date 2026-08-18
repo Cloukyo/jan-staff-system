@@ -5,7 +5,7 @@ import {
   resetTenantDatabaseRole,
   setTenantAuthUser,
 } from "./helpers/tenant-primitives-db";
-import { createManagerInvitationsOnboardingDatabase } from "./helpers/onboarding-persistence-db";
+import { createPilotReadinessKioskDatabase } from "./helpers/onboarding-persistence-db";
 
 const INVITEE = "c0000000-0000-0000-0000-000000000001";
 const TOKEN = "fictional-manager-invitation-token-0000000000000001";
@@ -133,7 +133,7 @@ async function invitation(db: PGlite) {
 describe("manager invitation acceptance", () => {
   let db: PGlite;
   beforeEach(async () => {
-    db = await createManagerInvitationsOnboardingDatabase();
+    db = await createPilotReadinessKioskDatabase();
     await resetTenantDatabaseRole(db);
     await db.query(
       "insert into auth.users(id,email,email_confirmed_at)values($1,'invitee@example.test',now())",
@@ -235,6 +235,49 @@ describe("manager invitation acceptance", () => {
         )
       ).rows[0].x.outcome,
     ).toBe("email_verification_required");
+    await resetTenantDatabaseRole(db);
+    expect(
+      (
+        await db.query<{ count: number }>(
+          "select count(*)::int count from public.organisation_memberships where auth_user_id=$1",
+          [INVITEE],
+        )
+      ).rows[0].count,
+    ).toBe(0);
+  });
+  it("rechecks privileged capacity atomically when the invitation is accepted", async () => {
+    const target = await invitation(db);
+    await resetTenantDatabaseRole(db);
+    const consumingUser = "c0000000-0000-0000-0000-000000000088";
+    await db.query(
+      "insert into auth.users(id,email,email_confirmed_at) values($1,'capacity@example.test',now())",
+      [consumingUser],
+    );
+    for (let index = 0; index < 8; index += 1) {
+      await db.query(
+        "insert into public.organisation_invitations(organisation_id,invited_email,token_hash,status,expires_at,invited_by_membership_id,invitation_kind,template_version) select $1,$2,sha256(convert_to($2,'UTF8')),'pending',now()+interval '7 days',id,'manager','manager_invitation_v1' from public.organisation_memberships where organisation_id=$1 and auth_user_id=$3",
+        [target.organisationId, `reserved-${index}@example.test`, USER_A_OWNER],
+      );
+    }
+    const consumingMembership = (
+      await db.query<{ id: string }>(
+        "insert into public.organisation_memberships(organisation_id,auth_user_id,status,joined_at) values($1,$2,'active',now()) returning id",
+        [target.organisationId, consumingUser],
+      )
+    ).rows[0];
+    await db.query(
+      "insert into public.membership_role_assignments(organisation_id,membership_id,role,scope_type,granted_by_membership_id) select $1,$2,'organisation_admin','organisation',id from public.organisation_memberships where organisation_id=$1 and auth_user_id=$3",
+      [target.organisationId, consumingMembership.id, USER_A_OWNER],
+    );
+    await setTenantAuthUser(db, INVITEE, "aal2");
+    expect(
+      (
+        await db.query<{ x: { outcome: string } }>(
+          "select public.accept_manager_invitation($1)x",
+          [TOKEN],
+        )
+      ).rows[0].x.outcome,
+    ).toBe("privileged_capacity_reached");
     await resetTenantDatabaseRole(db);
     expect(
       (

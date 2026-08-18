@@ -173,4 +173,22 @@ describe("commercial environment validation", () => {
       DEPLOYMENT_SHA: "fedcba9876543210fedcba9876543210fedcba98",
     })).deploymentSha).toBe("fedcba9876543210fedcba9876543210fedcba98");
   });
+
+  it("enables transactional delivery only for isolated staging test recipients", () => {
+    const staging = productionEnvironment({
+      APP_ENV: "staging", VERCEL_ENV: "preview", NEXT_PUBLIC_SITE_URL: "https://staging.example.com",
+      NEXT_PUBLIC_SUPABASE_URL: "https://stagingref.supabase.co", SUPABASE_PROJECT_REF: "stagingref",
+      NOTIFICATION_DELIVERY_ENABLED: "true", RESEND_API_KEY: "staging-placeholder",
+      RESEND_FROM_ADDRESS: "Workforce Platform <staging@example.test>",
+      RESEND_STAGING_RECIPIENT: "delivered+pilot@resend.dev", CRON_SECRET: "fictional-worker-secret",
+      SUPABASE_SERVICE_ROLE_KEY: "fictional-staging-service-role",
+    });
+    expect(() => validateEnvironment(staging)).not.toThrow();
+    expect(() => validateEnvironment({ ...staging, RESEND_STAGING_RECIPIENT: "person@example.com" }))
+      .toThrow("controlled resend.dev test recipient");
+    expect(() => validateEnvironment({ ...staging, APP_ENV: "preview" }))
+      .toThrow("Commercial Staging only");
+    expect(() => validateEnvironment({ ...staging, NEXT_PUBLIC_RESEND_API_KEY: "forbidden" }))
+      .toThrow("must never use a NEXT_PUBLIC_ variable");
+  });
 });

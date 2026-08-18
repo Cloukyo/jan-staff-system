@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   USER_A_OWNER,
   USER_B_OWNER,
+  ORG_B,
+  SITE_B1,
   resetTenantDatabaseRole,
   setTenantAuthUser,
 } from "./helpers/tenant-primitives-db";
-import { createKioskOnboardingDatabase } from "./helpers/onboarding-persistence-db";
+import { createPilotReadinessKioskDatabase } from "./helpers/onboarding-persistence-db";
 
 type Snapshot = {
   session: { id: string; organisationId: string | null; revision: string };
@@ -47,7 +49,7 @@ async function ready(db: PGlite) {
 
 describe("commercial online kiosk onboarding database", () => {
   let db: PGlite;
-  beforeEach(async () => { db = await createKioskOnboardingDatabase(); await setTenantAuthUser(db, USER_A_OWNER, "aal2"); }, 30000);
+  beforeEach(async () => { db = await createPilotReadinessKioskDatabase(); await setTenantAuthUser(db, USER_A_OWNER, "aal2"); }, 30000);
   afterEach(async () => db?.close());
 
   it("returns a contract-safe false registration state for a new owner", async () => {
@@ -113,14 +115,22 @@ describe("commercial online kiosk onboarding database", () => {
     expect((await db.query<{ count: number }>("select count(*)::int count from public.kiosk_devices")).rows[0].count).toBe(1);
   });
 
-  it("supports code-only tablet claim and limits repeated guessing", async () => {
+  it("requires the server-issued registration id and limits guesses without a shared-network lock", async () => {
     const s = await ready(db);
     const started = await command(db, s, "start_kiosk_registration", 25, { siteId: s.siteSummary!.siteId, deviceName: "Code entry tablet" });
     const secret = started.oneTimeRegistrationCode!;
-    const manual = (await db.query<{ x: { outcome: string; siteId: string } }>("select public.claim_commercial_kiosk(null,$1,$2)x", [secret, "m".repeat(43)])).rows[0].x;
-    expect(manual).toMatchObject({ outcome: "claimed", siteId: s.siteSummary!.siteId });
-    for (let index = 0; index < 6; index += 1) await db.query("select public.claim_commercial_kiosk(null,'ZZZZZZZZZZZZZZZZ',$1)", ["x".repeat(43)]);
-    expect((await db.query<{ x: { outcome: string } }>("select public.claim_commercial_kiosk(null,'ZZZZZZZZZZZZZZZZ',$1)x", ["x".repeat(43)])).rows[0].x.outcome).toBe("rate_limited");
+    expect((await db.query<{ x: { outcome: string } }>("select public.claim_commercial_kiosk(null,$1,$2)x", [secret, "m".repeat(43)])).rows[0].x.outcome).toBe("invalid_code");
+    await resetTenantDatabaseRole(db);
+    expect((await db.query<{ count: number }>("select count(*)::int count from public.commercial_kiosk_claim_attempts")).rows[0].count).toBe(0);
+    for (let index = 0; index < 6; index += 1) await db.query("select public.claim_commercial_kiosk($1,'ZZZZZZZZZZZZZZZZ',$2)", [started.commandResult.resultReference.kioskRegistrationId, "x".repeat(43)]);
+    expect((await db.query<{ x: { outcome: string } }>("select public.claim_commercial_kiosk($1,'ZZZZZZZZZZZZZZZZ',$2)x", [started.commandResult.resultReference.kioskRegistrationId, "x".repeat(43)])).rows[0].x.outcome).toBe("rate_limited");
+
+    const otherId = "71000000-0000-4000-8000-000000000026";
+    const otherSecret = "ABCDEFGHJKLMNPQR";
+    await db.query(`insert into public.commercial_kiosk_registrations(id,organisation_id,site_id,requested_by_membership_id,intended_device_name,secret_hash,expires_at)
+      select $1,$2,$3,id,'Other registration',sha256(convert_to($4,'UTF8')),now()+interval '10 minutes'
+      from public.organisation_memberships where organisation_id=$2 and auth_user_id=$5`, [otherId, ORG_B, SITE_B1, otherSecret, USER_B_OWNER]);
+    expect((await db.query<{ x: { outcome: string } }>("select public.claim_commercial_kiosk($1,$2,$3)x", [otherId, otherSecret, "x".repeat(43)])).rows[0].x.outcome).toBe("claimed");
   });
 
   it("proves heartbeat, roster and PIN readiness without creating attendance evidence", async () => {
@@ -150,13 +160,31 @@ describe("commercial online kiosk onboarding database", () => {
   it("rejects weak and year-like PINs without persisting plaintext", async () => {
     let s = await ready(db);
     const started = await command(db, s, "start_kiosk_registration", 35, { siteId: s.siteSummary!.siteId, deviceName: "PIN test tablet" });
-    const claimed = (await db.query<{ x: { deviceToken: string } }>("select public.claim_commercial_kiosk(null,$1,$2)x", [started.oneTimeRegistrationCode, "p".repeat(43)])).rows[0].x;
+    const claimed = (await db.query<{ x: { deviceToken: string } }>("select public.claim_commercial_kiosk($1,$2,$3)x", [started.commandResult.resultReference.kioskRegistrationId, started.oneTimeRegistrationCode, "p".repeat(43)])).rows[0].x;
     await db.query("select public.record_commercial_kiosk_heartbeat($1,'0.1.0',1,'tablet')", [claimed.deviceToken]);
     s = (await db.query<{ x: Snapshot }>("select public.get_or_create_onboarding_bootstrap()x")).rows[0].x;
     expect((await command(db, s, "set_kiosk_staff_pin", 36, { staffId: "kiosk-staff-1", temporaryPin: "1234" })).commandResult.resultCode).toBe("weak_pin");
     expect((await command(db, s, "set_kiosk_staff_pin", 37, { staffId: "kiosk-staff-1", temporaryPin: "2026" })).commandResult.resultCode).toBe("weak_pin");
     await resetTenantDatabaseRole(db);
     expect((await db.query<{ count: number }>("select count(*)::int count from public.staff_kiosk_settings where pin_hash in('1234','2026')")).rows[0].count).toBe(0);
+  });
+
+  it("locks a commercial staff PIN for 15 minutes after three failures", async () => {
+    let s = await ready(db);
+    const started = await command(db, s, "start_kiosk_registration", 45, { siteId: s.siteSummary!.siteId, deviceName: "Lockout tablet" });
+    const claimed = (await db.query<{ x: { deviceToken: string } }>("select public.claim_commercial_kiosk($1,$2,$3)x", [started.commandResult.resultReference.kioskRegistrationId, started.oneTimeRegistrationCode, "l".repeat(43)])).rows[0].x;
+    await db.query("select public.record_commercial_kiosk_heartbeat($1,'0.1.0',1,'tablet')", [claimed.deviceToken]);
+    s = (await db.query<{ x: Snapshot }>("select public.get_or_create_onboarding_bootstrap()x")).rows[0].x;
+    await command(db, s, "set_kiosk_staff_pin", 46, { staffId: "kiosk-staff-1", temporaryPin: "4826" });
+    await resetTenantDatabaseRole(db);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect((await db.query<{ x: boolean }>("select private.verify_commercial_kiosk_pin_attempt('kiosk-staff-1','7391')x")).rows[0].x).toBe(false);
+    }
+    expect((await db.query<{ x: boolean }>("select private.verify_commercial_kiosk_pin_attempt('kiosk-staff-1','4826')x")).rows[0].x).toBe(false);
+    const state = (await db.query<{ failed_attempt_count: number; locked_for: number }>("select failed_attempt_count,extract(epoch from (locked_until-now()))::int locked_for from public.staff_kiosk_settings where staff_id='kiosk-staff-1'")).rows[0];
+    expect(state.failed_attempt_count).toBe(3);
+    expect(state.locked_for).toBeGreaterThan(890);
   });
 
   it("revokes the old credential and registers exactly one replacement device", async () => {

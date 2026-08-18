@@ -92,9 +92,9 @@ export async function setKioskStaffPinAction(_state: KioskSetupActionState, form
 export async function claimCommercialKioskAction(_state: KioskSetupActionState, formData: FormData): Promise<KioskSetupActionState> {
   const registrationId = String(formData.get("registrationId") || "");
   const enteredRegistrationCode = String(formData.get("registrationSecret") || "").slice(0, 19);
-  const parsed = kioskClaimPayloadSchema.safeParse({ registrationId: registrationId || undefined, registrationSecret: enteredRegistrationCode.toUpperCase().replace(/\s/g, ""), claimantNonce: String(formData.get("claimantNonce") || "") });
-  if (!parsed.success) return { ...initialFailure("invalid_code", "Check the 16-character registration code and try again."), enteredRegistrationCode };
-  const { data, error } = await createPublicKioskClient().rpc("claim_commercial_kiosk", { registration_id: parsed.data.registrationId ?? null, registration_secret: parsed.data.registrationSecret, claimant_nonce: parsed.data.claimantNonce });
+  const parsed = kioskClaimPayloadSchema.safeParse({ registrationId, registrationSecret: enteredRegistrationCode.toUpperCase().replace(/\s/g, ""), claimantNonce: String(formData.get("claimantNonce") || "") });
+  if (!parsed.success) return { ...initialFailure("invalid_code", "Open the current registration link and check the 16-character code."), enteredRegistrationCode };
+  const { data, error } = await createPublicKioskClient().rpc("claim_commercial_kiosk", { registration_id: parsed.data.registrationId, registration_secret: parsed.data.registrationSecret, claimant_nonce: parsed.data.claimantNonce });
   if (error || !data || typeof data !== "object") return { ...initialFailure("connection_problem", "The kiosk could not connect. Check Wi-Fi and try again."), enteredRegistrationCode };
   const result = data as { outcome?: string; deviceToken?: string; expiresAt?: string };
   if (!["claimed", "recovered"].includes(result.outcome ?? "") || !result.deviceToken || !result.expiresAt) return { ...initialFailure(result.outcome ?? "claim_failed", result.outcome === "expired" ? "This code has expired. Ask the manager to create a new one." : result.outcome === "already_claimed" ? "This code was already used on another device." : result.outcome === "rate_limited" ? "Too many attempts. Wait five minutes before trying again." : "The code was not recognised."), enteredRegistrationCode };

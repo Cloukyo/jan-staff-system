@@ -6,7 +6,7 @@ import {
   resetTenantDatabaseRole,
   setTenantAuthUser,
 } from "./helpers/tenant-primitives-db";
-import { createManagerInvitationsOnboardingDatabase } from "./helpers/onboarding-persistence-db";
+import { createPilotReadinessKioskDatabase } from "./helpers/onboarding-persistence-db";
 
 type Snapshot = {
   session: { id: string; organisationId: string | null; revision: string };
@@ -156,7 +156,7 @@ async function previewToken(db: PGlite, invitationId: string) {
 describe("commercial manager invitations database", () => {
   let db: PGlite;
   beforeEach(async () => {
-    db = await createManagerInvitationsOnboardingDatabase();
+    db = await createPilotReadinessKioskDatabase();
     await setTenantAuthUser(db, USER_A_OWNER, "aal2");
   }, 30000);
   afterEach(async () => db?.close());
@@ -464,5 +464,48 @@ describe("commercial manager invitations database", () => {
         )
       ).rows[0],
     ).toEqual({ audit: 1, invitations: 1 });
+  });
+
+  it("claims the next delivery with an outbox identity and never persists an acceptance URL", async () => {
+    const s = await ready(db);
+    await exec(db, env(s, "create_manager_invitation", 65, {
+      email: "worker@example.invalid",
+      role: "site_manager",
+      scopeType: "site",
+      siteIds: [s.siteSummary!.siteId],
+    }));
+    await resetTenantDatabaseRole(db);
+    await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+    await db.exec("set role service_role");
+    const claim = (await db.query<{ x: { outcome: string; outboxId: string; invitationToken: string } }>("select public.claim_next_notification_delivery()x")).rows[0].x;
+    expect(claim).toMatchObject({ outcome: "claimed", outboxId: expect.any(String), invitationToken: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(JSON.stringify(claim)).not.toContain("acceptanceUrl");
+    expect((await db.query<{ x: { outcome: string } }>("select public.record_notification_delivery($1,'accepted','email_test_worker',null)x", [claim.outboxId])).rows[0].x.outcome).toBe("recorded");
+    await db.exec("reset role");
+    const stored = (await db.query<{ provider_message_reference: string; delivery_status: string; rendered_urls: number }>("select provider_message_reference,delivery_status,(select count(*)::int from public.message_outbox where payload::text like '%token=%') rendered_urls from public.message_outbox where id=$1", [claim.outboxId])).rows[0];
+    expect(stored).toEqual({ provider_message_reference: "email_test_worker", delivery_status: "sent", rendered_urls: 0 });
+  });
+
+  it("reserves privileged capacity for pending invitations", async () => {
+    let s = await ready(db);
+    for (let index = 0; index < 9; index += 1) {
+      const created = await exec(db, env(s, "create_manager_invitation", 70 + index, {
+        email: `reserved-${index}@example.invalid`,
+        role: "site_manager",
+        scopeType: "site",
+        siteIds: [s.siteSummary!.siteId],
+      }));
+      expect(created.commandResult.resultCode).toBe("manager_invitation_created");
+      s = created.bootstrap;
+    }
+    const blocked = await exec(db, env(s, "create_manager_invitation", 79, {
+      email: "reserved-over-limit@example.invalid",
+      role: "site_manager",
+      scopeType: "site",
+      siteIds: [s.siteSummary!.siteId],
+    }));
+    expect(blocked.commandResult.resultCode).toBe("privileged_capacity_reached");
+    await resetTenantDatabaseRole(db);
+    expect((await db.query<{ count: number }>("select count(*)::int count from public.organisation_invitations where organisation_id=$1 and invitation_kind='manager' and status='pending'", [s.session.organisationId])).rows[0].count).toBe(9);
   });
 });

@@ -13,6 +13,7 @@ export type OrganisationRole = (typeof ORGANISATION_ROLES)[number];
 export const ORGANISATION_PERMISSIONS = [
   "organisation.manage",
   "organisation.audit.read",
+  "organisation.export",
   "billing.manage",
   "membership.read",
   "membership.manage",

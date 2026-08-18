@@ -33,6 +33,21 @@ jobs:
         run: |
           test "${{ github.repository }}" = "Cloukyo/sh-workforce-platform"
           test "$(git rev-parse HEAD)" = "${{ inputs.git_ref }}"
+          test "${{ inputs.git_ref }}" = "$(git rev-parse HEAD)"
+          case "$(git remote get-url origin)" in
+            https://github.com/Cloukyo/sh-workforce-platform|https://github.com/Cloukyo/sh-workforce-platform.git) ;;
+            *) exit 1 ;;
+          esac
+      - name: Verify staging deployment authority is configured
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
       - name: Use Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -45,21 +60,33 @@ jobs:
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
       - name: Pull commercial staging configuration
-        run: vercel pull --yes --environment=preview --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}"
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
         env:
+          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
       - name: Build once for staging
-        run: vercel build --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}"
+        run: vercel build --token="$VERCEL_TOKEN"
         env:
+          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
+          DEPLOYMENT_SHA: ${{ inputs.git_ref }}
       - name: Deploy prebuilt staging artifact
         id: deploy
         shell: bash
-        run: echo "url=$(vercel deploy --prebuilt --token='${{ secrets.COMMERCIAL_VERCEL_TOKEN }}')" >> "$GITHUB_OUTPUT"
+        run: |
+          deployment_url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
         env:
+          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
       - name: Record staging deployment
         run: echo "Commercial staging deployment ${{ steps.deploy.outputs.url }} at ${{ inputs.git_ref }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify deployed staging SHA
+        env:
+          DEPLOYED_URL: ${{ steps.deploy.outputs.url }}
+          EXPECTED_SHA: ${{ inputs.git_ref }}
+        run: |
+          node -e 'const response=await fetch(process.env.DEPLOYED_URL+"/api/health/ready");if(!response.ok)throw new Error("staging readiness failed");const body=await response.json();if(body.environment!=="staging"||body.deploymentSha!==process.env.EXPECTED_SHA)throw new Error("staging SHA or environment mismatch")'

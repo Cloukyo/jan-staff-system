@@ -100,6 +100,19 @@ export function validateEnvironment(
   if (appEnvironment === "production" && billingValues.some(Boolean)) {
     issues.push("Live commercial billing is not enabled in this milestone.");
   }
+  if (value(env, "NOTIFICATION_DELIVERY_ENABLED") === "true") {
+    if (value(env, "NEXT_PUBLIC_RESEND_API_KEY") || value(env, "NEXT_PUBLIC_CRON_SECRET")) {
+      issues.push("Notification delivery secrets must never use a NEXT_PUBLIC_ variable.");
+    }
+    if (appEnvironment !== "staging") issues.push("Transactional notification delivery is enabled for Commercial Staging only.");
+    for (const key of ["RESEND_API_KEY", "RESEND_FROM_ADDRESS", "RESEND_STAGING_RECIPIENT", "CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY"]) {
+      if (!value(env, key)) issues.push(`${key} is required when transactional notification delivery is enabled.`);
+    }
+    const stagingRecipient = value(env, "RESEND_STAGING_RECIPIENT")?.toLowerCase();
+    if (stagingRecipient && !/^(delivered|bounced|complained)(\+[a-z0-9._-]+)?@resend\.dev$/.test(stagingRecipient)) {
+      issues.push("RESEND_STAGING_RECIPIENT must be a controlled resend.dev test recipient.");
+    }
+  }
 
   const required = commercialEnvironments.has(appEnvironment)
     ? [

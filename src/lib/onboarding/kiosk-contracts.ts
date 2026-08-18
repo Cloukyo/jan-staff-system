@@ -24,7 +24,7 @@ export const kioskPinSetupPayloadSchema = z
 
 export const kioskClaimPayloadSchema = z
   .object({
-    registrationId: z.uuid().optional(),
+    registrationId: z.uuid(),
     registrationSecret: z
       .string()
       .trim()

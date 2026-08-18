@@ -39,6 +39,21 @@ Required non-local variables:
 
 `SUPABASE_SERVICE_ROLE_KEY`, provider tokens and monitoring credentials are server-only. They must never use a `NEXT_PUBLIC_` prefix.
 
+Commercial Staging transactional delivery is opt-in and requires all of these server-only values together:
+
+- `NOTIFICATION_DELIVERY_ENABLED=true`
+- `RESEND_API_KEY`
+- `RESEND_FROM_ADDRESS`
+- `RESEND_STAGING_RECIPIENT`, restricted to a controlled `delivered+...@resend.dev`, `bounced+...@resend.dev` or `complained+...@resend.dev` address
+- `CRON_SECRET`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The application worker is provider-neutral. Resend is the staging adapter only. Supabase Auth continues to send verification, password-reset, MFA and other security email. Invitation tokens are retrieved from Vault only by the trusted worker after an atomic claim; the rendered acceptance URL exists only in worker memory for that attempt. It is never written to the outbox, logs or customer response.
+
+Commercial Staging remains a Vercel Preview-target deployment. Vercel does not invoke Cron Jobs for Preview deployments, so staging acceptance invokes the guarded worker route directly with the staging-only cron secret after queueing fictional messages. The `vercel.json` schedule is dormant in Preview and must not be treated as evidence of automatic staging delivery. Choosing an automated staging scheduler or a future commercial Production target requires a separate approval; this milestone does neither.
+
+Commercial Production email remains unconfigured. Before any future Production enablement, provision a separate provider key and verified sending subdomain, then validate SPF, DKIM, DMARC, return-path/bounce handling, webhook signatures, suppression handling, quotas and monitoring under a separately approved runbook.
+
 ## Local development
 
 1. Install Node.js 24 and npm 11.
@@ -84,8 +99,10 @@ The `Promote Commercial Staging` workflow is manual and accepts an exact 40-char
 2. Confirm the commercial staging environment contains only commercial Vercel and Supabase configuration.
 3. Run the workflow with the full SHA, not a mutable branch name.
 4. The workflow checks out that SHA, runs tests, pulls staging configuration, builds once and deploys the prebuilt artifact.
-5. Record the returned immutable deployment URL.
-6. Verify liveness, readiness, login isolation and the current milestone's smoke tests against staging.
+5. The workflow rejects missing token, organisation ID or project ID before contacting Vercel.
+6. It verifies `/api/health/ready` reports `environment: staging` and the exact requested SHA.
+7. Record the returned immutable deployment URL.
+8. Verify liveness, readiness, login isolation and the current milestone's smoke tests against staging.
 
 The GitHub `commercial-staging` environment should require an authorised reviewer and restrict deployments to the future protected commercial release branch.
 

@@ -51,6 +51,8 @@ The result is either provider-accepted with a provider reference, retryable fail
 
 The Resend adapter implements this contract. No database function, invitation action, billing lifecycle function or UI component imports Resend directly.
 
+Invitation-token retrieval and acceptance-link rendering occur only inside the trusted delivery worker after a message is atomically claimed. The worker holds the raw token only in memory for that attempt. It does not persist or return a rendered acceptance URL, and neither application actions nor customer-facing responses can retrieve the raw token.
+
 ### Durable outbox
 
 Retain the existing invitation-token model:
@@ -77,7 +79,7 @@ Post-live invitation creation and resend enqueue delivery within the same databa
 
 A guarded server route processes a small bounded batch. It requires a separate cron bearer secret, rejects interactive/browser authentication, validates the commercial environment, and performs no work outside `staging` or a separately approved future `production` environment.
 
-Vercel Cron invokes the worker frequently enough for pilot invitations and daily warning delivery. Each provider request uses a deterministic idempotency key based on the durable outbox ID and template version. A worker crash after provider acceptance can therefore reconcile without sending a duplicate within the provider idempotency window.
+The guarded route is invoked directly during Commercial Staging acceptance because the staging project deliberately remains on Vercel's Preview target, where Vercel Cron is not invoked. The committed cron declaration is dormant in Preview and is not treated as automatic-delivery evidence. A separately approved scheduler or future commercial Production target is required before an external pilot relies on unattended delivery. Each provider request uses a deterministic idempotency key based on the durable outbox ID and template version. A worker crash after provider acceptance can therefore reconcile without sending a duplicate within the provider idempotency window.
 
 Payment-failure and trial-ending messages are enqueued from authoritative billing state, not directly sent from the Stripe webhook or browser. Unique milestone keys prevent repeated webhook delivery and the hourly billing reconciler from creating duplicate warnings.
 
@@ -122,6 +124,8 @@ The top-level manifest records:
 - per-category counts;
 - deterministic SHA-256 digest;
 - explicit omissions or retrieval errors.
+
+The digest is computed over a canonical JSON serialization with recursively sorted object keys, stable array ordering defined by each projection, UTF-8 encoding, and no insignificant whitespace. The digest field itself is excluded from the bytes being hashed, so another implementation can reproduce and verify it exactly.
 
 The bundle includes explicit allowlisted projections for:
 
@@ -201,9 +205,9 @@ Existing historic counters are normalised safely without altering clock events.
 
 ### Kiosk registration claims
 
-Manual claims must include the server-issued registration UUID as well as the human-readable code. Rate-limit scope is derived from the registration UUID and a coarse server-owned anonymous bucket, never from attacker-controlled guessed code material.
+Manual claims must include the server-issued registration UUID as well as the human-readable code. Rate-limit scope is derived from that registration UUID, never from attacker-controlled guessed code material. Missing or malformed identifiers are rejected through one bounded, non-persistent path rather than creating attacker-selected rows.
 
-Varied wrong codes for the same or omitted registration ID converge on a bounded anonymous rate limit. Invalid attempts cannot create an unbounded number of rows. Expired attempt rows are removed by a guarded retention function and scheduled cleanup when `pg_cron` is available. Successful claim, replay recovery and replacement-device behavior remain unchanged.
+Varied wrong codes for the same registration ID converge on the same bounded rate limit. Invalid attempts cannot create an unbounded number of rows. No broad IP-only or shared-network lock may prevent unrelated organisations or devices from claiming their own registration. Expired attempt rows are removed by a guarded retention function and scheduled cleanup when `pg_cron` is available. Successful claim, replay recovery and replacement-device behavior remain unchanged.
 
 ## 5. Privileged invitation capacity and abuse controls
 
@@ -216,6 +220,8 @@ Privileged capacity counts both active privileged memberships and pending, unexp
 - Concurrent create/accept operations cannot exceed the plan limit.
 - Resend is throttled per invitation and per organisation.
 - Direct RPC calls cannot bypass the entitlement or cooldown checks.
+
+Customer UI treats invitation creation and email delivery as two durable states. A successfully created invitation remains visible and recoverable when delivery is retrying or permanently failed; copy must not imply that creation failed or invite the user to create a duplicate. Authorised users can retry delivery only through the bounded resend workflow and can inspect a safe status without provider details or recipient leakage beyond the already-authorised address.
 
 Existing owner-last-role protection and organisation/site scope validation remain unchanged.
 

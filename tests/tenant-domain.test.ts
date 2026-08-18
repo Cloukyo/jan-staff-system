@@ -22,7 +22,8 @@ describe("tenant domain constants", () => {
   });
 
   it("publishes and validates the frozen permission catalogue", () => {
-    expect(ORGANISATION_PERMISSIONS).toHaveLength(24);
+    expect(ORGANISATION_PERMISSIONS).toHaveLength(25);
+    expect(isOrganisationPermission("organisation.export")).toBe(true);
     expect(isOrganisationPermission("attendance.correct")).toBe(true);
     expect(isOrganisationPermission("tenant.escape")).toBe(false);
   });

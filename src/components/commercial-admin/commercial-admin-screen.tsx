@@ -23,6 +23,7 @@ import {
   inputClassName,
 } from "@/components/ui/primitives";
 import type { CommercialAdminSnapshot } from "@/lib/commercial-admin/contracts";
+import { invitationDeliveryMessage } from "@/lib/commercial-admin/invitation-delivery";
 
 export type CommercialAdminArea =
   | "overview"
@@ -215,6 +216,21 @@ function Organisation({ snapshot }: { snapshot: CommercialAdminSnapshot }) {
           </fieldset>
         </AdminCommandForm>
       </Panel>
+      {snapshot.actor.permissions.includes("organisation.export") ? (
+        <Panel className="mt-5">
+          <h2 className="text-lg font-black text-purple-950">Your organisation data</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Download a versioned copy of your organisation records. Cancelling a subscription does not delete attendance evidence or other customer records.
+          </p>
+          <a
+            href="/admin/organisation/export"
+            className="mt-5 inline-flex min-h-11 items-center justify-center rounded-lg border border-purple-200 bg-white px-5 py-2.5 text-sm font-black text-purple-800 shadow-sm transition hover:border-purple-300 hover:bg-purple-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2"
+          >
+            Download organisation data
+          </a>
+          <p className="mt-3 text-xs leading-5 text-slate-500">For account closure, contact support after downloading and checking your final export. Closure is a separate verified process.</p>
+        </Panel>
+      ) : null}
     </>
   );
 }
@@ -669,7 +685,9 @@ function Access({ snapshot }: { snapshot: CommercialAdminSnapshot }) {
             </h2>
             <div className="mt-4 grid gap-3">
               {snapshot.invitations.length ? (
-                snapshot.invitations.map((invitation) => (
+                snapshot.invitations.map((invitation) => {
+                  const delivery = invitationDeliveryMessage(invitation.deliveryStatus);
+                  return (
                   <div
                     key={invitation.id}
                     className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-purple-100 p-3"
@@ -681,13 +699,17 @@ function Access({ snapshot }: { snapshot: CommercialAdminSnapshot }) {
                       <p className="text-xs text-slate-500">
                         {prettyRole(invitation.kind)}
                       </p>
+                      <p className={`mt-1 text-xs font-semibold ${delivery.tone === "error" ? "text-red-700" : delivery.tone === "warning" ? "text-amber-700" : "text-slate-500"}`} role={delivery.tone === "error" ? "alert" : undefined}>
+                        {delivery.text}
+                      </p>
                     </div>
                     <InvitationControls
                       invitation={invitation}
                       revision={snapshot.organisation.revision}
                     />
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <EmptyState
                   title="No pending invitations"

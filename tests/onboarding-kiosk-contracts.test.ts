@@ -54,6 +54,12 @@ describe("commercial kiosk onboarding contracts", () => {
         claimantNonce: "short",
       }),
     ).toThrow();
+    expect(() =>
+      kioskClaimPayloadSchema.parse({
+        registrationSecret: "ABCDEFGHJKMNPQRT",
+        claimantNonce: "c".repeat(43),
+      }),
+    ).toThrow();
     expect(
       kioskHeartbeatPayloadSchema.parse({
         appVersion: "0.1.0",

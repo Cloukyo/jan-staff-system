@@ -55,7 +55,7 @@ const snapshot: CommercialAdminSnapshot = {
     { id: ids.owner, email: "owner@example.invalid", status: "active", staffId: null, revision: 3, roles: [{ role: "organisation_owner", scopeType: "organisation", siteId: null }], siteIds: [] },
     { id: ids.manager, email: "manager@example.invalid", status: "active", staffId: null, revision: 2, roles: [{ role: "site_manager", scopeType: "site", siteId: ids.siteTwo }], siteIds: [ids.siteTwo] },
   ],
-  invitations: [{ id: ids.invitation, email: "invitee@example.invalid", kind: "manager", status: "pending", expiresAt: "2026-08-21T12:00:00.000Z", staffId: null }],
+  invitations: [{ id: ids.invitation, email: "invitee@example.invalid", kind: "manager", status: "pending", expiresAt: "2026-08-21T12:00:00.000Z", staffId: null, deliveryStatus: "retrying" }],
   workAreas: [{ id: ids.area, siteId: ids.siteOne, name: "Front office", code: "front-office", active: true, revision: 1 }],
   closures: [{ id: ids.closure, siteId: ids.siteOne, label: "Example closure", startsOn: "2026-12-25", endsOn: "2026-12-25", revision: 1 }],
   devices: [{ id: ids.device, siteId: ids.siteOne, deviceName: "Reception tablet", active: true, lastSeenAt: "2026-08-14T10:25:00.000Z", appVersion: "preview", protocolVersion: 1, reprovisionRequired: false, offlineEnabled: false }],

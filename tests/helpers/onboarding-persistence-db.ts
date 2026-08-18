@@ -278,6 +278,19 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
   return db;
 }
 
+export async function createPilotReadinessKioskDatabase(): Promise<PGlite> {
+  const db = await createKioskOnboardingDatabase();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_pilot_readiness_finalisation.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("pilot readiness finalisation migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
 export async function createReadinessOnboardingDatabase(): Promise<PGlite> {
   const db = await createKioskOnboardingDatabase();
   const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
@@ -342,6 +355,69 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
       readFileSync(resolve("supabase/migrations", kioskOperationalStateMigration), "utf8"),
     );
   }
+  return db;
+}
+
+export async function createPilotReadinessBillingDatabase(): Promise<PGlite> {
+  const db = await createBillingLifecycleDatabase();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_pilot_readiness_finalisation.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("pilot readiness finalisation migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  return db;
+}
+
+export async function createCommercialAdminDatabaseBeforePilot(): Promise<PGlite> {
+  const db = await createBillingLifecycleDatabase();
+  await db.exec(`
+    alter table public.organisation_memberships
+      add column if not exists authorisation_revision bigint not null default 1;
+    create table if not exists public.work_areas(
+      id uuid primary key default gen_random_uuid(), organisation_id uuid not null,
+      site_id uuid not null, name text not null, code text not null, active boolean not null default true,
+      operational_settings jsonb not null default '{}', archived_at timestamptz,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+      unique(organisation_id,id)
+    );
+    create table if not exists public.site_closures(
+      id uuid primary key default gen_random_uuid(), organisation_id uuid not null,
+      site_id uuid not null, starts_on date not null, ends_on date not null, label text not null,
+      notes text, created_by_membership_id uuid, archived_at timestamptz,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+      unique(organisation_id,id)
+    );
+  `);
+  const migrationNames = readdirSync(resolve("supabase/migrations"));
+  for (const suffix of [
+    "_commercial_post_live_administration.sql",
+    "_fix_commercial_admin_site_scope.sql",
+    "_fix_commercial_admin_invitation_scope.sql",
+    "_harden_commercial_admin_rpc_surface.sql",
+  ]) {
+    const migration = migrationNames.find((name) => name.endsWith(suffix));
+    if (!migration) {
+      await db.close();
+      throw new Error(`commercial migration is missing: ${suffix}`);
+    }
+    await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  }
+  return db;
+}
+
+export async function createPilotReadinessCommercialDatabase(): Promise<PGlite> {
+  const db = await createCommercialAdminDatabaseBeforePilot();
+  const migration = readdirSync(resolve("supabase/migrations")).find((name) =>
+    name.endsWith("_pilot_readiness_finalisation.sql"),
+  );
+  if (!migration) {
+    await db.close();
+    throw new Error("pilot readiness finalisation migration is missing");
+  }
+  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
   return db;
 }
 

@@ -45,13 +45,7 @@ export async function commercialAdminAction(
   }
 
   let oneTimeCode: string | undefined;
-  if (["create_manager_invitation", "create_staff_invitation", "resend_invitation"].includes(command.data)) {
-    const token = randomBytes(32).toString("hex");
-    payload.tokenHash = createHash("sha256").update(token).digest("hex");
-    const invitationKind = command.data === "create_staff_invitation" || payload.invitationKind === "staff" ? "staff" : "manager";
-    delete payload.invitationKind;
-    oneTimeCode = `/invitations/${invitationKind}?token=${encodeURIComponent(token)}`;
-  }
+  if (["create_manager_invitation", "create_staff_invitation", "resend_invitation"].includes(command.data)) delete payload.invitationKind;
   if (["start_kiosk_registration", "replace_kiosk_device"].includes(command.data)) {
     oneTimeCode = secureCode(16);
     payload.secretHash = createHash("sha256").update(oneTimeCode).digest("hex");
@@ -72,6 +66,10 @@ export async function commercialAdminAction(
         ok: true,
         message: command.data === "replace_kiosk_device"
           ? "The old device is revoked. Copy the replacement code now, then reload this page."
+          : ["create_manager_invitation", "create_staff_invitation"].includes(command.data)
+            ? "Invitation created. Email delivery is queued separately and its status appears in the invitation list."
+            : command.data === "resend_invitation"
+              ? "A replacement invitation was created and email delivery is queued."
           : messageFor(result.outcome, result.code),
         oneTimeCode,
       };
