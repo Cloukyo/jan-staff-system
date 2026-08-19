@@ -52,18 +52,28 @@ declare
   definition text;
   old_reference constant text := 'perform_commercial_kiosk_attendance_action_7g.idempotency_key';
   new_reference constant text := 'perform_commercial_kiosk_attendance_action_pre_pin_guard.idempotency_key';
-  reference_count integer;
+  old_reference_count integer;
+  new_reference_count integer;
 begin
   select pg_get_functiondef(
     'public.perform_commercial_kiosk_attendance_action_pre_pin_guard(text,text,text,text,text,uuid)'::regprocedure
   ) into definition;
-  reference_count := (
+  old_reference_count := (
     length(definition) - length(replace(definition, old_reference, ''))
   ) / length(old_reference);
-  if reference_count <> 2 then
-    raise exception 'Expected two commercial attendance idempotency references, found %', reference_count;
+  new_reference_count := (
+    length(definition) - length(replace(definition, new_reference, ''))
+  ) / length(new_reference);
+  if old_reference_count not in (0, 2) then
+    raise exception 'Unexpected old commercial attendance idempotency references, found %', old_reference_count;
   end if;
-  execute replace(definition, old_reference, new_reference);
+  if old_reference_count > 0 then
+    execute replace(definition, old_reference, new_reference);
+  elsif new_reference_count > 0 then
+    execute definition;
+  else
+    perform 1;
+  end if;
 end
 $repair_renamed_kiosk_attendance$;
 
