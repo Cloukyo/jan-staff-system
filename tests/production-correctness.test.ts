@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -58,5 +58,15 @@ describe("production correctness routes", () => {
     expect(migration).toContain("performed_by");
     expect(migration).not.toContain("password");
     expect(migration).not.toContain("service_role");
+  });
+
+  it("rejects direct Auth links when the Auth email does not match the account record", () => {
+    const migrationDir = resolve("supabase/migrations");
+    const accountLinkSql = readdirSync(migrationDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => readFileSync(resolve(migrationDir, name), "utf8"))
+      .join("\n");
+    expect(accountLinkSql).toContain("Auth user email does not match account record");
+    expect(accountLinkSql).toMatch(/lower\(trim\(auth_email\)\)\s*<>\s*lower\(trim\(target_account\.email\)\)/i);
   });
 });

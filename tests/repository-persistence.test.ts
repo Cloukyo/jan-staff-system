@@ -2,10 +2,33 @@ import { describe, expect, it } from "vitest";
 import { createSeedState } from "@/lib/demo-data/seed";
 import { calculateAttendanceDay } from "@/lib/calculations/attendance";
 import { createMemoryStorage, DEMO_STORAGE_KEY, loadDemoStateFromStorage, saveDemoStateToStorage } from "@/lib/repositories/local-persistence";
-import { migrateState, repairContractedWeeklyMinutes } from "@/lib/repositories/demo-store";
+import { migrateState, prepareDemoStaffAccount, repairContractedWeeklyMinutes } from "@/lib/repositories/demo-store";
 import type { AttendanceApproval, ClockEvent, RotaShift } from "@/types";
 
 describe("local repository persistence and migrations", () => {
+  it("derives a demo account name from the selected canonical staff profile", () => {
+    const state = createSeedState();
+    const profile = state.staff.find((person) => !state.staffAccounts.some((account) => account.staffId === person.id));
+    expect(profile).toBeDefined();
+    const result = prepareDemoStaffAccount(
+      state.staff,
+      state.staffAccounts,
+      {
+        staffId: profile!.id,
+        fullName: "Different Person",
+        email: "canonical@example.test",
+        role: "staff",
+        active: true,
+        mustChangePassword: false,
+      } as never,
+      "acct-new",
+      "2026-08-20T12:00:00.000Z",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.account?.staffId).toBe(profile!.id);
+    expect(result.account?.fullName).toBe(profile!.fullName);
+  });
+
   it("saves a staff member and reloads from persistence", () => {
     const state = createSeedState();
     state.staff.push({ ...state.staff[0], id: "stf-new", fullName: "New Staff", displayName: "New" });

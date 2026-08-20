@@ -125,7 +125,7 @@ export function hasSeriousException(day: Pick<AttendanceDay, "exceptionFlags">):
 export function isCleanApprovalCandidate(day: AttendanceDay): boolean {
   return (
     day.approvalStatus !== "approved" &&
-    !hasSeriousException(day) &&
+    day.exceptionFlags.length === 0 &&
     day.recordedMinutes > 0 &&
     Boolean(day.firstClockIn) &&
     Boolean(day.finalClockOut) &&

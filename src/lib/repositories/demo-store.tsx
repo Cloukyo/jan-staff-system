@@ -19,7 +19,7 @@ import type {
   StaffAccount,
   StaffMember,
 } from "@/types";
-import { calculateAttendanceDay } from "@/lib/calculations/attendance";
+import { calculateAttendanceDay, isCleanApprovalCandidate } from "@/lib/calculations/attendance";
 import { calculateLeaveMinutes, findOverlappingLeave, validateLeaveRequestInput } from "@/lib/calculations/leave";
 import { createPaySummary } from "@/lib/calculations/pay";
 import { createSeedState } from "@/lib/demo-data/seed";
@@ -35,7 +35,7 @@ interface DemoRepository {
   addStaff: (staff: Omit<StaffMember, "id" | "createdAt" | "updatedAt" | "pinHash" | "failedPinAttempts" | "lockedUntil"> & { temporaryPin: string }) => void;
   updateStaff: (staff: StaffMember, rate?: Omit<PayRateHistory, "id" | "createdAt">) => void;
   setStaffActive: (staffId: string, active: boolean) => void;
-  addStaffAccount: (account: Omit<StaffAccount, "id" | "authUserId" | "createdAt" | "updatedAt">) => { ok: boolean; message: string };
+  addStaffAccount: (account: DemoStaffAccountInput) => { ok: boolean; message: string };
   deactivateAccount: (accountId: string) => void;
   submitLeaveRequest: (input: {
     staffId: string;
@@ -66,6 +66,36 @@ interface DemoRepository {
 }
 
 const RepositoryContext = createContext<DemoRepository | null>(null);
+
+export type DemoStaffAccountInput = Omit<StaffAccount, "id" | "authUserId" | "fullName" | "createdAt" | "updatedAt">;
+
+export function prepareDemoStaffAccount(
+  staff: StaffMember[],
+  existingAccounts: StaffAccount[],
+  input: DemoStaffAccountInput,
+  id: string,
+  createdAt: string,
+): { ok: boolean; message: string; account?: StaffAccount } {
+  const profile = staff.find((person) => person.id === input.staffId);
+  const email = input.email.trim().toLowerCase();
+  if (!profile) return { ok: false, message: "Choose an existing staff member." };
+  if (!email) return { ok: false, message: "Enter an email address." };
+  if (existingAccounts.some((item) => item.email.toLowerCase() === email)) return { ok: false, message: "An account already exists for this email address." };
+  if (existingAccounts.some((item) => item.staffId === input.staffId)) return { ok: false, message: "An account already exists for this staff member." };
+  return {
+    ok: true,
+    message: "Account created. Send a password-reset email from Supabase before production use.",
+    account: {
+      ...input,
+      id,
+      authUserId: null,
+      fullName: profile.fullName,
+      email,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  };
+}
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -241,15 +271,14 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
       setStaffActive: (staffId, active) =>
         setState((current) => setDemoStaffActive(current, staffId, active)),
       addStaffAccount: (account) => {
-        const email = account.email.trim().toLowerCase();
-        if (state.staffAccounts.some((item) => item.email.toLowerCase() === email)) return { ok: false, message: "An account already exists for this email address." };
-        if (state.staffAccounts.some((item) => item.staffId === account.staffId)) return { ok: false, message: "An account already exists for this staff member." };
         const createdAt = new Date().toISOString();
+        const prepared = prepareDemoStaffAccount(state.staff, state.staffAccounts, account, uid("acct"), createdAt);
+        if (!prepared.ok || !prepared.account) return { ok: false, message: prepared.message };
         setState((current) => ({
           ...current,
-          staffAccounts: [...current.staffAccounts, { ...account, email, id: uid("acct"), authUserId: null, createdAt, updatedAt: createdAt }],
+          staffAccounts: [...current.staffAccounts, prepared.account!],
         }));
-        return { ok: true, message: "Account created. Send a password-reset email from Supabase before production use." };
+        return { ok: true, message: prepared.message };
       },
       deactivateAccount: (accountId) =>
         setState((current) => ({
@@ -377,14 +406,11 @@ export function DemoStoreProvider({ children }: { children: React.ReactNode }) {
       approveCleanDays: (days, method = "bulk_selected") => {
         const skipped: string[] = [];
         const approvals = days.flatMap((day) => {
-          const serious = day.exceptionFlags.some((flag) =>
-            ["No clock-in", "Missing clock-out", "Break before", "Break end without", "Missing break end", "Clock-out without", "Unscheduled", "safety", "Paid status missing"].some((token) => flag.includes(token)),
-          );
           if (day.approvalStatus === "approved") {
             skipped.push(`${day.staffId} ${day.date}: already approved`);
             return [];
           }
-          if (serious || !day.firstClockIn || !day.finalClockOut || day.recordedMinutes <= 0 || day.adjustmentReason) {
+          if (!isCleanApprovalCandidate(day)) {
             skipped.push(`${day.staffId} ${day.date}: requires individual review`);
             return [];
           }

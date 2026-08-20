@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { StaffCertificate, StaffCentralRecord, StaffProfile } from "@/types";
-import { activeComplianceRecords, canEditCompliance, centralRecordCompletion, certificateStatus, complianceDashboardCounts, maskDbsNumber, parseUkDateForImport } from "@/lib/calculations/compliance";
+import { activeComplianceRecords, canEditCompliance, centralRecordCompletion, certificateStatus, complianceDashboardCounts, maskDbsNumber, parseUkDateForImport, partialDbsDisplay } from "@/lib/calculations/compliance";
 import { parseStaffRecordSection, staffRecordSections } from "@/lib/staff/record-sections";
 
 function source(path: string): string {
@@ -88,6 +88,12 @@ describe("central records and import review helpers", () => {
   it("masks sensitive DBS values", () => {
     expect(maskDbsNumber("001234567890")).toBe("****7890");
     expect(maskDbsNumber(null)).toBe("Not recorded");
+  });
+
+  it("reveals only the stored last four DBS digits", () => {
+    expect(partialDbsDisplay("7890", false)).toBe("****");
+    expect(partialDbsDisplay("7890", true)).toBe("7890");
+    expect(partialDbsDisplay(null, true)).toBe("Not recorded");
   });
 
   it("allows managers but not staff to edit compliance records", () => {

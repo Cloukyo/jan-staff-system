@@ -87,6 +87,13 @@ export function maskDbsNumber(value: string | null | undefined): string {
   return last4 ? `****${last4}` : "Masked";
 }
 
+export function partialDbsDisplay(value: string | null | undefined, revealed: boolean): string {
+  if (!value) return "Not recorded";
+  const last4 = value.replace(/\D/g, "").slice(-4);
+  if (!last4) return "Not recorded";
+  return revealed ? last4 : "****";
+}
+
 export function canEditCompliance(role: "manager" | "staff" | null | undefined): boolean {
   return role === "manager";
 }

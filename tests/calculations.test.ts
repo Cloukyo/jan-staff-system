@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AttendanceApproval, AttendanceAdjustment, ClockEvent, NurserySettings, PayRateHistory, RotaShift, StaffMember } from "@/types";
 import { calculateAttendanceDay, isCleanApprovalCandidate } from "@/lib/calculations/attendance";
 import { calculateHourlyPayPence, createPaySummary, lookupPayRate } from "@/lib/calculations/pay";
-import { shiftPayableStatusMinutes, shiftScheduledMinutes, weeklyRotaTotal } from "@/lib/calculations/rota";
+import { shiftPayableStatusMinutes, shiftScheduledMinutes, synchroniseRotaSelectedDate, weeklyRotaTotal } from "@/lib/calculations/rota";
 import { createCsvContent, escapeCsv } from "@/lib/exports/csv";
 import { createPayWorkbook } from "@/lib/exports/xlsx";
 import { formatDurationCompact } from "@/lib/dates/format";
@@ -96,6 +96,16 @@ describe("attendance calculations", () => {
     expect(isCleanApprovalCandidate(result)).toBe(false);
   });
 
+  it.each([
+    ["late arrival", [event("clock_in", "09:15"), event("clock_out", "17:00")], "Late arrival"],
+    ["early departure", [event("clock_in", "09:00"), event("clock_out", "16:45")], "Early departure"],
+    ["overtime", [event("clock_in", "09:00"), event("clock_out", "18:00")], "Overtime"],
+  ])("excludes %s exceptions from bulk clean approval", (_label, events, expectedFlag) => {
+    const result = day(events as ClockEvent[]);
+    expect(result.exceptionFlags).toContain(expectedFlag);
+    expect(isCleanApprovalCandidate(result)).toBe(false);
+  });
+
   it("flags invalid event ordering", () => {
     const result = day([event("break_end", "12:30"), event("clock_in", "09:00"), event("clock_out", "17:00")]);
     expect(result.exceptionFlags).toContain("Break end without break start");
@@ -127,6 +137,16 @@ describe("attendance calculations", () => {
 });
 
 describe("rota and status pay", () => {
+  it("keeps the selected weekday aligned when rota week navigation changes", () => {
+    expect(synchroniseRotaSelectedDate("2026-06-10", "2026-06-08", "2026-06-15")).toBe("2026-06-17");
+    expect(synchroniseRotaSelectedDate("2026-06-10", "2026-06-08", "2026-06-01")).toBe("2026-06-03");
+    expect(synchroniseRotaSelectedDate("2026-06-17", "2026-06-15", "2026-06-08")).toBe("2026-06-10");
+  });
+
+  it("uses the target week start when the selected date is outside the displayed week", () => {
+    expect(synchroniseRotaSelectedDate("2026-05-01", "2026-06-08", "2026-06-15")).toBe("2026-06-15");
+  });
+
   it("formats contracted hours correctly and repairs legacy hour values", () => {
     expect(formatDurationCompact(2400)).toBe("40 hrs");
     expect(formatDurationCompact(2250)).toBe("37h 30m");

@@ -23,7 +23,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { BrandMark } from "@/components/ui/brand";
 import { Button, EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { hasSeriousException, isCleanApprovalCandidate } from "@/lib/calculations/attendance";
-import { shiftPayableStatusMinutes, shiftScheduledMinutes, weeklyPaidStatusTotal, weeklyRotaTotal, rotaWarnings } from "@/lib/calculations/rota";
+import { rotaWarnings, shiftPayableStatusMinutes, shiftScheduledMinutes, synchroniseRotaSelectedDate, weeklyPaidStatusTotal, weeklyRotaTotal } from "@/lib/calculations/rota";
 import { createAppClock } from "@/lib/dates/app-clock";
 import { weekDates, weekStart, formatDateUk, formatDurationCompact, formatHours, formatMoney, formatTimeUk, isoDate } from "@/lib/dates/format";
 import { exportAttendanceCsv, exportPayCsv } from "@/lib/exports/csv";
@@ -453,6 +453,10 @@ function RotaScreen() {
     setView(next);
     sessionStorage.setItem(browserIdentifiers.rotaViewStorage.current, next);
   };
+  const navigateRotaWeek = (nextStart: string) => {
+    setSelectedDate((current) => synchroniseRotaSelectedDate(current, start, nextStart));
+    setStart(nextStart);
+  };
 
   return (
     <>
@@ -464,9 +468,9 @@ function RotaScreen() {
       <Panel className="print:shadow-none">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-2">
-            <Button variant="secondary" aria-label="Previous week" onClick={() => setStart(isoDate(addWeeks(parseISO(start), -1)))}><ChevronLeft className="h-4 w-4" /></Button>
-            <Button variant="secondary" onClick={() => setStart(clock.currentWeekStart())}>This week</Button>
-            <Button variant="secondary" aria-label="Next week" onClick={() => setStart(isoDate(addWeeks(parseISO(start), 1)))}><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="secondary" aria-label="Previous week" onClick={() => navigateRotaWeek(isoDate(addWeeks(parseISO(start), -1)))}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="secondary" onClick={() => navigateRotaWeek(clock.currentWeekStart())}>This week</Button>
+            <Button variant="secondary" aria-label="Next week" onClick={() => navigateRotaWeek(isoDate(addWeeks(parseISO(start), 1)))}><ChevronRight className="h-4 w-4" /></Button>
           </div>
           <p className="font-black text-purple-950">Week commencing {formatDateUk(start)}</p>
         </div>
@@ -546,7 +550,7 @@ function RotaScreen() {
           <div>
             <div className="mb-4 flex flex-wrap items-end gap-3">
               <Button variant="secondary" onClick={() => setSelectedDate(isoDate(addWeeks(parseISO(selectedDate), 0)))}>Selected day</Button>
-              <Field label="Date"><input className={inputClassName()} type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /></Field>
+              <Field label="Date"><input className={inputClassName()} type="date" value={selectedDate} onChange={(e) => { const date = e.target.value; setSelectedDate(date); setStart(isoDate(weekStart(date))); }} /></Field>
             </div>
             <DataTable
               headers={["Staff", "Status", "Start", "Finish", "Break", "Pay", "Credited", industryProfile.workAreaSingular, "Warnings", "Edit"]}

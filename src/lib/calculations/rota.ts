@@ -1,7 +1,13 @@
-import { differenceInMinutes } from "date-fns";
+import { addDays, differenceInCalendarDays, differenceInMinutes, format, parseISO } from "date-fns";
 import type { LeaveRequest, RotaShift, StaffMember } from "@/types";
 import { toDateTime } from "@/lib/dates/format";
 import { findRotaLeaveWarnings } from "@/lib/calculations/leave";
+
+export function synchroniseRotaSelectedDate(selectedDate: string, currentWeekStart: string, nextWeekStart: string): string {
+  const weekdayOffset = differenceInCalendarDays(parseISO(selectedDate), parseISO(currentWeekStart));
+  const safeOffset = weekdayOffset >= 0 && weekdayOffset <= 6 ? weekdayOffset : 0;
+  return format(addDays(parseISO(nextWeekStart), safeOffset), "yyyy-MM-dd");
+}
 
 export function shiftScheduledMinutes(shift: RotaShift): number {
   if (shift.status !== "working") return shift.creditedMinutes ?? 0;

@@ -235,7 +235,7 @@ export function ManagerLeaveRequestsScreen() {
 export function AccountsScreen() {
   const repo = useDemoRepository();
   const [message, setMessage] = useState("");
-  const [form, setForm] = useState({ staffId: "", fullName: "", email: "", role: "staff" as "staff" | "manager" });
+  const [form, setForm] = useState({ staffId: "", email: "", role: "staff" as "staff" | "manager" });
 
   return (
     <AppShell>
@@ -248,17 +248,13 @@ export function AccountsScreen() {
         </p>
       </Panel>
       <Panel>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field label="Staff member">
-            <select className={inputClassName()} value={form.staffId} onChange={(event) => {
-              const staff = repo.state.staff.find((person) => person.id === event.target.value);
-              setForm({ ...form, staffId: event.target.value, fullName: staff?.fullName ?? form.fullName });
-            }}>
+            <select className={inputClassName()} value={form.staffId} onChange={(event) => setForm({ ...form, staffId: event.target.value })}>
               <option value="">Choose staff</option>
               {repo.state.staff.filter((person) => person.active).map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}
             </select>
           </Field>
-          <Field label="Full name"><input className={inputClassName()} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field>
           <Field label="Email"><input className={inputClassName()} type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
           <Field label="Role"><select className={inputClassName()} value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as "staff" | "manager" })}><option value="staff">Staff</option><option value="manager">Manager</option></select></Field>
         </div>

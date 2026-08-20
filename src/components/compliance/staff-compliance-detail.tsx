@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Archive, Check, Plus, Save } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button, EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { centralRecordCompletion, certificateStatus, certificateStatusLabel, certificateStatusTone } from "@/lib/calculations/compliance";
+import { centralRecordCompletion, certificateStatus, certificateStatusLabel, certificateStatusTone, partialDbsDisplay } from "@/lib/calculations/compliance";
 import { createDemoComplianceState, demoComplianceStorageKey, type DemoComplianceState } from "@/lib/compliance/demo-data";
 import { formatDateUk } from "@/lib/dates/format";
 import type { EvidenceStatus, StaffCertificate, StaffQualification, StaffReferenceCheck } from "@/types";
@@ -205,7 +205,7 @@ export function StaffComplianceDetail({ staffId }: { staffId: string }) {
               <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={centralRecord.dbsRecorded} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsRecorded: e.target.checked } : record) }, "DBS status saved.")} /> DBS recorded</label>
               <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={centralRecord.dbsUpdateService} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsUpdateService: e.target.checked } : record) }, "DBS update service saved.")} /> Update service</label>
               <label className="flex items-center gap-2 font-bold text-purple-950"><input type="checkbox" checked={centralRecord.dbsNewCheckRequired} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsNewCheckRequired: e.target.checked } : record) }, "DBS requirement saved.")} /> New DBS required</label>
-              <Field label="DBS number"><div className="flex gap-2"><input className={inputClassName()} value={showDbs ? `******${centralRecord.dbsNumberLast4 ?? ""}` : `****${centralRecord.dbsNumberLast4 ?? ""}`} readOnly /><Button variant="secondary" onClick={() => setShowDbs(!showDbs)}>{showDbs ? "Mask" : "Reveal"}</Button></div></Field>
+              <Field label="DBS number (last four only)"><div className="flex gap-2"><input className={inputClassName()} value={partialDbsDisplay(centralRecord.dbsNumberLast4, showDbs)} readOnly /><Button variant="secondary" onClick={() => setShowDbs(!showDbs)}>{showDbs ? "Hide last four" : "Show last four"}</Button></div></Field>
               <Field label="Issue date"><input className={inputClassName()} type="date" value={centralRecord.dbsIssueDate ?? ""} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsIssueDate: e.target.value || null } : record) }, "DBS issue date saved.")} /></Field>
               <Field label="Last checked"><input className={inputClassName()} type="date" value={centralRecord.dbsLastCheckedAt ?? ""} onChange={(e) => persist({ ...state, centralRecords: state.centralRecords.map((record) => record.staffId === staffId ? { ...record, dbsLastCheckedAt: e.target.value || null } : record) }, "DBS checked date saved.")} /></Field>
             </div>
