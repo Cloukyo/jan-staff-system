@@ -7,6 +7,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, ".worktrees/**"],
     globals: true,
     hookTimeout: 30_000,
+    maxWorkers: 4,
   },
   resolve: {
     alias: {
