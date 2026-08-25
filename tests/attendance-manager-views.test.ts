@@ -212,6 +212,21 @@ describe("manager attendance views", () => {
     expect(managerHelp).toContain("Add any lunch events manually afterwards.");
   });
 
+  it("links attendance issue rows straight to the expanded correction day", () => {
+    const review = readFileSync(
+      resolve("src/components/attendance/attendance-review.tsx"),
+      "utf8",
+    );
+
+    expect(review).toContain("correctionHref");
+    expect(review).toContain('view: "hours"');
+    expect(review).toContain("hoursFrom: data.date");
+    expect(review).toContain("hoursTo: data.date");
+    expect(review).toContain("staffId: row.staffId");
+    expect(review).toContain("day: data.date");
+    expect(review).toContain("Open corrections");
+  });
+
   it("gives the manager shell an explicit vertical scroll owner", () => {
     const globalStyles = readFileSync(resolve("src/app/globals.css"), "utf8");
     const appShell = readFileSync(
