@@ -9,6 +9,7 @@ import {
   type CommercialApprovedPayrollExport,
 } from "@/lib/exports/payroll-excel";
 import { getCommercialExportIdentity } from "@/lib/exports/identity";
+import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
 import {
   summariseCommercialPayrollReporting,
   type CommercialPayrollReportingState,
@@ -173,6 +174,53 @@ describe("commercial payroll export identity and workbook", () => {
     const summaryText = workbook.getWorksheet("Summary")!.getSheetValues().flat().map(String).join(" ");
     expect(summaryText).toContain("Pay category: salaried");
     expect(summaryText).not.toContain("Unattributed");
+  });
+
+  it("adds current planned rota hours for a new starter without changing payable totals", async () => {
+    const plannedDetail = createPayrollExportDetail({
+      staff: [{
+        id: "staff-new",
+        fullName: "New Starter",
+        displayName: "New",
+        employmentRole: "Practitioner",
+        mainQualificationLevel: null,
+        active: true,
+        loginStatus: "No login",
+        kioskStatus: "Enabled",
+        isManager: false,
+        payArrangements: [],
+      }],
+      shifts: [{
+        id: "planned-new",
+        staffId: "staff-new",
+        shiftDate: "2026-07-25",
+        startTime: "09:00",
+        endTime: "17:00",
+        breakMinutes: 30,
+        status: "scheduled",
+        archivedAt: null,
+      }],
+      attendance: { effectiveEvents: [], audit: { originalEvents: [], correctionRecords: [] } },
+      reviews: [],
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-31",
+    });
+    const buffer = await createCommercialPayrollWorkbook(approvedExport({
+      payableMinutesTotal: 0,
+      adjustmentMinutesTotal: 0,
+      adjustmentSnapshots: [],
+      rows: [],
+    }), plannedDetail);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const planned = workbook.getWorksheet("Planned hours");
+    expect(planned?.getCell("A2").value).toBe("New Starter");
+    expect(planned?.getCell("E2").value).toBe(7.5);
+    const summary = workbook.getWorksheet("Summary")!;
+    const organisationTotal = summary.getRows(1, summary.rowCount)
+      ?.find((row) => row.getCell("A").value === "Organisation total");
+    expect(organisationTotal?.getCell("B").value).toBe("0 minutes");
   });
 
   it("rejects a workbook that exceeds the explicit row limit", async () => {

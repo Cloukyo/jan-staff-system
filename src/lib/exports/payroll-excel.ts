@@ -81,6 +81,7 @@ export type CommercialPayrollExportRequest = {
   approvalId: string;
   expectedRevision: number;
   requestedSiteId: string | null;
+  plannedDetail?: PayrollExportDetail;
 };
 
 export type CommercialPayrollExportDependencies = {
@@ -148,6 +149,7 @@ function validEvidenceFingerprint(value: string): boolean {
 
 export async function createCommercialPayrollWorkbook(
   input: CommercialApprovedPayrollExport,
+  plannedDetail?: PayrollExportDetail,
 ): Promise<Buffer> {
   if (input.rows.length > COMMERCIAL_PAYROLL_EXPORT_MAX_ROWS) {
     throw new Error(`The commercial payroll export row limit is ${COMMERCIAL_PAYROLL_EXPORT_MAX_ROWS}.`);
@@ -313,6 +315,35 @@ export async function createCommercialPayrollWorkbook(
   detail.getColumn("D").numFmt = "dd/mm/yyyy";
   detail.getColumn("K").numFmt = '£#,##0.00';
 
+  if (plannedDetail) {
+    const planned = workbook.addWorksheet("Planned hours", {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    planned.columns = [
+      { header: "Staff name", key: "fullName", width: 30 },
+      { header: "Role", key: "employmentRole", width: 24 },
+      { header: "Date", key: "date", width: 14 },
+      { header: "Planned break minutes", key: "plannedBreakMinutes", width: 24 },
+      { header: "Planned net hours", key: "plannedHours", width: 20 },
+    ];
+    for (const row of plannedDetail.dailyRows.filter((detailRow) => detailRow.plannedMinutes > 0)) {
+      planned.addRow({
+        fullName: safeExcelText(row.fullName),
+        employmentRole: safeExcelText(row.employmentRole),
+        date: new Date(`${row.date}T12:00:00.000Z`),
+        plannedBreakMinutes: row.plannedBreakMinutes,
+        plannedHours: decimalHours(row.plannedMinutes),
+      });
+    }
+    styleHeader(planned.getRow(1));
+    planned.autoFilter = { from: "A1", to: "E1" };
+    planned.getColumn("C").numFmt = "dd/mm/yyyy";
+    planned.getColumn("E").numFmt = "0.00";
+    planned.eachRow((row, rowNumber) => {
+      row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
+    });
+  }
+
   if (workbook.worksheets.length > COMMERCIAL_PAYROLL_EXPORT_MAX_WORKSHEETS) {
     throw new Error("The commercial payroll export workbook limit was exceeded.");
   }
@@ -358,7 +389,7 @@ export async function prepareCommercialPayrollExport(
   });
   assertApprovedExportMatchesRequest(stored, request, siteId);
   assertCommercialApprovedEvidence(stored);
-  const workbook = await createCommercialPayrollWorkbook(stored);
+  const workbook = await createCommercialPayrollWorkbook(stored, request.plannedDetail);
   const digest = createHash("sha256").update(workbook).digest("hex");
   const identity = getCommercialExportIdentity(stored);
   const fileName = `${identity.fileSlug}-payroll-${stored.periodStart}-to-${stored.periodEnd}-r${stored.revision}.xlsx`;
