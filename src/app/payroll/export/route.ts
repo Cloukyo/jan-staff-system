@@ -8,6 +8,7 @@ import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
 import {
   parsePayrollExportHoursMode,
   payrollModeIncludesClocked,
+  payrollModeIncludesPlanned,
   payrollRowHasSelectedHours,
 } from "@/lib/exports/payroll-options";
 import {
@@ -58,8 +59,14 @@ export async function GET(request: Request) {
       { status: 409 },
     );
   }
+  const staffIdsWithPlannedShifts = new Set(shifts.map((shift) => shift.staffId));
+  const includeRotaOnlyStaff = payrollModeIncludesPlanned(hoursMode);
   const includedStaff = staff
-    .filter((person) => (includeInactive || person.active) && (includeManagers || !person.isManager));
+    .filter((person) => (
+      includeInactive ||
+      person.active ||
+      (includeRotaOnlyStaff && staffIdsWithPlannedShifts.has(person.id))
+    ) && (includeManagers || !person.isManager));
   const allRows = includedStaff
     .map((person) => createPayrollPreparationRow(
       person,
