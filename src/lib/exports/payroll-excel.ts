@@ -77,6 +77,7 @@ export async function createPayrollPreparationWorkbook(
     { header: "Pay type", key: "payType", width: 13 },
     { header: "Hours basis", key: "hoursBasis", width: 20 },
     { header: "Contracted weekly hours", key: "contracted", width: 24 },
+    { header: "Total planned hours", key: "planned", width: 20 },
     { header: "Raw worked hours", key: "raw", width: 18 },
     { header: "Reviewed worked hours", key: "reviewed", width: 22 },
     { header: "Ordinary hours", key: "ordinary", width: 16 },
@@ -88,6 +89,15 @@ export async function createPayrollPreparationWorkbook(
     { header: "Adjustment notes", key: "adjustments", width: 38 },
     { header: "Warnings", key: "warnings", width: 42 },
   ];
+  const plannedMinutesByStaffId = new Map(
+    detail.plannedRows.map((plannedRow) => [
+      plannedRow.staffId,
+      detail.dates.reduce(
+        (total, date) => total + (plannedRow.plannedMinutesByDate[date] ?? 0),
+        0,
+      ),
+    ]),
+  );
   for (const row of rows) {
     sheet.addRow({
       staff: row.fullName,
@@ -97,6 +107,7 @@ export async function createPayrollPreparationWorkbook(
       payType: row.payType ?? "",
       hoursBasis: row.hoursBasis?.replaceAll("_", " ") ?? "",
       contracted: row.contractedWeeklyHours,
+      planned: decimalHours(plannedMinutesByStaffId.get(row.staffId) ?? 0),
       raw: decimalHours(row.recordedMinutes),
       reviewed: decimalHours(row.adjustedMinutes),
       ordinary: decimalHours(row.ordinaryMinutes),
@@ -111,9 +122,9 @@ export async function createPayrollPreparationWorkbook(
   }
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B21B6" } };
-  sheet.autoFilter = { from: "A1", to: "Q1" };
-  for (const key of ["L", "M", "N"]) sheet.getColumn(key).numFmt = '£#,##0.00';
-  for (const key of ["G", "H", "I", "J", "K"]) sheet.getColumn(key).numFmt = "0.00";
+  sheet.autoFilter = { from: "A1", to: "R1" };
+  for (const key of ["M", "N", "O"]) sheet.getColumn(key).numFmt = '£#,##0.00';
+  for (const key of ["G", "H", "I", "J", "K", "L"]) sheet.getColumn(key).numFmt = "0.00";
     sheet.eachRow((row, rowNumber) => {
       row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
     });
