@@ -31,8 +31,7 @@ describe("payroll export confirmation policy", () => {
     expect(server).toContain('.is("archived_at", null)');
     expect(route).toContain("loadPayrollRotaShifts(periodStart, periodEnd)");
     expect(route).toContain("createPayrollExportDetail");
-    expect(route).toContain("staffIdsWithPlannedShifts");
-    expect(route).toContain("payrollModeIncludesPlanned(hoursMode)");
+    expect(route).toContain("payrollStaffIsIncluded");
     expect(route).toContain("payrollRowHasSelectedHours");
     expect(route).toContain("{ hours: hoursMode }");
     expect(route).toMatch(

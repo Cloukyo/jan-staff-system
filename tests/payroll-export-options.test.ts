@@ -4,6 +4,7 @@ import {
   payrollModeIncludesClocked,
   payrollModeIncludesPlanned,
   payrollRowHasSelectedHours,
+  payrollStaffIsIncluded,
 } from "@/lib/exports/payroll-options";
 
 describe("payroll export hours options", () => {
@@ -35,5 +36,20 @@ describe("payroll export hours options", () => {
     expect(payrollRowHasSelectedHours("clocked", 0, 420)).toBe(false);
     expect(payrollRowHasSelectedHours("both", 0, 420)).toBe(true);
     expect(payrollRowHasSelectedHours("both", 60, 0)).toBe(true);
+  });
+
+  it("excludes inactive staff unless the manager includes inactive staff", () => {
+    expect(payrollStaffIsIncluded(
+      { active: false, isManager: false },
+      { includeInactive: false, includeManagers: false },
+    )).toBe(false);
+    expect(payrollStaffIsIncluded(
+      { active: false, isManager: false },
+      { includeInactive: true, includeManagers: false },
+    )).toBe(true);
+    expect(payrollStaffIsIncluded(
+      { active: true, isManager: false },
+      { includeInactive: false, includeManagers: false },
+    )).toBe(true);
   });
 });

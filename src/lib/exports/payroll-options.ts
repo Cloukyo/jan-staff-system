@@ -15,6 +15,16 @@ export const payrollModeIncludesPlanned = (mode: PayrollExportHoursMode) =>
 export const payrollModeIncludesClocked = (mode: PayrollExportHoursMode) =>
   mode !== "planned";
 
+export function payrollStaffIsIncluded(
+  staff: { active: boolean; isManager: boolean },
+  options: { includeInactive: boolean; includeManagers: boolean },
+) {
+  return (
+    (options.includeInactive || staff.active) &&
+    (options.includeManagers || !staff.isManager)
+  );
+}
+
 export function payrollRowHasSelectedHours(
   mode: PayrollExportHoursMode,
   clockedMinutes: number,
