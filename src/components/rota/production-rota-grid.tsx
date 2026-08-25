@@ -174,10 +174,10 @@ function ShiftEditorDrawer({
               />
             </Field>
             <Field label="Start time">
-              <input className={inputClassName()} name="startTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.startTime ?? data.settings.openingTime} required />
+              <input className={inputClassName()} name="startTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.startTime ?? "08:00"} required />
             </Field>
             <Field label="Finish time">
-              <input className={inputClassName()} name="endTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.endTime ?? data.settings.closingTime} required />
+              <input className={inputClassName()} name="endTime" type="time" step={data.settings.shiftIntervalMinutes * 60} defaultValue={shift?.endTime ?? "18:00"} required />
             </Field>
             <Field label="Break duration">
               <input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakUnspecified ? "" : shift?.breakMinutes ?? ""} placeholder="Not specified" />

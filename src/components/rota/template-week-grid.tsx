@@ -58,8 +58,8 @@ function TemplateEditorDrawer({ data, editor, onClose }: { data: RotaTemplateDat
                 {days.map((day, index) => <option key={day} value={index + 1}>{day}</option>)}
               </select>
             </Field>
-            <Field label="Start time"><input className={inputClassName()} name="startTime" type="time" defaultValue={shift?.startTime ?? "08:30"} required /></Field>
-            <Field label="Finish time"><input className={inputClassName()} name="endTime" type="time" defaultValue={shift?.endTime ?? "16:30"} required /></Field>
+            <Field label="Start time"><input className={inputClassName()} name="startTime" type="time" defaultValue={shift?.startTime ?? "08:00"} required /></Field>
+            <Field label="Finish time"><input className={inputClassName()} name="endTime" type="time" defaultValue={shift?.endTime ?? "18:00"} required /></Field>
             <Field label="Break duration"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakMinutes ?? ""} placeholder="Not specified" /></Field>
             <Field label={industryProfile.workAreaSingular}><input className={inputClassName()} name="workArea" defaultValue={shift?.workArea ?? shift?.roomOrArea ?? ""} /></Field>
             <Field label="Role on shift"><input className={inputClassName()} name="roleOnShift" defaultValue={shift?.roleOnShift ?? ""} /></Field>
