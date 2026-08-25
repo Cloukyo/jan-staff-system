@@ -143,6 +143,7 @@ describe("commercial payroll behavioural UI boundary", () => {
     expect(html).toContain("Reopen approved revision");
     expect(html).toContain("Reopen reason");
     expect(html).toContain("Export approved revision");
+    expect(html).toContain("Planned rota hours are included in the export.");
   });
 
   it("labels selected-site and organisation-wide actors from the resolved reporting scope", () => {

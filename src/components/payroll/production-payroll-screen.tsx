@@ -213,9 +213,12 @@ export function CommercialPayrollReportingScreen({
           </CommercialPayrollActionForm>
         ) : null}
         {canExport && exportParams ? (
-          <a className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href={`/payroll/export?${exportParams.toString()}`}>
-            <FileSpreadsheet className="h-4 w-4" /> Export approved revision
-          </a>
+          <div className="mt-4">
+            <a className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href={`/payroll/export?${exportParams.toString()}`}>
+              <FileSpreadsheet className="h-4 w-4" /> Export approved revision
+            </a>
+            <p className="mt-2 text-sm font-bold text-purple-800">Planned rota hours are included in the export.</p>
+          </div>
         ) : null}
         {canExport && reporting.approval?.status === "approved" && !exportScopeMatches ? (
           <p className="mt-3 text-sm font-bold text-amber-800">Select the stored run site scope before exporting.</p>
