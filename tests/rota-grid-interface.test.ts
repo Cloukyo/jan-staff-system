@@ -115,6 +115,13 @@ describe("weekly rota grid interface", () => {
     expect(rotaGrid).toContain("min-h-11");
   });
 
+  it("defaults new rota shifts to 08:00 and 18:00", () => {
+    expect(rotaGrid).toContain('defaultValue={shift?.startTime ?? "08:00"}');
+    expect(rotaGrid).toContain('defaultValue={shift?.endTime ?? "18:00"}');
+    expect(templateGrid).toContain('defaultValue={shift?.startTime ?? "08:00"}');
+    expect(templateGrid).toContain('defaultValue={shift?.endTime ?? "18:00"}');
+  });
+
   it("renders staff rows, weekday cells, sticky headers and accessible cell actions", () => {
     expect(rotaGrid).toContain('scope="row"');
     expect(rotaGrid).toContain('scope="col"');
