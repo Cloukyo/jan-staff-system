@@ -157,7 +157,7 @@ export function ProductionStaffScreen({
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 lg:col-span-5" role="alert">
                   <p className="font-black text-red-950">Confirm deactivation</p>
                   <p className="mt-2 text-sm text-red-900">
-                    The person will be removed from active staff, rota and kiosk lists. Login and kiosk clocking will be disabled. Attendance, rota, pay, audit and compliance history remains preserved.
+                    The person will be removed from active staff, rota and kiosk lists. Their current and future rota entries and all reusable template shifts will be archived. Login and kiosk clocking will be disabled. Past attendance, rota, pay, audit and compliance history will remain preserved.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <ProductionActionForm action={deactivateStaffProfileAction} submitLabel="Confirm deactivation" submitVariant="danger">

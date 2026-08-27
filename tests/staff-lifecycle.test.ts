@@ -10,6 +10,7 @@ function source(path: string): string {
 
 describe("staff lifecycle database operation", () => {
   const migration = source("supabase/migrations/20260723162038_staff_lifecycle_management.sql");
+  const rotaArchivalMigration = source("supabase/migrations/20260827120000_archive_inactive_staff_rota.sql");
   const enforcementMigrationPath = "supabase/migrations/20260723162052_enforce_staff_lifecycle_paths.sql";
   const enforcementMigration = existsSync(resolve(enforcementMigrationPath)) ? source(enforcementMigrationPath) : "";
 
@@ -27,6 +28,15 @@ describe("staff lifecycle database operation", () => {
     expect(migration).toContain("update public.staff_kiosk_settings");
     expect(migration).toContain("insert into public.staff_account_access_audit");
     expect(migration).toContain("'disabled'");
+  });
+
+  it("archives live rota work while retaining historic evidence and excluding inactive staff from copies", () => {
+    expect(rotaArchivalMigration).toContain("shift_date>=(now() at time zone 'Europe/London')::date");
+    expect(rotaArchivalMigration).toContain("update public.rota_template_shifts");
+    expect(rotaArchivalMigration).toContain("profile.organisation_id is null and profile.active");
+    expect(rotaArchivalMigration).toContain("copied_profile.active");
+    expect(rotaArchivalMigration).toContain("commercial_api_private.execute_commercial_admin_command");
+    expect(rotaArchivalMigration).toContain("authorisation_revision=authorisation_revision+1");
   });
 
   it("prevents self-deactivation and does not re-enable access", () => {
@@ -117,6 +127,7 @@ describe("production staff lifecycle actions", () => {
     expect(actions).toContain('revalidatePath("/accounts")');
     expect(actions).toContain('revalidatePath("/settings/kiosk")');
     expect(actions).toContain('revalidatePath("/compliance")');
+    expect(actions).toContain('revalidatePath("/rota/templates")');
   });
 
   it("does not let compliance actions update staff active status", () => {
@@ -156,7 +167,7 @@ describe("production staff lifecycle interface", () => {
     expect(staffScreen).toContain("Deactivate staff member");
     expect(staffScreen).toContain("Confirm deactivation");
     expect(staffScreen).toContain("removed from active staff, rota and kiosk lists");
-    expect(staffScreen).toContain("Attendance, rota, pay, audit and compliance history remains preserved");
+    expect(staffScreen).toContain("Past attendance, rota, pay, audit and compliance history will remain preserved");
     expect(staffScreen).not.toContain("—");
     expect(staffScreen).toContain("Reactivate staff member");
     expect(staffScreen).toContain("Login and kiosk access will remain disabled");

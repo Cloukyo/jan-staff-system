@@ -18,7 +18,8 @@ function secureCode(length: number): string {
   return Array.from(randomBytes(length), (value) => alphabet[value % alphabet.length]).join("");
 }
 
-function messageFor(outcome: string, code?: string) {
+function messageFor(outcome: string, code?: string, commandName?: string) {
+  if (outcome === "success" && commandName === "deactivate_staff") return "Staff member deactivated. Current and future rota entries and template shifts were archived. Past history was preserved.";
   if (outcome === "success") return "Saved. The change is now active.";
   if (outcome === "workflow_changed") return "This page is out of date. Reload it before trying again.";
   if (outcome === "upgrade_required") return "Your current plan does not include more of this resource. Review your plan before continuing.";
@@ -62,6 +63,14 @@ export async function commercialAdminAction(
       // Revalidating here would immediately remove the now-revoked device's
       // replacement form, taking its one-time registration code with it.
       if (command.data !== "replace_kiosk_device") revalidatePath("/admin", "layout");
+      if (command.data === "deactivate_staff") {
+        revalidatePath("/staff");
+        revalidatePath("/rota");
+        revalidatePath("/rota/templates");
+        revalidatePath("/attendance");
+        revalidatePath("/payroll");
+        revalidatePath("/clock");
+      }
       return {
         ok: true,
         message: command.data === "replace_kiosk_device"
@@ -70,7 +79,7 @@ export async function commercialAdminAction(
             ? "Invitation created. Email delivery is queued separately and its status appears in the invitation list."
             : command.data === "resend_invitation"
               ? "A replacement invitation was created and email delivery is queued."
-          : messageFor(result.outcome, result.code),
+              : messageFor(result.outcome, result.code, command.data),
         oneTimeCode,
       };
     }

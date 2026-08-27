@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
@@ -36,7 +37,15 @@ export function AttendanceReview({ data }: { data: AttendanceReviewDay }) {
         </div>
       </Panel>
 
-      {data.rows.length ? data.rows.map((row) => (
+      {data.rows.length ? data.rows.map((row) => {
+        const correctionHref = `/attendance?${new URLSearchParams({
+          view: "hours",
+          hoursFrom: data.date,
+          hoursTo: data.date,
+          staffId: row.staffId,
+          day: data.date,
+        }).toString()}`;
+        return (
         <Panel key={row.staffId}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -52,6 +61,12 @@ export function AttendanceReview({ data }: { data: AttendanceReviewDay }) {
               {row.reviewStatus.replaceAll("_", " ")}
             </StatusPill>
           </div>
+          <Link
+            className="mt-3 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50"
+            href={correctionHref}
+          >
+            Open corrections
+          </Link>
           <div className="mt-3 flex flex-wrap gap-2">
             {row.exceptions.length ? row.exceptions.map((exception) => <StatusPill key={exception} tone="red">{exception}</StatusPill>) : <StatusPill tone="green">No calculated exceptions</StatusPill>}
             {row.managerCorrection ? <StatusPill tone="purple">Manager correction event</StatusPill> : null}
@@ -75,7 +90,8 @@ export function AttendanceReview({ data }: { data: AttendanceReviewDay }) {
           ))}
           <AttendanceReviewDecision staffId={row.staffId} reviewDate={data.date} currentStatus={row.reviewStatus} />
         </Panel>
-      )) : <EmptyState title="No attendance activity" body="There are no published shifts, clock events or staff requests for this date." />}
+        );
+      }) : <EmptyState title="No attendance activity" body="There are no published shifts, clock events or staff requests for this date." />}
     </div>
   );
 }

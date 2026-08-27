@@ -83,6 +83,15 @@ function clockEvent(
 }
 
 describe("manager attendance views", () => {
+  it("links each review problem directly to the matching staff correction day", () => {
+    const review = readFileSync(resolve("src/components/attendance/attendance-review.tsx"), "utf8");
+    expect(review).toContain("Open corrections");
+    expect(review).toContain('view: "hours"');
+    expect(review).toContain("hoursFrom: data.date");
+    expect(review).toContain("staffId: row.staffId");
+    expect(review).toContain("day: data.date");
+  });
+
   it("positions attendance events within a readable working-day timeline", () => {
     const window = buildAttendanceTimelineWindow({
       plannedPeriods: [{ startTime: "08:00", endTime: "17:00" }],

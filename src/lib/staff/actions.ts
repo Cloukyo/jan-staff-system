@@ -23,6 +23,7 @@ function refreshStaffPaths(staffId: string) {
   revalidatePath("/clock");
   revalidatePath("/attendance");
   revalidatePath("/rota");
+  revalidatePath("/rota/templates");
   revalidatePath("/compliance");
   revalidatePath(`/compliance/staff/${staffId}`);
 }
@@ -90,7 +91,7 @@ export async function deactivateStaffProfileAction(
   });
   if (error) return fail("Staff member could not be deactivated.");
   refreshStaffPaths(staffId);
-  return ok("Staff member deactivated. Their history has been preserved.");
+  return ok("Staff member deactivated. Current and future rota entries and template shifts were archived. Past history was preserved.");
 }
 
 export async function reactivateStaffProfileAction(

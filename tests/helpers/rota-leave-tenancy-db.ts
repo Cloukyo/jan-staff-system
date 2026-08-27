@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
-import { createCustomerDomainDatabase } from "./customer-domain-db";
+import { createCustomerDomainDatabase, setLegacyManager } from "./customer-domain-db";
 import {
   MEMBERSHIP_A_OWNER,
   ORG_A,
@@ -32,6 +32,7 @@ export {
   USER_B_OWNER,
   resetTenantDatabaseRole,
   setTenantAuthUser,
+  setLegacyManager,
 };
 
 export const STAFF_A2 = "tenant-staff-a2";
@@ -50,6 +51,23 @@ create type public.rota_shift_status as enum ('scheduled','cancelled','completed
 create type public.rota_template_status as enum ('active','archived');
 create type public.rota_template_source_type as enum ('manual','saved_from_rota','private_import');
 create type public.rota_template_apply_mode as enum ('empty_days','replace','alongside');
+
+alter table public.staff_accounts add column active boolean not null default true,
+  add column disabled_by uuid references public.staff_accounts(id), add column disabled_at timestamptz;
+alter table public.staff_profiles add column admin_revision bigint not null default 1;
+alter table public.organisation_memberships add column authorisation_revision bigint not null default 1;
+create type public.account_access_action as enum ('prepared','invited','linked','role_changed','enabled','disabled');
+create table public.staff_account_access_audit(
+  id uuid primary key default gen_random_uuid(), staff_account_id uuid not null references public.staff_accounts(id),
+  staff_id text not null references public.staff_profiles(id), action public.account_access_action not null,
+  previous_role text, new_role text, performed_by uuid not null references public.staff_accounts(id), created_at timestamptz not null default now()
+);
+create table public.staff_kiosk_settings(
+  staff_id text primary key references public.staff_profiles(id), kiosk_enabled boolean not null default true,
+  onboarding_attendance_eligible boolean not null default true, pin_reset_required boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+create table public.test_admin_audit(staff_id text not null,event_type text not null,created_at timestamptz not null default now());
 
 create table public.attendance_operation_requests (
   operation_id uuid primary key, operation_kind text not null, staff_id text not null, recorded_date date not null,
@@ -131,6 +149,28 @@ create table public.rota_template_applications (
 alter table public.rota_shifts add column source_template_shift_id uuid references public.rota_template_shifts(id),
   add column template_application_id uuid references public.rota_template_applications(id);
 
+create schema commercial_api_private;
+grant usage on schema commercial_api_private to authenticated;
+create function commercial_api_private.execute_commercial_admin_command(
+  target_organisation_id uuid,command_name text,payload jsonb,idempotency_key uuid,expected_revision bigint
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare actor public.organisation_memberships%rowtype;org public.organisations%rowtype;profile public.staff_profiles%rowtype;
+  permission_name text;staff_value text;success boolean:=false;result jsonb;
+begin
+  select * into actor from public.organisation_memberships m where m.id=private.current_membership_id(target_organisation_id) and m.status='active';
+  if not found then return jsonb_build_object('outcome','permission_denied');end if;
+  select * into org from public.organisations o where o.id=target_organisation_id for update;
+  staff_value:=payload->>'staffId';select * into profile from public.staff_profiles p where p.organisation_id=org.id and p.id=staff_value for update;
+  permission_name:='staff.manage';
+  if not found then result:=jsonb_build_object('outcome','not_found');
+  elsif not private.can_access_staff(org.id,staff_value,permission_name) then result:=jsonb_build_object('outcome','permission_denied');
+        elsif command_name='deactivate_staff' then update public.staff_profiles set active=false,admin_revision=admin_revision+1,updated_at=clock_timestamp() where id=profile.id;update public.staff_kiosk_settings set kiosk_enabled=false,onboarding_attendance_eligible=false,pin_reset_required=true,updated_at=clock_timestamp() where staff_id=profile.id;success:=true;
+  else result:=jsonb_build_object('outcome','invalid_request');end if;
+  if success then insert into public.test_admin_audit(staff_id,event_type) values(profile.id,'staff_deactivated');return jsonb_build_object('outcome','success','code','staff_deactivated');end if;
+  return result;
+end$$;
+grant execute on function commercial_api_private.execute_commercial_admin_command(uuid,text,jsonb,uuid,bigint) to authenticated;
+
 alter table public.leave_requests enable row level security;
 alter table public.rota_settings enable row level security;
 alter table public.rota_weeks enable row level security;
@@ -154,6 +194,7 @@ insert into auth.users(id,email,email_confirmed_at)
 values('${USER_A_STAFF}','fictional.staff@example.test',now());
 insert into public.organisation_memberships(id,organisation_id,auth_user_id,staff_id,status,joined_at)
 values('${MEMBERSHIP_A_STAFF}','${ORG_A}','${USER_A_STAFF}','${STAFF_A2}','active',now());
+insert into public.staff_kiosk_settings(staff_id) values('${STAFF_A2}');
 insert into public.membership_role_assignments(organisation_id,membership_id,role,scope_type,site_id,granted_by_membership_id)
 values('${ORG_A}','${MEMBERSHIP_A_STAFF}','staff','organisation',null,'${MEMBERSHIP_A_OWNER}');
 insert into public.staff_site_assignments(organisation_id,staff_id,site_id,effective_from,is_primary,created_by_membership_id)
@@ -177,6 +218,10 @@ export async function createRotaLeaveTenancyDatabase(): Promise<PGlite> {
     .find((name) => name.endsWith("_commercial_rota_active_staff_guard.sql"));
   if (!activeGuardMigration) throw new Error("commercial active-staff rota guard migration is missing");
   await db.exec(readFileSync(resolve("supabase/migrations", activeGuardMigration), "utf8"));
+  const lifecycleMigration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_archive_inactive_staff_rota.sql"));
+  if (!lifecycleMigration) throw new Error("inactive-staff rota archival migration is missing");
+  await db.exec(readFileSync(resolve("supabase/migrations", lifecycleMigration), "utf8"));
   await db.exec(fixtureSql);
   return db;
 }

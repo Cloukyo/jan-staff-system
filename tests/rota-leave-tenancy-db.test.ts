@@ -11,6 +11,7 @@ import {
   SITE_B1,
   STAFF_A2,
   STAFF_A,
+  STAFF_B,
   USER_A_OWNER,
   USER_A_STAFF,
   USER_A_SITE_MANAGER,
@@ -18,6 +19,7 @@ import {
   WORK_AREA_A2,
   createRotaLeaveTenancyDatabase,
   resetTenantDatabaseRole,
+  setLegacyManager,
   setTenantAuthUser,
 } from "./helpers/rota-leave-tenancy-db";
 
@@ -269,5 +271,76 @@ describe("rota and leave tenancy executable migration", () => {
       { site_id: SITE_A1, staff_id: STAFF_A2, shift_date: "2026-08-17" },
       { site_id: SITE_A1, staff_id: STAFF_A2, shift_date: "2026-08-19" },
     ]);
+  });
+
+  it("archives live legacy rota work and skips inactive staff when copying preserved history", async () => {
+    await resetTenantDatabaseRole(db);
+    const staffId = "legacy-lifecycle-staff";
+    const accountId = "99000000-0000-0000-0000-000000000002";
+    await db.query("insert into public.staff_profiles(id,full_name,display_name,employment_role,active) values($1,'Fictional Legacy Staff','Fictional','Staff member',true)", [staffId]);
+    await db.query("insert into public.staff_accounts(id,staff_id,role,active) values($1,$2,'staff',true)", [accountId, staffId]);
+    await db.query("insert into public.staff_kiosk_settings(staff_id) values($1)", [staffId]);
+    await db.exec(`
+      insert into public.rota_weeks(id,week_start_date,status,created_by,updated_by) values
+        ('49000000-0000-0000-0000-000000000001','2026-07-06','draft','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001'),
+        ('49000000-0000-0000-0000-000000000002',date_trunc('week',(clock_timestamp() at time zone 'Europe/London'))::date,'draft','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001');
+      insert into public.rota_shifts(rota_week_id,staff_id,shift_date,start_time,end_time,created_by,updated_by) values
+        ('49000000-0000-0000-0000-000000000001','legacy-lifecycle-staff','2026-07-06','09:00','17:00','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001'),
+        ('49000000-0000-0000-0000-000000000002','legacy-lifecycle-staff',(clock_timestamp() at time zone 'Europe/London')::date,'09:00','17:00','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001');
+      insert into public.rota_templates(id,name,created_by,updated_by) values('49000000-0000-0000-0000-000000000003','Fictional legacy template','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001');
+      insert into public.rota_template_shifts(template_id,staff_id,day_of_week,start_time,end_time,created_by,updated_by) values('49000000-0000-0000-0000-000000000003','legacy-lifecycle-staff',1,'09:00','17:00','99000000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001');
+    `);
+    await setLegacyManager(db);
+    await db.query("select public.set_staff_profile_active($1,false)", [staffId]);
+    await resetTenantDatabaseRole(db);
+    const state = await db.query<{ active: boolean; past_archived: boolean; future_archived: boolean; template_archived: boolean; account_active: boolean; kiosk_enabled: boolean; audits: number }>(`
+      select profile.active,
+        (select archived_at is not null from public.rota_shifts where staff_id=$1 and shift_date='2026-07-06') past_archived,
+        (select archived_at is not null from public.rota_shifts where staff_id=$1 and shift_date=(clock_timestamp() at time zone 'Europe/London')::date) future_archived,
+        (select archived_at is not null from public.rota_template_shifts where staff_id=$1) template_archived,
+        account.active account_active,kiosk.kiosk_enabled,
+        (select count(*)::integer from public.staff_account_access_audit where staff_id=$1 and action='disabled') audits
+      from public.staff_profiles profile join public.staff_accounts account on account.staff_id=profile.id
+      join public.staff_kiosk_settings kiosk on kiosk.staff_id=profile.id where profile.id=$1
+    `, [staffId]);
+    expect(state.rows[0]).toEqual({ active: false, past_archived: false, future_archived: true, template_archived: true, account_active: false, kiosk_enabled: false, audits: 1 });
+    const copied = await db.query<{ result: { copied_shifts: number } }>("select public.copy_previous_rota_week('2026-07-13') result");
+    expect(copied.rows[0].result.copied_shifts).toBe(0);
+  });
+
+  it("deactivates commercial staff atomically across memberships, live rotas and templates without crossing tenants", async () => {
+    await setTenantAuthUser(db, USER_A_OWNER, "aal2");
+    const futureWeek = await db.query<{ result: Record<string, unknown> }>(
+      "select public.execute_commercial_rota_command($1,$2,'create_week',$3::jsonb,$4::uuid,null) result",
+      [ORG_A, SITE_A1, JSON.stringify({ weekStart: "2026-08-31" }), randomUUID()],
+    );
+    await db.query(
+      "select public.execute_commercial_rota_command($1,$2,'save_shift',$3::jsonb,$4::uuid,null)",
+      [ORG_A, SITE_A1, JSON.stringify({ weekId: futureWeek.rows[0].result.weekId, staffId: STAFF_A2, shiftDate: "2026-08-31", startTime: "09:00", endTime: "17:00" }), randomUUID()],
+    );
+    const result = await db.query<{ result: Record<string, unknown> }>(
+      "select commercial_api_private.execute_commercial_admin_command($1,'deactivate_staff',$2::jsonb,$3::uuid,1) result",
+      [ORG_A, JSON.stringify({ staffId: STAFF_A2 }), randomUUID()],
+    );
+    expect(result.rows[0].result).toMatchObject({ outcome: "success", code: "staff_deactivated" });
+    await resetTenantDatabaseRole(db);
+    const state = await db.query<{ active: boolean; membership_status: string; past_active: number; future_active: number; template_active: number; other_tenant_active: boolean; audits: number }>(`
+      select profile.active,
+        (select status::text from public.organisation_memberships where organisation_id=$1 and staff_id=$2) membership_status,
+        (select count(*)::integer from public.rota_shifts where organisation_id=$1 and staff_id=$2 and shift_date<(clock_timestamp() at time zone 'Europe/London')::date and archived_at is null) past_active,
+        (select count(*)::integer from public.rota_shifts where organisation_id=$1 and staff_id=$2 and shift_date>=(clock_timestamp() at time zone 'Europe/London')::date and archived_at is null) future_active,
+        (select count(*)::integer from public.rota_template_shifts where organisation_id=$1 and staff_id=$2 and archived_at is null) template_active,
+        (select active from public.staff_profiles where organisation_id=$3 and id=$4) other_tenant_active,
+        (select count(*)::integer from public.test_admin_audit where staff_id=$2 and event_type='staff_deactivated') audits
+      from public.staff_profiles profile where profile.organisation_id=$1 and profile.id=$2
+    `, [ORG_A, STAFF_A2, ORG_B, STAFF_B]);
+    expect(state.rows[0]).toMatchObject({ active: false, membership_status: "suspended", future_active: 0, template_active: 0, other_tenant_active: true, audits: 1 });
+    expect(state.rows[0].past_active).toBeGreaterThan(0);
+    await setTenantAuthUser(db, USER_A_OWNER, "aal2");
+    const copied = await db.query<{ result: Record<string, unknown> }>(
+      "select public.execute_commercial_rota_command($1,$2,'copy_previous_week',$3::jsonb,$4::uuid,null) result",
+      [ORG_A, SITE_A1, JSON.stringify({ weekStart: "2026-08-24" }), randomUUID()],
+    );
+    expect(copied.rows[0].result).toMatchObject({ outcome: "success", copiedShifts: 0 });
   });
 });

@@ -520,7 +520,7 @@ function Staff({
                       revision={snapshot.organisation.revision}
                       submitLabel="Deactivate staff member"
                       tone="danger"
-                      confirmMessage={`Deactivate ${staff.fullName}? Their historical records will be preserved.`}
+                      confirmMessage={`Deactivate ${staff.fullName}? They will be removed from active staff, rota and kiosk lists. Their current and future rota entries and all reusable template shifts will be archived. Login and kiosk clocking will be disabled. Past attendance, rota, pay, audit and compliance history will remain preserved.`}
                     >
                       <input type="hidden" name="staffId" value={staff.id} />
                     </AdminCommandForm>

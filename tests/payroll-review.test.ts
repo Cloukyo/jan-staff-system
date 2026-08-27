@@ -312,8 +312,25 @@ describe("payroll Excel export", () => {
     await workbook.xlsx.load(buffer as never);
     const preparationSheet = workbook.getWorksheet("Pay Summary");
     expect(preparationSheet?.rowCount).toBe(2);
-    expect(preparationSheet?.getCell("N2").value).toBeNull();
+    expect(preparationSheet?.getCell("O2").value).toBeNull();
     expect(workbook.getWorksheet("Read Me")).toBeTruthy();
+  });
+
+  it("shows each staff member's total planned net hours in Pay Summary", async () => {
+    const buffer = await createPayrollPreparationWorkbook(
+      [preparation],
+      "2026-07-01",
+      "2026-07-03",
+      { unresolved: 0, pendingRequests: 0 },
+      detail,
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    const preparationSheet = workbook.getWorksheet("Pay Summary");
+    expect(preparationSheet?.getCell("H1").value).toBe("Total planned hours");
+    expect(preparationSheet?.getCell("H2").value).toBe(15.5);
+    expect(preparationSheet?.getCell("H2").numFmt).toBe("0.00");
   });
 
   it("labels incomplete attendance as unreviewed and includes readiness counts", async () => {
