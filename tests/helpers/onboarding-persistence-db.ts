@@ -3,6 +3,13 @@ import { resolve } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import { createTenantPrimitivesDatabase } from "./tenant-primitives-db";
 
+function readMigration(migration: string): string {
+  return readFileSync(resolve("supabase/migrations", migration), "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+}
+
 export const ONBOARDING_SESSION_A = "31000000-0000-4000-8000-000000000001";
 export const ONBOARDING_SESSION_B = "32000000-0000-4000-8000-000000000001";
 export const ONBOARDING_BOOTSTRAP_SESSION =
@@ -22,7 +29,7 @@ export async function createOnboardingPersistenceDatabase(): Promise<PGlite> {
     throw new Error("onboarding workflow persistence migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -43,7 +50,7 @@ export async function createOnboardingBootstrapDatabase(): Promise<PGlite> {
     throw new Error("commercial onboarding bootstrap migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -70,7 +77,7 @@ export async function createFirstSiteOnboardingDatabase(): Promise<PGlite> {
     throw new Error("commercial first-site onboarding migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -85,7 +92,7 @@ export async function createTrialEntitlementsOnboardingDatabase(): Promise<PGlit
     throw new Error("commercial trial-entitlements migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -128,7 +135,7 @@ export async function createInitialStaffingOnboardingDatabase(): Promise<PGlite>
     throw new Error("commercial initial-staffing migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -162,10 +169,7 @@ export async function createManagerInvitationsOnboardingDatabase(): Promise<PGli
     await db.close();
     throw new Error("commercial manager-invitations migration is missing");
   }
-  const sql = readFileSync(
-    resolve("supabase/migrations", migration),
-    "utf8",
-  ).replace(
+  const sql = readMigration(migration).replace(
     "create extension if not exists supabase_vault with schema vault;",
     "",
   );
@@ -183,7 +187,7 @@ export async function createStaffInvitationsOnboardingDatabase(): Promise<PGlite
     throw new Error("commercial staff-invitations migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
   return db;
 }
@@ -258,13 +262,13 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
     await db.close();
     throw new Error("commercial online-kiosk onboarding migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   const expiryMigration = readdirSync(resolve("supabase/migrations")).find(
     (name) => name.endsWith("_expire_stale_commercial_kiosk_registrations.sql"),
   );
   if (expiryMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", expiryMigration), "utf8"),
+      readMigration(expiryMigration),
     );
   }
   const emptyReadinessFix = readdirSync(resolve("supabase/migrations")).find(
@@ -272,7 +276,7 @@ export async function createKioskOnboardingDatabase(): Promise<PGlite> {
   );
   if (emptyReadinessFix) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", emptyReadinessFix), "utf8"),
+      readMigration(emptyReadinessFix),
     );
   }
   return db;
@@ -287,7 +291,7 @@ export async function createPilotReadinessKioskDatabase(): Promise<PGlite> {
     await db.close();
     throw new Error("pilot readiness finalisation migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   return db;
 }
 
@@ -300,7 +304,7 @@ export async function createReadinessOnboardingDatabase(): Promise<PGlite> {
     await db.close();
     throw new Error("commercial readiness and Go Live migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   return db;
 }
 
@@ -314,13 +318,13 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
     await db.close();
     throw new Error("commercial billing-lifecycle migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   const hardeningMigration = migrationNames.find((name) =>
     name.endsWith("_harden_commercial_billing_snapshot.sql"),
   );
   if (hardeningMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", hardeningMigration), "utf8"),
+      readMigration(hardeningMigration),
     );
   }
   const paidConversionMigration = migrationNames.find((name) =>
@@ -328,7 +332,7 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
   );
   if (paidConversionMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", paidConversionMigration), "utf8"),
+      readMigration(paidConversionMigration),
     );
   }
   const stagingGrantHardeningMigration = migrationNames.find((name) =>
@@ -336,7 +340,7 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
   );
   if (stagingGrantHardeningMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", stagingGrantHardeningMigration), "utf8"),
+      readMigration(stagingGrantHardeningMigration),
     );
   }
   const guardedRlsHelperMigration = migrationNames.find((name) =>
@@ -344,7 +348,7 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
   );
   if (guardedRlsHelperMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", guardedRlsHelperMigration), "utf8"),
+      readMigration(guardedRlsHelperMigration),
     );
   }
   const kioskOperationalStateMigration = migrationNames.find((name) =>
@@ -352,7 +356,7 @@ export async function createBillingLifecycleDatabase(): Promise<PGlite> {
   );
   if (kioskOperationalStateMigration) {
     await db.exec(
-      readFileSync(resolve("supabase/migrations", kioskOperationalStateMigration), "utf8"),
+      readMigration(kioskOperationalStateMigration),
     );
   }
   return db;
@@ -383,7 +387,7 @@ export async function createPilotReadinessBillingDatabase(): Promise<PGlite> {
     await db.close();
     throw new Error("pilot readiness finalisation migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   return db;
 }
 
@@ -419,7 +423,7 @@ export async function createCommercialAdminDatabaseBeforePilot(): Promise<PGlite
       await db.close();
       throw new Error(`commercial migration is missing: ${suffix}`);
     }
-    await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+    await db.exec(readMigration(migration));
   }
   return db;
 }
@@ -433,7 +437,7 @@ export async function createPilotReadinessCommercialDatabase(): Promise<PGlite> 
     await db.close();
     throw new Error("pilot readiness finalisation migration is missing");
   }
-  await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  await db.exec(readMigration(migration));
   return db;
 }
 
@@ -454,7 +458,7 @@ export async function applyOnboardingServiceMigration(
     throw new Error("onboarding application service migration is missing");
   }
   await db.exec(
-    readFileSync(resolve("supabase/migrations", migration), "utf8"),
+    readMigration(migration),
   );
 }
 
