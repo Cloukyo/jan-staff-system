@@ -1,5 +1,5 @@
 import { differenceInMinutes, parseISO } from "date-fns";
-import type { AttendanceAdjustment, AttendanceApproval, AttendanceDay, ClockEvent, NurserySettings, RotaShift } from "@/types";
+import type { AttendanceAdjustment, AttendanceApproval, AttendanceDay, ClockEvent, PlatformSettings, RotaShift } from "@/types";
 import { shiftPayableStatusMinutes, shiftScheduledMinutes } from "@/lib/calculations/rota";
 import { toDateTime } from "@/lib/dates/format";
 
@@ -12,7 +12,7 @@ export function calculateAttendanceDay(
   shift: RotaShift | undefined,
   adjustment: AttendanceAdjustment | undefined,
   approval: AttendanceApproval | undefined,
-  settings: NurserySettings,
+  settings: PlatformSettings,
 ): AttendanceDay {
   const ordered = events
     .filter((event) => event.staffId === staffId && event.timestamp.slice(0, 10) === date)

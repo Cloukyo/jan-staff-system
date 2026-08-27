@@ -17,7 +17,7 @@ import { ClockPlus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
 import { parseAttendancePageSearchParams } from "@/lib/attendance/manager-view";
 import { saveBoundClockEventCorrectionAction } from "@/lib/attendance/correction-actions";
-import { requireAccount } from "@/lib/auth/permissions";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 import { isoDateInLondon } from "@/lib/dates/format";
 import { loadManagerAttendance } from "@/lib/kiosk/server";
 import { loadAttendanceReviewDay } from "@/lib/attendance/review-server";
@@ -37,7 +37,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AttendancePage({ searchParams }: { searchParams: Promise<Record<string, unknown>> }) {
   if (getAppMode() === "demo") return <AttendanceScreen />;
-  await requireAccount(["manager"]);
+  await requireAttendanceActor("attendance.read", { siteRequired: true });
   const rawParams = await searchParams;
   const { view, date, day, staffId, staffIdProvided, hoursFrom, hoursTo } = parseAttendancePageSearchParams(rawParams);
   const exceptionFilters = normaliseAttendanceExceptionFilters(Object.fromEntries(

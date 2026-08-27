@@ -5,9 +5,9 @@ import { validatePrivatePassword } from "@/lib/auth/password-validation";
 
 describe("forced password change", () => {
   it("requires a strong private password", () => {
-    expect(validatePrivatePassword("short", "nazmon@example.com")).toBeTruthy();
-    expect(validatePrivatePassword("NazmonSecure1!", "nazmon@example.com")).toMatch(/email/i);
-    expect(validatePrivatePassword("Private-Access-4827", "nazmon@example.com")).toBeNull();
+    expect(validatePrivatePassword("short", "demo.i@example.com")).toBeTruthy();
+    expect(validatePrivatePassword("Demo.iSecure1!", "demo.i@example.com")).toMatch(/email/i);
+    expect(validatePrivatePassword("Private-Access-4827", "demo.i@example.com")).toBeNull();
   });
 
   it("redirects required accounts before manager screens", () => {

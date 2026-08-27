@@ -1,4 +1,5 @@
-import { requireAccount } from "@/lib/auth/permissions";
+import { addDays } from "date-fns";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import {
   resolveEffectiveEvents,
@@ -14,8 +15,9 @@ import {
   type AttendanceWarning,
 } from "@/lib/attendance/sequence";
 import { ATTENDANCE_RANGE_MAX_DAYS } from "@/lib/attendance/date-range";
-import { isoDateInLondon } from "@/lib/dates/format";
+import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
 import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
+import { loadCommercialPlannedShifts } from "@/lib/rota/tenant-service";
 
 export const STAFF_HOURS_MAX_RANGE_DAYS = ATTENDANCE_RANGE_MAX_DAYS;
 export { loadAllPostgrestPages as loadAllPages };
@@ -482,23 +484,22 @@ async function loadStaffHoursRange(
   toValue?: string,
   staffId?: string,
 ): Promise<StaffHoursRange> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.read", { siteRequired: true });
   const supabase = await createSupabaseServerClient();
   const today = isoDateInLondon();
-  const { data: weekRange, error: weekError } = await supabase.rpc("get_current_work_week_range", {
-    reference_date: today,
-  });
-  const weekRow = Array.isArray(weekRange) ? weekRange[0] : null;
-  if (weekError || !weekRow?.start_date || !weekRow?.end_date) {
-    throw new Error("Current work week range could not be loaded.");
+  let currentWeek: { start: string; end: string };
+  if (actor.kind === "commercial") {
+    const start = weekStart(today);
+    currentWeek = { start: isoDate(start), end: isoDate(addDays(start, 6)) };
+  } else {
+    const { data: weekRange, error: weekError } = await supabase.rpc("get_current_work_week_range", { reference_date: today });
+    const weekRow = Array.isArray(weekRange) ? weekRange[0] : null;
+    if (weekError || !weekRow?.start_date || !weekRow?.end_date) throw new Error("Current work week range could not be loaded.");
+    currentWeek = { start: String(weekRow.start_date), end: String(weekRow.end_date) };
   }
-  const currentWeek = {
-    start: String(weekRow.start_date),
-    end: String(weekRow.end_date),
-  };
   const range = normaliseStaffHoursRange(fromValue, toValue, currentWeek);
 
-  const [profiles, shifts, originals, corrections, reviews, totals] = await Promise.all([
+  const [profiles, shifts, originals, corrections, reviews, totals, assignments] = await Promise.all([
     loadAllPostgrestPages<StaffHoursProfileSourceRow>((from, to) => {
       let query = supabase.from("staff_profiles")
         .select("id,display_name,full_name")
@@ -507,9 +508,21 @@ async function loadStaffHoursRange(
         .order("id")
         .range(from, to);
       if (staffId) query = query.eq("id", staffId);
+      if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
       return query;
     }),
-    loadAllPostgrestPages<StaffHoursShiftSourceRow>((from, to) => {
+    actor.kind === "commercial" ? loadCommercialPlannedShifts(actor.context, {
+      from: range.from,
+      to: range.to,
+      staffId,
+    }).then((rows) => rows.map((row) => ({
+      id: row.shift_id,
+      staff_id: row.staff_id,
+      shift_date: row.shift_date,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      break_minutes: row.break_minutes,
+    }))) : loadAllPostgrestPages<StaffHoursShiftSourceRow>((from, to) => {
       let query = supabase.from("rota_shifts")
         .select("id,staff_id,shift_date,start_time,end_time,break_minutes,rota_weeks!inner(status)")
         .gte("shift_date", range.from)
@@ -533,6 +546,7 @@ async function loadStaffHoursRange(
         .order("id")
         .range(from, to);
       if (staffId) query = query.eq("staff_id", staffId);
+      if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!);
       return query;
     }),
     loadAllPostgrestPages<ClockCorrectionSourceRow>((from, to) => {
@@ -544,6 +558,7 @@ async function loadStaffHoursRange(
         .order("id")
         .range(from, to);
       if (staffId) query = query.eq("staff_id", staffId);
+      if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!);
       return query;
     }),
     loadAllPostgrestPages<StaffHoursReviewSourceRow>((from, to) => {
@@ -555,21 +570,29 @@ async function loadStaffHoursRange(
         .order("staff_id")
         .range(from, to);
       if (staffId) query = query.eq("staff_id", staffId);
+      if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!);
       return query;
     }),
-    loadAllPostgrestPages<StaffHoursTotalSourceRow>((from, to) => supabase.rpc(
+    actor.kind === "commercial" ? Promise.resolve([] as StaffHoursTotalSourceRow[]) : loadAllPostgrestPages<StaffHoursTotalSourceRow>((from, to) => supabase.rpc(
       "get_manager_hours_preview",
       {
         range_start: range.from,
         range_end: range.to,
       },
     ).order("staff_id").range(from, to)),
+    actor.kind === "commercial"
+      ? supabase.from("staff_site_assignments").select("staff_id")
+        .eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!)
+        .lte("effective_from", range.to).or(`effective_to.is.null,effective_to.gte.${range.from}`)
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  if (assignments.error) throw new Error("Staff site assignments could not be loaded.");
+  const eligibleStaffIds = assignments.data ? new Set(assignments.data.map((row) => row.staff_id)) : null;
   return buildStaffHoursRange({
     ...range,
     currentWeekStart: currentWeek.start,
     currentWeekEnd: currentWeek.end,
-    profiles,
+    profiles: profiles.filter((profile) => !eligibleStaffIds || eligibleStaffIds.has(profile.id)),
     shifts,
     originals,
     corrections,

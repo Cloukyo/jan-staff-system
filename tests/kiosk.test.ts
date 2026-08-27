@@ -16,16 +16,16 @@ describe("production kiosk separation", () => {
   it("maps only limited roster fields and never returns a PIN hash", () => {
     const roster = mapKioskRoster([{
       staff_id: "canonical-uuid",
-      display_name: "Areeg",
-      full_name: "Areeg Shahzadi",
+      display_name: "Demo B",
+      full_name: "Demo Person B",
       employment_role: "Nursery Practitioner",
       current_status: "clocked_out",
       pin_ready: true,
     }]);
     expect(roster[0]).toEqual({
       staffId: "canonical-uuid",
-      displayName: "Areeg",
-      fullName: "Areeg Shahzadi",
+      displayName: "Demo B",
+      fullName: "Demo Person B",
       employmentRole: "Nursery Practitioner",
       currentStatus: "clocked_out",
       pinReady: true,
@@ -110,17 +110,18 @@ describe("device-specific kiosk access", () => {
     expect(migration).toContain("revoke execute on function public.get_kiosk_roster() from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.verify_kiosk_pin(text, text) from anon, authenticated");
     expect(migration).toContain("revoke execute on function public.record_kiosk_clock_event(text, text, text, text) from anon, authenticated");
-    expect(kioskServer).toContain("get_device_kiosk_roster");
-    expect(kioskActions).toContain("perform_device_kiosk_attendance_action");
+    expect(kioskServer).toContain("get_tenant_aware_device_kiosk_roster");
+    expect(kioskActions).toContain("perform_tenant_aware_kiosk_attendance_action");
     expect(stateMigration).toContain("idempotency_key uuid primary key");
     expect(verificationMigration).toContain("'attendanceState', attendance_state");
     expect(verificationMigration).not.toMatch(/jsonb_build_object[\s\S]*pin_hash/i);
   });
 
   it("keeps the device token in an HttpOnly cookie and redirects manager routes", () => {
-    expect(KIOSK_DEVICE_COOKIE).toBe("jan_kiosk_device");
+    expect(KIOSK_DEVICE_COOKIE).toBe("workforce_clocking_device");
     const deviceSession = readFileSync(resolve("src/lib/kiosk/device-session.ts"), "utf8");
     expect(deviceSession).toContain("httpOnly: true");
+    expect(deviceSession).toContain("LEGACY_KIOSK_DEVICE_COOKIES");
     expect(deviceSession).not.toContain("localStorage");
     expect(middleware).toContain('url.pathname = "/clock"');
   });

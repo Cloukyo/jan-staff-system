@@ -1,7 +1,9 @@
 import { Download } from "lucide-react";
 import { Field, inputClassName } from "@/components/ui/primitives";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 
 export function RotaExportControls({ weekStart }: { weekStart: string }) {
+  const profile = getActiveIndustryProfile();
   return (
     <details className="relative">
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900 hover:bg-purple-50">
@@ -18,7 +20,7 @@ export function RotaExportControls({ weekStart }: { weekStart: string }) {
         <div className="grid grid-cols-2 gap-2 text-sm font-semibold text-purple-950">
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="breaks" value="1" /> Breaks</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="weekends" value="1" /> Weekends</label>
-          <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="rooms" value="1" /> Rooms</label>
+          <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="workAreas" value="1" /> {profile.workAreaPlural}</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="roles" value="1" /> Roles</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="warnings" value="1" defaultChecked /> Warnings</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" name="archived" value="1" /> Cancelled or archived</label>

@@ -1,15 +1,17 @@
-# Jan Staff
+# Workforce Operations Platform
 
-Rota, Attendance and Pay Preparation for Jan Pre-School and Nursery.
+An industry-configurable rota, attendance and pay-preparation platform.
 
-This is a local prototype with a Supabase production path. It replaces the paper weekly rota and sign-in sheet with a manager-controlled rota, shared staff clocking kiosk, attendance review, leave requests, pay-preparation estimates and CSV exports.
+This commercial branch is derived from the Jan staff system but uses neutral core concepts. It supports a manager-controlled rota, shared staff clocking kiosk, attendance review, leave requests, pay-preparation estimates and exports. Jan production remains separate and unchanged.
 
 It is not a payroll system. It does not calculate PAYE, National Insurance, pensions, statutory pay, deductions, payslips or HMRC submissions.
 
 ## Local Setup
 
+Use Node.js 24 and npm 11. The committed lockfile is authoritative.
+
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
 npm run dev
 ```
@@ -41,7 +43,7 @@ Demo mode uses seeded fictional staff, rota, attendance, leave and pay-preparati
 
 Production mode does not mount the browser demo store. Demo records are kept under `src/lib/demo-data` and `src/lib/repositories`, and production routes must load from Supabase or fail clearly rather than falling back to demo records.
 
-Current local data schema version: `5`.
+Current local data schema version: `6`.
 
 Version 3 migrated earlier demo records by:
 
@@ -54,29 +56,49 @@ Version 4 adds approval audit metadata and development date/scenario settings. I
 
 Version 5 adds linked staff-account demo records and leave-request demo records. It does not alter original clock events or manager attendance corrections.
 
+Version 6 introduces neutral organisation, site and work-area presentation fields. It migrates legacy browser keys and display values without removing the old evidence, clock events or manager corrections.
+
+## Industry profiles and branding
+
+The core application uses neutral organisation, site, staff, work-area and compliance concepts. `NEXT_PUBLIC_INDUSTRY_PROFILE` selects `nursery`, `care_home`, `tuition_centre` or `clinic` presentation. Profiles supply role examples, work-area labels, demo content, help context and the default compliance pack. Nursery remains the compatibility default for inherited data.
+
+Branding is supplied through the `NEXT_PUBLIC_PRODUCT_*`, `NEXT_PUBLIC_ORGANISATION_DISPLAY_NAME` and `NEXT_PUBLIC_SITE_DISPLAY_NAME` variables documented in `.env.example`. The defaults are placeholders and are not a final commercial product name.
+
+Legacy database columns and browser identifiers remain readable while neutral names are used for new writes. See `docs/commercial/platform-neutrality.md` for the compatibility boundary and deferred industry-pack work.
+
+The commercial customer domain now supports organisation-owned staff, effective-dated multi-site assignments, modular compliance, inherited organisation/site settings, site work areas and closures, and previewable atomic staff imports. Existing Jan rows remain unowned compatibility data. See `docs/commercial/customer-domain-conversion.md`.
+
+Commercial attendance now records mandatory organisation and occurrence-site ownership, derives kiosk context from the registered device, and exposes tenant-aware state, correction, exception and effective-ledger RPCs. Jan attendance remains on an explicit unowned compatibility path and payroll is unchanged. See `docs/commercial/attendance-tenancy.md`.
+
 ## Authentication and Database
 
 Production authentication uses Supabase Auth with email and password. Passwords are stored and reset by Supabase, not by this application. App-specific account links are stored in `public.staff_accounts`, which connects a Supabase Auth user to an existing staff record, role and active/inactive status.
 
 Production leave requests use Supabase Postgres table `public.leave_requests`. The migration in `supabase/migrations/202606100001_auth_leave_requests.sql` creates constrained enums, audit fields, duplicate-account protections, row-level security policies and manager/staff access rules.
 
-Required environment variables:
+Production-style environments require explicit environment identity and database separation:
 
 ```bash
+APP_ENV=preview|staging|production
 APP_MODE=production
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_SITE_URL=https://the-environment-host.example
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+SUPABASE_PROJECT_REF=your-project
+PRODUCTION_SUPABASE_PROJECT_REF=the-commercial-production-project
+PRODUCTION_SITE_HOST=the-commercial-production-host.example
 ```
 
-No real secrets should be committed. `.env.example` contains placeholder names only.
+The application rejects preview or staging configuration that uses the declared production site or Supabase project. Production must match both declared production values. A deployment SHA must be available from Vercel, GitHub Actions or `DEPLOYMENT_SHA`.
+
+No real secrets should be committed. `.env.example` contains safe local defaults and empty placeholders only.
 
 ### Compliance data mode
 
 - `APP_MODE=demo`: compliance pages use clearly labelled, non-sensitive browser-only demo records.
 - `APP_MODE=production`: compliance pages read exclusively from Supabase through the authenticated manager session.
 
-In a production Next.js build, the default mode is `production`. In development, the default mode is `demo`. Set `APP_MODE` explicitly in Vercel. Missing Supabase configuration or a failed Supabase query displays an error and never falls back to demo staff data.
+The safe default is always `demo`. Every production-style environment must set `APP_MODE=production` explicitly. Missing or inconsistent production configuration fails startup and never falls back to demo staff data.
 
 ## Supabase Setup
 
@@ -97,6 +119,10 @@ Or paste `supabase/migrations/202606100001_auth_leave_requests.sql` into the Sup
 Managers create further staff account links from `/accounts`, then invite the matching email in Supabase Auth and update `auth_user_id` on the account link. Disabled accounts are blocked by server login checks and RLS policies.
 
 ## Vercel Deployment
+
+Commercial preview, staging and production must use a separate commercial Vercel project and separate Supabase projects. Do not configure the commercial workflows with Jan production credentials. See `docs/commercial/environments-and-releases.md` for environment variables, protected environments, staging promotion, release and rollback.
+
+Commercial billing uses server-only Stripe configuration. Preview and staging accept test credentials only; the Workstream 9 implementation deliberately refuses live billing. See `docs/commercial/billing-lifecycle.md` for required variables, webhook events and the safe test lifecycle.
 
 1. Push the repository to GitHub.
 2. Import the project into Vercel.
@@ -223,7 +249,7 @@ Staff can submit leave requests with a leave type, date range, full or partial d
 
 Approved leave appears as a rota conflict warning. Pending leave appears as a softer rota warning. Rejected and cancelled leave do not block rota assignment. Existing shifts are never silently removed when leave is approved.
 
-Working-day calculation currently excludes Saturdays and Sundays. Nursery closure dates are not stored yet; the leave calculation accepts a closure-date list so that a future closure calendar can be added without rewriting the workflow.
+Working-day calculation currently excludes Saturdays and Sundays. Commercial site closure dates are stored for future site-aware leave impact, but the existing leave workflow is not tenant-converted and continues to accept its compatibility closure-date list.
 
 ## Production and Demo Separation
 
@@ -249,11 +275,20 @@ The prototype PIN service is deliberately isolated in `src/lib/pin/service.ts` a
 
 Production readiness checks:
 
+- Keep browser security headers and CSP checks passing.
+- Keep `APP_ENV`, site host and Supabase project-reference validation enabled.
 - Keep Supabase migrations applied in order.
 - Keep Row Level Security enabled on exposed production tables.
 - Keep service role keys server-only.
 - Preserve original clock events and store manager corrections separately.
 - Review backups, monitoring and operational access before each production rollout.
+
+Operational endpoints:
+
+- `/api/health/live`: process liveness, application version and deployment SHA.
+- `/api/health/ready`: configuration and Supabase Auth readiness.
+
+Responses carry `x-request-id` for correlation. New server logging should use the structured logging and error-monitoring hooks under `src/lib/observability`.
 
 Never store production PINs in plain text.
 
@@ -267,7 +302,7 @@ The result is rounded to the nearest penny using `Math.round`.
 
 ## Brand Asset
 
-The prototype uses the public nursery flower/header image copied into `public/brand/jan-logo.png` as visual brand inspiration. If a final production asset is supplied, replace that file and keep the same dimensions or update `src/components/ui/brand.tsx`.
+Branding is configuration-driven. Set an application-relative `NEXT_PUBLIC_PRODUCT_LOGO_PATH` to use a supplied logo; otherwise the neutral placeholder mark is shown. The inherited Jan image remains in `public/brand` as an unreferenced compatibility asset.
 
 ## Project Commands
 
@@ -276,6 +311,8 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run audit:dependencies
+npm run verify:migrations
 ```
 
 ## Deliberate Limitations
@@ -284,19 +321,16 @@ npm run build
 - No child records or staff-to-child ratio calculations.
 - No email, SMS, biometrics, GPS or external integrations.
 
-## XLSX Dependency Risk
+## Spreadsheet dependency safety
 
-The prototype uses `xlsx` for browser-only workbook export.
+The unpatched `xlsx` package has been removed. Workbook export and the constrained manager workbook reader use the existing ExcelJS implementation. Uploaded workbooks remain limited to 5 MB, and the first worksheet is limited to 2,000 rows and 200 columns before application processing.
 
-- Package: `xlsx`
-- Installed version: `0.18.5`
-- Audit severity: high
-- Advisory summary: prototype pollution and ReDoS advisories in SheetJS versions published to npm
-- Fixed npm version: none available in the npm advisory data
-- Current use: generating local workbooks from trusted in-app demo data, not parsing uploaded spreadsheets
-- Browser impact: lower than server-side untrusted parsing, but still a production-readiness concern
-- Alternative: evaluate maintained spreadsheet writers such as ExcelJS before production
+Run `npm run audit:dependencies` before every release. High or critical advisories fail the commercial security workflow.
 
-Recommendation: keep `xlsx` for this local prototype, do not accept untrusted spreadsheet input, and replace or re-evaluate before production.
+## Commercial foundation operations
 
-`npm audit` also reports a moderate PostCSS advisory through `next@16.2.7` using `postcss@8.4.31`. npm suggests `npm audit fix --force`, but that would install `next@9.3.3`, a breaking downgrade. Recommendation: do not force that change in this prototype; upgrade Next normally when a compatible patched release is available.
+- Environment and release runbook: `docs/commercial/environments-and-releases.md`
+- Repository protection recommendations: `docs/commercial/repository-protection.md`
+- CI workflows: `.github/workflows/ci.yml`
+- Security workflows: `.github/workflows/security.yml` and `.github/workflows/codeql.yml`
+- CODEOWNERS: `.github/CODEOWNERS`

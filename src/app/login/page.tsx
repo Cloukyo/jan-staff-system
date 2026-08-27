@@ -1,4 +1,5 @@
 import { LoginScreen } from "@/components/app/login-screen";
+import { safeCommercialContinuation } from "@/lib/invitations/continuation";
 
 export default async function LoginPage({
   searchParams,
@@ -11,5 +12,6 @@ export default async function LoginPage({
     : params["reset-error"] === "invalid"
       ? "That password-reset link is invalid or has expired. Request a new email below."
       : undefined;
-  return <LoginScreen notice={notice} />;
+  const requestedNext = typeof params.next === "string" ? params.next : undefined;
+  return <LoginScreen notice={notice} nextPath={safeCommercialContinuation(requestedNext) ?? undefined} />;
 }

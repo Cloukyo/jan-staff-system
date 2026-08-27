@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
-export const KIOSK_DEVICE_COOKIE = "jan_kiosk_device";
+export const KIOSK_DEVICE_COOKIE = browserIdentifiers.deviceCookie.current;
+export const LEGACY_KIOSK_DEVICE_COOKIES = browserIdentifiers.deviceCookie.legacy;
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 
 export function createKioskDeviceToken() {
@@ -14,7 +16,10 @@ export function createKioskDeviceToken() {
 }
 
 export async function getKioskDeviceToken(): Promise<string | null> {
-  return (await cookies()).get(KIOSK_DEVICE_COOKIE)?.value ?? null;
+  const store = await cookies();
+  return store.get(KIOSK_DEVICE_COOKIE)?.value
+    ?? LEGACY_KIOSK_DEVICE_COOKIES.map((name) => store.get(name)?.value).find(Boolean)
+    ?? null;
 }
 
 export async function setKioskDeviceCookie(token: string, expires: Date) {
@@ -28,7 +33,8 @@ export async function setKioskDeviceCookie(token: string, expires: Date) {
 }
 
 export async function clearKioskDeviceCookie() {
-  (await cookies()).set(KIOSK_DEVICE_COOKIE, "", {
+  const store = await cookies();
+  for (const name of [KIOSK_DEVICE_COOKIE, ...LEGACY_KIOSK_DEVICE_COOKIES]) store.set(name, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",

@@ -228,7 +228,7 @@ describe("manager attendance views", () => {
   });
 
   it("gives the manager shell an explicit vertical scroll owner", () => {
-    const globalStyles = readFileSync(resolve("src/app/globals.css"), "utf8");
+    const globalStyles = readFileSync(resolve("src/app/platform.css"), "utf8");
     const appShell = readFileSync(
       resolve("src/components/layout/app-shell.tsx"),
       "utf8",
@@ -277,7 +277,7 @@ describe("manager attendance views", () => {
     const groups = buildAttendanceTodayGroups(
       [
         rosterRow("staff-1", "Aisha", "clocked_in"),
-        rosterRow("staff-2", "Rehana", "clocked_out"),
+        rosterRow("staff-2", "Demo L", "clocked_out"),
         rosterRow("staff-3", "Mina", "clocked_out"),
       ],
       [
@@ -288,7 +288,7 @@ describe("manager attendance views", () => {
         }),
         reviewRow({
           staffId: "staff-2",
-          fullName: "Rehana Ali",
+          fullName: "Demo Person L",
           scheduledStart: "09:00",
           scheduledEnd: "17:00",
         }),
@@ -435,7 +435,7 @@ describe("manager attendance views", () => {
 
     const staff = [
       rosterRow("staff-1", "Aisha Khan", "clocked_out"),
-      rosterRow("staff-2", "Rehana Ali", "clocked_out"),
+      rosterRow("staff-2", "Demo Person L", "clocked_out"),
     ];
     const events = [
       clockEvent(0),
@@ -468,7 +468,7 @@ describe("manager attendance views", () => {
       } as unknown as ManagerClockEvent,
     ];
 
-    for (const query of ["Rehana", "clock out", "forgot", "27/07/2026"]) {
+    for (const query of ["Demo Person L", "clock out", "forgot", "27/07/2026"]) {
       expect(
         filterAndPaginateAttendanceHistory(staff, events, query, 1).events.map(
           (event) => event.id,

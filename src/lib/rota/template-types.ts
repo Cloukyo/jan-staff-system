@@ -22,6 +22,8 @@ export type RotaTemplateShift = {
   startTime: string;
   endTime: string;
   breakMinutes: number | null;
+  workArea?: string | null;
+  /** @deprecated Use workArea. */
   roomOrArea: string | null;
   roleOnShift: string | null;
   notes: string | null;

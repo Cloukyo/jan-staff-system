@@ -5,8 +5,9 @@ import { getAppMode } from "@/lib/app-mode";
 import { complianceRepositorySource } from "@/lib/compliance/repository";
 
 describe("compliance repository selection", () => {
-  it("selects demo only when demo mode is explicit or development default", () => {
+  it("uses the safe demo default until production mode is explicit", () => {
     expect(getAppMode({ NODE_ENV: "development" } as NodeJS.ProcessEnv)).toBe("demo");
+    expect(getAppMode({ NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe("demo");
     expect(getAppMode({ APP_MODE: "demo", NODE_ENV: "production" } as NodeJS.ProcessEnv)).toBe("demo");
     expect(complianceRepositorySource("demo", false)).toBe("demo");
   });

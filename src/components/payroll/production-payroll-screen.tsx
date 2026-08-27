@@ -1,13 +1,323 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import type { PayrollPreparationRow } from "@/lib/payroll/types";
 import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { formatHours, formatMoney } from "@/lib/dates/format";
 import type { PayrollExportHoursMode } from "@/lib/exports/payroll-options";
 import type { OfflinePayrollReadiness } from "@/lib/payroll/offline-readiness";
+import type { CommercialPayrollSnapshot } from "@/lib/payroll/tenant-types";
+import {
+  summariseCommercialPayrollReporting,
+  type CommercialPayrollReportingState,
+} from "@/lib/payroll/reporting";
+import {
+  acknowledgeBoundCommercialPayrollWarningsAction,
+  approveBoundCommercialPayrollPreparationAction,
+  createBoundCommercialPayrollAdjustmentAction,
+  createBoundCommercialPayrollPeriodAction,
+  persistBoundCommercialPayrollPreparationAction,
+  replaceBoundCommercialPayrollAdjustmentAction,
+  reopenBoundCommercialPayrollPreparationAction,
+  resolveBoundCommercialPayrollAdjustmentAction,
+} from "@/lib/payroll/tenant-actions";
+import type { CommercialPayrollActionState } from "@/lib/payroll/tenant-actions";
+
+const initialCommercialActionState: CommercialPayrollActionState = {
+  ok: false,
+  code: "",
+  message: "",
+};
+
+function CommercialPayrollActionForm({
+  action,
+  operationId,
+  submitLabel,
+  children,
+}: {
+  action: (state: CommercialPayrollActionState, formData: FormData) => Promise<CommercialPayrollActionState>;
+  operationId: string;
+  submitLabel: string;
+  children?: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState(action, initialCommercialActionState);
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+  return (
+    <form action={formAction} data-operation-id={operationId}>
+      {children}
+      {state.message ? <p className={`mt-3 text-sm font-bold ${state.ok ? "text-green-700" : "text-red-700"}`}>{state.message}</p> : null}
+      <Button className="mt-3" type="submit" disabled={pending}>{pending ? "Saving..." : submitLabel}</Button>
+    </form>
+  );
+}
+
+function derivePayrollOperationId(base: string, discriminator: string): string {
+  let hash = 2_166_136_261;
+  for (const character of discriminator) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `${base.slice(0, -8)}${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export function CommercialPayrollReportingScreen({
+  organisationDisplayName,
+  siteId,
+  snapshot,
+  reporting,
+  canPrepare,
+  canExport,
+  operationIds,
+}: {
+  organisationDisplayName: string;
+  siteId: string | null;
+  snapshot: CommercialPayrollSnapshot;
+  reporting: CommercialPayrollReportingState;
+  canPrepare: boolean;
+  canExport: boolean;
+  operationIds: {
+    create: string;
+    prepare: string;
+    acknowledge: string;
+    approve: string;
+    adjustment: string;
+    reopen: string;
+    resolveAdjustment: string;
+  };
+}) {
+  const summary = summariseCommercialPayrollReporting(reporting);
+  const exportScopeMatches = reporting.run?.siteFilterId === siteId;
+  const exportParams = reporting.period
+    && reporting.approval?.status === "approved"
+    && reporting.isFresh
+    && exportScopeMatches
+    ? new URLSearchParams({
+      from: snapshot.periodStart,
+      to: snapshot.periodEnd,
+      period: reporting.period.id,
+      approval: reporting.approval.id,
+      revision: String(reporting.period.revision),
+      ...(siteId ? { site: siteId } : {}),
+    })
+    : null;
+  const reportingScopeLabel = reporting.run
+    ? reporting.run.siteFilterDisplayName
+      ? `Stored run site: ${reporting.run.siteFilterDisplayName}`
+      : "Stored run scope: all authorised sites"
+    : reporting.selectedSiteDisplayName
+      ? `Selected site: ${reporting.selectedSiteDisplayName}`
+      : "Selected scope: all authorised sites";
+  const createAction = createBoundCommercialPayrollPeriodAction.bind(null, {
+    periodStart: snapshot.periodStart,
+    periodEnd: snapshot.periodEnd,
+    operationId: operationIds.create,
+  });
+  const prepareAction = reporting.period
+    ? persistBoundCommercialPayrollPreparationAction.bind(null, {
+      periodId: reporting.period.id,
+      expectedRevision: reporting.period.revision,
+      operationId: operationIds.prepare,
+      snapshot,
+    })
+    : null;
+  const approveAction = reporting.period && reporting.run
+    ? approveBoundCommercialPayrollPreparationAction.bind(null, {
+      periodId: reporting.period.id,
+      expectedRevision: reporting.period.revision,
+      operationId: operationIds.approve,
+    })
+    : null;
+  const acknowledgeAction = reporting.period && reporting.run
+    ? acknowledgeBoundCommercialPayrollWarningsAction.bind(null, {
+      periodId: reporting.period.id,
+      expectedRevision: reporting.period.revision,
+      operationId: operationIds.acknowledge,
+    })
+    : null;
+  const reopenAction = reporting.period && reporting.approval
+    ? reopenBoundCommercialPayrollPreparationAction.bind(null, {
+      periodId: reporting.period.id,
+      expectedRevision: reporting.period.revision,
+      operationId: operationIds.reopen,
+    })
+    : null;
+
+  return (
+    <div className="grid gap-5">
+      <Panel>
+        <p className="text-sm font-bold text-slate-500">Organisation</p>
+        <h2 className="text-xl font-black text-purple-950">{organisationDisplayName}</h2>
+        <p className="mt-1 text-sm text-slate-600">{reportingScopeLabel}</p>
+        <p className="mt-1 text-sm font-bold text-purple-800">{summary.sourceLabel}</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-purple-100 p-3"><p className="text-xs font-bold text-slate-500">{summary.totalLabel}</p><p className="mt-1 text-xl font-black">{formatHours(summary.totalMinutes)}</p></div>
+          <div className="rounded-lg border border-purple-100 p-3"><p className="text-xs font-bold text-slate-500">Adjustment total</p><p className="mt-1 text-xl font-black">{formatHours(summary.adjustmentMinutes)}</p></div>
+          <div className="rounded-lg border border-purple-100 p-3"><p className="text-xs font-bold text-slate-500">Staff</p><p className="mt-1 text-xl font-black">{summary.staffRows.length}</p></div>
+          <div className="rounded-lg border border-purple-100 p-3"><p className="text-xs font-bold text-slate-500">Pay categories</p><p className="mt-1 text-sm font-black">{Object.entries(summary.categoryCounts).map(([key, count]) => `${key}: ${count}`).join(" | ") || "None stored"}</p></div>
+        </div>
+        {summary.siteTotals.length ? (
+          <div className="mt-4 rounded-lg border border-purple-100 p-3">
+            <p className="text-xs font-bold text-slate-500">Site-attributed payable time</p>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold">
+              {summary.siteTotals.map((row) => <span key={row.siteId ?? "unattributed"}>{row.siteDisplayName}: {formatHours(row.payableMinutes)}</span>)}
+            </div>
+          </div>
+        ) : <p className="mt-4 text-sm text-slate-600">Save a preparation revision to create stored reporting totals.</p>}
+      </Panel>
+
+      <Panel>
+        <h2 className="font-black text-purple-950">Preparation and approval</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Period status: {reporting.period?.status ?? "not created"} | Run status: {reporting.run?.status ?? "not prepared"} | Revision: {reporting.period?.revision ?? "not assigned"} | Approval: {reporting.approval?.status ?? "not approved"}
+        </p>
+        <p className="mt-2 text-sm text-slate-600">
+          Stored readiness: {summary.blockerCount} blocker(s), {summary.warningCount} warning(s), {summary.informationalCount} information item(s).
+        </p>
+        {canPrepare && !reporting.period ? <CommercialPayrollActionForm action={createAction} operationId={operationIds.create} submitLabel="Create payroll period" /> : null}
+        {reporting.run && !reporting.isFresh ? (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <p className="font-bold text-amber-950">Payroll inputs changed after this revision was saved.</p>
+            <p className="mt-1 text-sm text-amber-900">Recalculate before approving or exporting this preparation.</p>
+          </div>
+        ) : null}
+        {canPrepare && reporting.period?.status === "open" && (!reporting.run || !reporting.isFresh) && prepareAction ? (
+          <CommercialPayrollActionForm
+            action={prepareAction}
+            operationId={operationIds.prepare}
+            submitLabel={reporting.run ? "Recalculate preparation" : "Save preparation revision"}
+          />
+        ) : null}
+        {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run && reporting.run.warningCount > 0
+          && !reporting.run.warningsAcknowledged && acknowledgeAction ? (
+          <CommercialPayrollActionForm action={acknowledgeAction} operationId={operationIds.acknowledge} submitLabel="Acknowledge warnings">
+            {(reporting.run.warningCodes ?? []).map((code) => <input key={code} type="hidden" name="warningCode" value={code} />)}
+            <Field label="Acknowledgement note">
+              <textarea className={inputClassName("min-h-24")} name="note" minLength={5} maxLength={2000} required />
+            </Field>
+          </CommercialPayrollActionForm>
+        ) : null}
+        {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run?.status === "ready"
+          && (reporting.run.warningCount === 0 || reporting.run.warningsAcknowledged)
+          && !reporting.approval && approveAction
+          ? <CommercialPayrollActionForm action={approveAction} operationId={operationIds.approve} submitLabel="Approve exact revision" /> : null}
+        {canPrepare && reporting.period?.status === "closed" && reporting.approval?.status === "approved" && reopenAction ? (
+          <CommercialPayrollActionForm action={reopenAction} operationId={operationIds.reopen} submitLabel="Reopen approved revision">
+            <Field label="Reopen reason">
+              <textarea className={inputClassName("min-h-24")} name="reason" minLength={5} maxLength={2000} required />
+            </Field>
+          </CommercialPayrollActionForm>
+        ) : null}
+        {canExport && exportParams ? (
+          <div className="mt-4">
+            <a className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href={`/payroll/export?${exportParams.toString()}`}>
+              <FileSpreadsheet className="h-4 w-4" /> Export approved revision
+            </a>
+            <p className="mt-2 text-sm font-bold text-purple-800">Planned rota hours are included in the export.</p>
+          </div>
+        ) : null}
+        {canExport && reporting.approval?.status === "approved" && !exportScopeMatches ? (
+          <p className="mt-3 text-sm font-bold text-amber-800">Select the stored run site scope before exporting.</p>
+        ) : null}
+        {reporting.lastExport ? <p className="mt-3 text-xs text-slate-500">Last export: {reporting.lastExport.fileName} from revision {reporting.lastExport.revision}</p> : null}
+      </Panel>
+
+      {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run ? (
+        <Panel>
+          <h2 className="font-black text-purple-950">Manager adjustments</h2>
+          <p className="mt-2 text-sm text-slate-600">Use signed minutes. Positive values add payable time and negative values remove it. Attendance evidence is unchanged.</p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {reporting.adjustmentTargets.map((adjustmentTarget) => {
+              const operationId = derivePayrollOperationId(
+                operationIds.adjustment,
+                `create:${adjustmentTarget.key}`,
+              );
+              const action = createBoundCommercialPayrollAdjustmentAction.bind(null, {
+                periodId: reporting.period!.id,
+                expectedRevision: reporting.period!.revision,
+                operationId,
+                target: adjustmentTarget.target,
+              });
+              return (
+                <div key={adjustmentTarget.key} className="rounded-xl border border-purple-100 p-4">
+                  <p className="font-bold text-purple-950">{adjustmentTarget.label}</p>
+                  <CommercialPayrollActionForm action={action} operationId={operationId} submitLabel="Add signed adjustment">
+                    <input type="hidden" name="targetKind" value={adjustmentTarget.target.kind} />
+                    <input type="hidden" name="targetStaffId" value={adjustmentTarget.target.staffId} />
+                    {adjustmentTarget.target.siteId !== null ? <input type="hidden" name="targetSiteId" value={adjustmentTarget.target.siteId} /> : null}
+                    {adjustmentTarget.target.kind === "attendance" ? <input type="hidden" name="targetOperationalDate" value={adjustmentTarget.target.operationalDate} /> : null}
+                    <Field label="Signed minutes">
+                      <input className={inputClassName()} name="adjustmentMinutes" type="number" min={-10080} max={10080} step={1} required />
+                    </Field>
+                    <Field label="Adjustment reason">
+                      <textarea className={inputClassName("min-h-24")} name="reason" minLength={5} maxLength={2000} required />
+                    </Field>
+                  </CommercialPayrollActionForm>
+                </div>
+              );
+            })}
+          </div>
+          {(reporting.adjustments ?? []).map((adjustment) => (
+            <div key={adjustment.id} className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-bold text-amber-950">Active adjustment: {adjustment.adjustmentMinutes > 0 ? "+" : ""}{adjustment.adjustmentMinutes} minutes</p>
+              <p className="mt-1 text-sm text-amber-900">{adjustment.reason}</p>
+              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                {(["replace", "void", "reverse"] as const).map((resolution) => {
+                  const operationId = derivePayrollOperationId(
+                    operationIds.resolveAdjustment,
+                    `${resolution}:${adjustment.id}`,
+                  );
+                  if (resolution === "replace") {
+                    const action = replaceBoundCommercialPayrollAdjustmentAction.bind(null, {
+                      periodId: reporting.period!.id,
+                      expectedRevision: reporting.period!.revision,
+                      operationId,
+                      adjustmentId: adjustment.id,
+                    });
+                    return <CommercialPayrollActionForm key={resolution} action={action} operationId={operationId} submitLabel="Replace adjustment">
+                      <Field label="Replacement signed minutes">
+                        <input className={inputClassName()} name="adjustmentMinutes" type="number" min={-10080} max={10080} step={1} required />
+                      </Field>
+                      <Field label="Replacement reason">
+                        <textarea className={inputClassName("min-h-20")} name="reason" minLength={5} maxLength={2000} required />
+                      </Field>
+                    </CommercialPayrollActionForm>;
+                  }
+                  const action = resolveBoundCommercialPayrollAdjustmentAction.bind(null, {
+                    periodId: reporting.period!.id,
+                    expectedRevision: reporting.period!.revision,
+                    operationId,
+                    adjustmentId: adjustment.id,
+                    resolution,
+                  });
+                  return <CommercialPayrollActionForm key={resolution} action={action} operationId={operationId} submitLabel={resolution === "void" ? "Void adjustment" : "Reverse adjustment"}>
+                    <Field label={resolution === "void" ? "Void reason" : "Reverse reason"}>
+                      <textarea className={inputClassName("min-h-20")} name="reason" minLength={5} maxLength={2000} required />
+                    </Field>
+                  </CommercialPayrollActionForm>;
+                })}
+              </div>
+            </div>
+          ))}
+        </Panel>
+      ) : null}
+
+      <Panel>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Pay category</th><th className="p-2">Payable</th><th className="p-2">Ordinary</th><th className="p-2">Overtime</th><th className="p-2">Estimated preparation value</th></tr></thead>
+            <tbody>{summary.staffRows.map((row) => <tr key={row.staffId} className="border-b border-purple-50"><td className="p-2"><strong>{row.fullName}</strong><br /><span className="text-slate-500">{row.employmentRole}</span></td><td className="p-2">{row.payType ?? "Missing"}</td><td className="p-2">{formatHours(row.payableMinutes)}</td><td className="p-2">{formatHours(row.ordinaryMinutes)}</td><td className="p-2">{formatHours(row.overtimeMinutes)}</td><td className="p-2">{formatMoney(row.estimatedGrossValue === null ? null : Math.round(row.estimatedGrossValue * 100))}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </Panel>
+      <p className="text-sm font-bold text-purple-800">Payroll preparation only. No PAYE, National Insurance, pension or statutory deductions are calculated.</p>
+    </div>
+  );
+}
 
 export function ProductionPayrollScreen({
   rows,

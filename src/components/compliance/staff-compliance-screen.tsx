@@ -17,10 +17,13 @@ import {
 import { createDemoComplianceState, demoComplianceStorageKey, type DemoComplianceState } from "@/lib/compliance/demo-data";
 import { formatDateUk } from "@/lib/dates/format";
 import type { CertificateStatus, StaffProfile } from "@/types";
+import { browserIdentifiers, migrateStoredValue } from "@/lib/platform/browser-identifiers";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
 
 function loadDemoCompliance(): DemoComplianceState {
   if (typeof window === "undefined") return createDemoComplianceState();
-  const saved = window.localStorage.getItem(demoComplianceStorageKey);
+  const saved = migrateStoredValue(window.localStorage, browserIdentifiers.complianceStorage);
   if (!saved) return createDemoComplianceState();
   try {
     return { ...createDemoComplianceState(), ...JSON.parse(saved) };
@@ -39,6 +42,10 @@ export function StaffComplianceScreen() {
   const [filter, setFilter] = useState("all");
   const [message, setMessage] = useState("");
   const today = new Date("2026-06-10T12:00:00+01:00");
+  const compliancePack = getCompliancePackForIndustry(getActiveIndustryProfile().id);
+  const certificateRequirements = compliancePack.requirements.filter((item) => item.kind === "certificate").slice(0, 2);
+  const includesDbs = compliancePack.requirements.some((item) => item.kind === "dbs");
+  const includesCentralRecord = compliancePack.requirements.some((item) => item.kind === "central_record");
 
   function persist(next: DemoComplianceState, success: string) {
     setState(next);
@@ -46,11 +53,12 @@ export function StaffComplianceScreen() {
     setMessage(success);
   }
 
-  const counts = complianceDashboardCounts(state.staff, state.certificates, state.centralRecords, today);
+  const counts = complianceDashboardCounts(state.staff, state.certificates, state.centralRecords, today, [], compliancePack);
   const filtered = state.staff.filter((person) => {
-    const firstAid = findCertificate(state.certificates, person.id, ["first aid"]);
-    const safeguarding = findCertificate(state.certificates, person.id, ["safeguarding"]);
-    const statuses = [firstAid && certificateStatus(firstAid, today), safeguarding && certificateStatus(safeguarding, today)].filter(Boolean) as CertificateStatus[];
+    const statuses = certificateRequirements
+      .map((requirement) => findCertificate(state.certificates, person.id, [...(requirement.certificateKeywords ?? [requirement.label])]))
+      .filter(Boolean)
+      .map((certificate) => certificateStatus(certificate!, today)) as CertificateStatus[];
     const central = centralRecordCompletion(state.centralRecords.find((record) => record.staffId === person.id));
     const matchesQuery = `${person.fullName} ${person.employmentRole} ${person.mainQualificationLevel ?? ""}`.toLowerCase().includes(query.toLowerCase());
     const matchesFilter =
@@ -83,7 +91,7 @@ export function StaffComplianceScreen() {
           </p>
         </div>
       </div>
-      <p className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Demo mode: these compliance rows are non-sensitive sample records. Do not enter real DBS or medical information here.</p>
+      <p className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Demo mode: these compliance rows are non-sensitive sample records. Do not enter real identity, credential or medical information here.</p>
       {message && <p className="mb-4 rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">{message}</p>}
       {(
         <>
@@ -94,9 +102,11 @@ export function StaffComplianceScreen() {
               ["Expiring 0 to 30 days", counts.expiring30, "amber"],
               ["Expiring 31 to 60 days", counts.expiring60, "amber"],
               ["Expiring 61 to 90 days", counts.expiring90, "amber"],
-              ["Missing first aid", counts.missingFirstAid, "red"],
-              ["Missing safeguarding", counts.missingSafeguarding, "red"],
-              ["Incomplete central records", counts.incompleteCentralRecords, "amber"],
+              ...Object.entries(counts.missingRequirements).map(([requirementId, value]) => [
+                `Missing ${compliancePack.requirements.find((item) => item.id === requirementId)?.label.toLowerCase() ?? requirementId}`,
+                value,
+                "red",
+              ]),
             ].map(([label, value, tone]) => (
               <Panel key={label as string}>
                 <p className="text-sm font-bold text-slate-500">{label}</p>
@@ -118,31 +128,40 @@ export function StaffComplianceScreen() {
                 <option value="expired">Expired</option>
                 <option value="expiring">Expiring soon</option>
                 <option value="missing_evidence">Missing evidence</option>
-                <option value="incomplete">Incomplete central record</option>
+                {includesCentralRecord ? <option value="incomplete">Incomplete central record</option> : null}
               </select>
             </div>
             {filtered.length ? (
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left text-sm">
-                  <thead><tr>{["Staff", "Role", "Qualification", "First aid", "Safeguarding", "DBS", "Central", "Next expiry", "Overall", "Actions"].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
+                  <thead><tr>{[
+                    "Staff",
+                    "Role",
+                    "Qualification",
+                    ...certificateRequirements.map((item) => item.label),
+                    ...(includesDbs ? ["DBS"] : []),
+                    ...(includesCentralRecord ? ["Central"] : []),
+                    "Next expiry",
+                    "Overall",
+                    "Actions",
+                  ].map((header) => <th key={header} className="border-b border-purple-100 bg-purple-50 px-3 py-3 font-black text-purple-950 first:rounded-l-xl last:rounded-r-xl">{header}</th>)}</tr></thead>
                   <tbody>
                     {filtered.map((person) => {
-                      const firstAid = findCertificate(state.certificates, person.id, ["first aid"]);
-                      const safeguarding = findCertificate(state.certificates, person.id, ["safeguarding"]);
-                      const firstAidStatus = firstAid ? certificateStatus(firstAid, today) : "awaiting_evidence";
-                      const safeguardingStatus = safeguarding ? certificateStatus(safeguarding, today) : "awaiting_evidence";
+                      const requiredCertificates = certificateRequirements.map((requirement) => findCertificate(state.certificates, person.id, [...(requirement.certificateKeywords ?? [requirement.label])]));
+                      const requiredStatuses = requiredCertificates.map((certificate) => certificate ? certificateStatus(certificate, today) : "awaiting_evidence");
+                      const firstAidStatus = requiredStatuses[0] ?? "verified";
+                      const safeguardingStatus = requiredStatuses[1] ?? "verified";
                       const central = centralRecordCompletion(state.centralRecords.find((record) => record.staffId === person.id));
-                      const nextExpiry = [firstAid?.expiryDate, safeguarding?.expiryDate].filter(Boolean).sort()[0];
+                      const nextExpiry = requiredCertificates.map((certificate) => certificate?.expiryDate).filter(Boolean).sort()[0];
                       const overall = overallComplianceIndicator({ firstAidStatus, safeguardingStatus, centralRecordPercent: central.percent });
                       return (
                         <tr key={person.id}>
                           <td className="border-b border-purple-50 px-3 py-3 font-bold text-purple-950">{person.fullName}</td>
                           <td className="border-b border-purple-50 px-3 py-3"><input className={inputClassName("w-44")} defaultValue={person.employmentRole} onBlur={(event) => event.target.value !== person.employmentRole && quickSave(person, "employmentRole", event.target.value)} /></td>
                           <td className="border-b border-purple-50 px-3 py-3"><input className={inputClassName("w-32")} defaultValue={person.mainQualificationLevel ?? ""} onBlur={(event) => event.target.value !== (person.mainQualificationLevel ?? "") && quickSave(person, "mainQualificationLevel", event.target.value)} /></td>
-                          <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(firstAidStatus)}>{certificateStatusLabel(firstAidStatus)}</StatusPill></td>
-                          <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(safeguardingStatus)}>{certificateStatusLabel(safeguardingStatus)}</StatusPill></td>
-                          <td className="border-b border-purple-50 px-3 py-3">{state.centralRecords.find((record) => record.staffId === person.id)?.dbsRecorded ? "Recorded" : "Missing"}</td>
-                          <td className="border-b border-purple-50 px-3 py-3">{central.completed}/{central.total}</td>
+                          {requiredStatuses.map((status, index) => <td key={certificateRequirements[index].id} className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(status)}>{certificateStatusLabel(status)}</StatusPill></td>)}
+                          {includesDbs ? <td className="border-b border-purple-50 px-3 py-3">{state.centralRecords.find((record) => record.staffId === person.id)?.dbsRecorded ? "Recorded" : "Missing"}</td> : null}
+                          {includesCentralRecord ? <td className="border-b border-purple-50 px-3 py-3">{central.completed}/{central.total}</td> : null}
                           <td className="border-b border-purple-50 px-3 py-3">{nextExpiry ? formatDateUk(nextExpiry) : "No expiry"}</td>
                           <td className="border-b border-purple-50 px-3 py-3"><StatusPill tone={overall === "urgent" ? "red" : overall === "complete" ? "green" : "amber"}>{overall}</StatusPill></td>
                           <td className="border-b border-purple-50 px-3 py-3">

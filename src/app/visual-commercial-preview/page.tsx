@@ -1,0 +1,65 @@
+import { notFound } from "next/navigation";
+import { CommercialKioskRegistration, CommercialPreLiveKiosk } from "@/components/kiosk/commercial-kiosk-registration";
+import { KioskSetup } from "@/components/onboarding/kiosk-setup";
+import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
+import { ReadinessReview } from "@/components/onboarding/readiness-review";
+import { LiveWelcome } from "@/components/commercial/live-welcome";
+import type { KioskOnboardingSnapshot } from "@/lib/onboarding/kiosk-contracts";
+import type { CommercialReadinessSnapshot } from "@/lib/onboarding/readiness-contracts";
+import { AppShell } from "@/components/layout/app-shell";
+import { ProductionRota } from "@/components/rota/production-rota";
+import type { ProductionRotaDataset } from "@/lib/rota/types";
+
+const previewSnapshot: KioskOnboardingSnapshot = {
+  availableSites: [{ siteId: "71000000-0000-4000-8000-000000000001", displayName: "Atlas Central" }],
+  registration: { registrationId: "71000000-0000-4000-8000-000000000002", siteId: "71000000-0000-4000-8000-000000000001", deviceName: "Reception tablet", status: "verified", expiresAt: "2026-08-14T03:00:00+01:00", claimedDeviceId: "71000000-0000-4000-8000-000000000003", revision: "3" },
+  device: { deviceId: "71000000-0000-4000-8000-000000000003", siteId: "71000000-0000-4000-8000-000000000001", deviceName: "Reception tablet", active: true, status: "connected", lastSeenAt: "2026-08-14T02:45:00+01:00", appVersion: "preview", protocolVersion: 1, platformCategory: "tablet" },
+  readiness: { complete: false, registrationReady: true, deviceActive: true, bindingValid: true, heartbeatRecent: true, rosterVerified: true, eligibleStaffCount: 3, pinReadyStaffCount: 2, offlineDisabled: true, offlineAuthorisationCount: 0 },
+  staff: [
+    { staffId: "fictional-staff-1", displayName: "Taylor Example", siteAssigned: true, attendanceEligible: true, pinRequired: true, pinReady: true, visibleOnKiosk: true },
+    { staffId: "fictional-staff-2", displayName: "Morgan Sample", siteAssigned: true, attendanceEligible: true, pinRequired: true, pinReady: true, visibleOnKiosk: true },
+    { staffId: "fictional-staff-3", displayName: "Casey Placeholder", siteAssigned: true, attendanceEligible: true, pinRequired: true, pinReady: false, visibleOnKiosk: false },
+  ],
+};
+
+const readinessItems: CommercialReadinessSnapshot["items"] = [
+  ["owner_security","account","Owner account"], ["legal_acceptance","account","Legal documents"], ["organisation_active","organisation","Organisation"],
+  ["first_site","site","First site"], ["subscription_pending","plan","Free trial"], ["staff_present","staff","Staff"],
+  ["manager_coverage","managers","Manager coverage"], ["staff_account_linkage","staff_accounts","Staff accounts"],
+  ["online_kiosk","clocking_device","Clocking device"], ["attendance_safety","attendance","Attendance safety"], ["offline_disabled","attendance","Offline attendance"],
+].map(([key,category,title]) => ({ key: key as CommercialReadinessSnapshot["items"][number]["key"], category: category as CommercialReadinessSnapshot["items"][number]["category"], status: key === "manager_coverage" ? "warning" : "ready", severity: key === "manager_coverage" ? "warning" : "blocker", title, explanation: key === "manager_coverage" ? "The owner is currently the sole manager. You can continue after acknowledging this." : `${title} is ready.`, remediationRoute: key === "manager_coverage" ? "/onboarding/managers" : null, evidenceRevision: `${key}:1` }));
+const readinessPreview: CommercialReadinessSnapshot = { evaluatorVersion: 2, sessionId: "71000000-0000-4000-8000-000000000010", organisationId: "71000000-0000-4000-8000-000000000011", workflowRevision: "24", fingerprint: "a".repeat(64), overallStatus: "ready", blockerCount: 0, warningCount: 1, progressPercent: 100, evaluatedAt: "2026-08-14T05:00:00.000Z", items: readinessItems };
+
+const rotaPreview: ProductionRotaDataset = {
+  organisationId: "71000000-0000-4000-8000-000000000011",
+  membershipId: "71000000-0000-4000-8000-000000000030",
+  site: { id: "71000000-0000-4000-8000-000000000001", name: "Atlas Central" },
+  siteChoices: [
+    { id: "71000000-0000-4000-8000-000000000001", name: "Atlas Central" },
+    { id: "71000000-0000-4000-8000-000000000031", name: "Atlas Riverside" },
+  ],
+  weekStart: "2026-08-17",
+  week: { id: "71000000-0000-4000-8000-000000000032", weekStartDate: "2026-08-17", status: "draft", title: "Customer services", notes: null, publishedAt: null, archivedAt: null, revision: 4 },
+  staff: [
+    { id: "fictional-staff-1", fullName: "Taylor Example", displayName: "Taylor", employmentRole: "Coordinator", active: true },
+    { id: "fictional-staff-2", fullName: "Morgan Sample", displayName: "Morgan", employmentRole: "Practitioner", active: true },
+    { id: "fictional-staff-3", fullName: "Casey Placeholder", displayName: "Casey", employmentRole: "Assistant", active: true },
+  ],
+  shifts: [
+    { id: "71000000-0000-4000-8000-000000000033", rotaWeekId: "71000000-0000-4000-8000-000000000032", staffId: "fictional-staff-1", shiftDate: "2026-08-17", startTime: "08:00", endTime: "16:30", breakMinutes: 30, breakUnspecified: false, workAreaId: "71000000-0000-4000-8000-000000000034", workArea: "Front desk", roomOrArea: "Front desk", roleOnShift: "Opening lead", notes: null, status: "scheduled", inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null, revision: 2 },
+    { id: "71000000-0000-4000-8000-000000000035", rotaWeekId: "71000000-0000-4000-8000-000000000032", staffId: "fictional-staff-2", shiftDate: "2026-08-17", startTime: "09:00", endTime: "17:30", breakMinutes: 30, breakUnspecified: false, workAreaId: "71000000-0000-4000-8000-000000000036", workArea: "Studio", roomOrArea: "Studio", roleOnShift: null, notes: null, status: "scheduled", inactiveStaffOverrideReason: null, leaveOverrideReason: null, overlapOverrideReason: null, archivedAt: null, revision: 1 },
+  ],
+  leave: [{ id: "71000000-0000-4000-8000-000000000037", staffId: "fictional-staff-3", startDate: "2026-08-20", endDate: "2026-08-20", dayPart: "full_day", startTime: null, endTime: null, status: "approved" }],
+  settings: { openingTime: "07:30", closingTime: "18:30", defaultBreakMinutes: 30, shiftIntervalMinutes: 15, availableWorkAreas: ["Front desk", "Studio"], availableRooms: ["Front desk", "Studio"], workAreaOptions: [{ id: "71000000-0000-4000-8000-000000000034", name: "Front desk" }, { id: "71000000-0000-4000-8000-000000000036", name: "Studio" }], allowOverlapOverride: false, allowInactiveStaffOverride: false },
+};
+
+export default async function VisualCommercialPreview({ searchParams }: { searchParams: Promise<Record<string,string|string[]|undefined>> }) {
+  if (!["local","preview"].includes(process.env.APP_ENV ?? "")) notFound();
+  const state = (await searchParams).state;
+  if (state === "register") return <CommercialKioskRegistration registrationId="71000000-0000-4000-8000-000000000002" registrationCode="ABCD2345EFGH6789"/>;
+  if (state === "prelive") return <CommercialPreLiveKiosk siteName="Atlas Central" staffCount={2}/>;
+  if (state === "setup") return <OnboardingShell activeStep="kiosk" completedSteps={["owner_security","legal_acceptance","organisation","first_site","subscription","staffing","manager_invitations","staff_invitations"]}><div className="onboarding-page-heading"><span>Clocking device</span><h1>Connect your online staff clock</h1><p>Register one browser to your location, check its connection and prepare at least one staff PIN.</p></div><KioskSetup snapshot={previewSnapshot} revision="18" keys={Array.from({length:8},(_,index)=>`71000000-0000-4000-8000-${String(index+10).padStart(12,"0")}`)}/></OnboardingShell>;
+  if (state === "live") return <LiveWelcome summary={{ organisationId: readinessPreview.organisationId, organisationName: "Atlas Example", siteId: "71000000-0000-4000-8000-000000000001", siteName: "Atlas Central", subscriptionId: "71000000-0000-4000-8000-000000000012", subscriptionState: "trial_active", trialStartedAt: "2026-08-14T05:00:00.000Z", trialEndsAt: "2026-10-13T05:00:00.000Z", staffCount: 3, kioskConnected: true, offlineEnabled: false }}/>;
+  if (state === "rota") return <AppShell><ProductionRota data={rotaPreview} templates={[]} templatePreview={null} selectedTemplateMode="empty_days" templateRequestKey="71000000-0000-4000-8000-000000000038" /></AppShell>;
+  return <OnboardingShell activeStep="readiness" completedSteps={["owner_security","legal_acceptance","organisation","first_site","subscription","staffing","manager_invitations","staff_invitations","kiosk"]}><div className="onboarding-page-heading"><span>Final review</span><h1>Ready to start live attendance?</h1><p>These checks come directly from your current organisation, staff and clocking device setup.</p></div><ReadinessReview readiness={readinessPreview} revision="24" refreshKey="71000000-0000-4000-8000-000000000020" goLiveKey="71000000-0000-4000-8000-000000000021"/></OnboardingShell>;
+}

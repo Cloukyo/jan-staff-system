@@ -206,9 +206,9 @@ export const managerHelpTasks: ManagerHelpTask[] = [
     id: "manage-clocking-device",
     group: "Settings",
     title: "Register or refresh a clocking-in device",
-    summary: "Set up a nursery browser for Staff Clock or refresh its information.",
+    summary: "Set up a site browser for Staff Clock or refresh its information.",
     steps: [
-      "Open Clocking-in devices on the nursery device.",
+      "Open Clocking-in devices on the site device.",
       "Choose Register this browser if it is a new device.",
       "Choose Refresh Staff Clock when staff details have changed.",
     ],

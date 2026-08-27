@@ -1,6 +1,7 @@
 import { differenceInCalendarDays, isValid, parseISO } from "date-fns";
 import type { CertificateStatus, ComplianceIndicator, StaffCertificate, StaffCentralRecord, StaffProfile } from "@/types";
 import type { ComplianceDataset } from "@/lib/compliance/repository";
+import { getCompliancePack, type CompliancePack } from "@/lib/compliance/modules";
 
 export function certificateStatus(certificate: Pick<StaffCertificate, "expiryDate" | "completionDate" | "evidenceReference" | "permanent">, today = new Date()): CertificateStatus {
   if (!certificate.evidenceReference && !certificate.completionDate) return "awaiting_evidence";
@@ -100,23 +101,38 @@ export function complianceDashboardCounts(
   centralRecords: StaffCentralRecord[],
   today = new Date(),
   centralItems: Array<{ staffId: string; status: string }> = [],
+  pack: CompliancePack = getCompliancePack("early_years_uk"),
 ) {
   const activeStaff = staff.filter((person) => person.active);
   const activeIds = new Set(activeStaff.map((person) => person.id));
   const activeCertificates = certificates.filter((certificate) => activeIds.has(certificate.staffId) && !certificate.archivedAt);
   const statuses = activeCertificates.map((certificate) => certificateStatus(certificate, today));
+  const missingRequirements = Object.fromEntries(pack.requirements.map((requirement) => {
+    const missing = activeStaff.filter((person) => {
+      if (requirement.kind === "certificate") {
+        return !findCertificate(activeCertificates, person.id, [...(requirement.certificateKeywords ?? [])]);
+      }
+      const record = centralRecords.find((item) => item.staffId === person.id);
+      if (requirement.kind === "dbs") return !record?.dbsRecorded;
+      return centralRecordCompletion(
+        record,
+        centralItems.filter((item) => item.staffId === person.id),
+      ).percent < 100;
+    }).length;
+    return [requirement.id, missing];
+  }));
   return {
     activeStaff: activeStaff.length,
     expired: statuses.filter((status) => status === "expired").length,
     expiring30: statuses.filter((status) => status === "expiring_30").length,
     expiring60: statuses.filter((status) => status === "expiring_60").length,
     expiring90: statuses.filter((status) => status === "expiring_90").length,
-    missingFirstAid: activeStaff.filter((person) => !findCertificate(activeCertificates, person.id, ["first aid"])).length,
-    missingSafeguarding: activeStaff.filter((person) => !findCertificate(activeCertificates, person.id, ["safeguarding"])).length,
-    incompleteCentralRecords: activeStaff.filter((person) => centralRecordCompletion(
-      centralRecords.find((record) => record.staffId === person.id),
-      centralItems.filter((item) => item.staffId === person.id),
-    ).percent < 100).length,
+    missingFirstAid: Object.entries(missingRequirements)
+      .filter(([id]) => id.includes("first_aid"))
+      .reduce((total, [, count]) => total + Number(count), 0),
+    missingSafeguarding: Number(missingRequirements.safeguarding ?? 0),
+    incompleteCentralRecords: Number(missingRequirements.central_record ?? 0),
+    missingRequirements,
     unverifiedEvidence: activeCertificates.filter((certificate) => certificate.evidenceReference && !certificate.verifiedAt).length,
   };
 }

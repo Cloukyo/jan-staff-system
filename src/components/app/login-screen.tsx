@@ -6,10 +6,13 @@ import { signInAction, resetPasswordAction, type AuthActionState } from "@/lib/a
 import { BrandMark } from "@/components/ui/brand";
 import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
 import { PasswordInput } from "@/components/ui/password-input";
+import { getPlatformBranding } from "@/lib/platform/branding";
+import Link from "next/link";
 
 const initialState: AuthActionState = { message: "" };
 
-export function LoginScreen({ notice }: { notice?: string }) {
+export function LoginScreen({ notice, nextPath }: { notice?: string; nextPath?: string }) {
+  const branding = getPlatformBranding();
   const [loginState, loginFormAction, loginPending] = useActionState(signInAction, initialState);
   const [resetState, resetFormAction, resetPending] = useActionState(resetPasswordAction, initialState);
 
@@ -18,9 +21,10 @@ export function LoginScreen({ notice }: { notice?: string }) {
       <Panel className="w-full max-w-md">
         <BrandMark />
         <h1 className="mt-8 text-3xl font-black text-purple-950">Staff login</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Sign in with the email address linked to your Jan Pre-School staff account.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Sign in with the email address linked to your {branding.siteDisplayName.toLowerCase()} staff account.</p>
         {notice ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{notice}</p> : null}
         <form className="mt-6 grid gap-4" action={loginFormAction}>
+          {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
           <Field label="Email">
             <div className="relative">
               <Mail className="absolute left-3 top-3 h-5 w-5 text-purple-400" aria-hidden />
@@ -49,6 +53,7 @@ export function LoginScreen({ notice }: { notice?: string }) {
             {resetPending ? "Sending..." : "Send reset email"}
           </Button>
         </form>
+        <p className="mt-6 border-t border-purple-100 pt-5 text-center text-sm text-slate-600">New to the platform? <Link className="font-bold text-purple-700 underline-offset-4 hover:underline" href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : "/signup"}>Create an account</Link></p>
       </Panel>
     </main>
   );

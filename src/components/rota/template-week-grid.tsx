@@ -15,8 +15,10 @@ import type { RotaTemplateDataset, RotaTemplateShift } from "@/lib/rota/template
 import type { ProductionRotaStaff } from "@/lib/rota/types";
 import { formatScheduledHours } from "@/lib/rota/grid";
 import { shiftDurationMinutes } from "@/lib/rota/validation";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const industryProfile = getActiveIndustryProfile();
 
 type EditorState = {
   staff: ProductionRotaStaff;
@@ -59,7 +61,7 @@ function TemplateEditorDrawer({ data, editor, onClose }: { data: RotaTemplateDat
             <Field label="Start time"><input className={inputClassName()} name="startTime" type="time" defaultValue={shift?.startTime ?? "08:00"} required /></Field>
             <Field label="Finish time"><input className={inputClassName()} name="endTime" type="time" defaultValue={shift?.endTime ?? "18:00"} required /></Field>
             <Field label="Break duration"><input className={inputClassName()} name="breakMinutes" type="number" min="0" step="5" defaultValue={shift?.breakMinutes ?? ""} placeholder="Not specified" /></Field>
-            <Field label="Room or area"><input className={inputClassName()} name="roomOrArea" defaultValue={shift?.roomOrArea ?? ""} /></Field>
+            <Field label={industryProfile.workAreaSingular}><input className={inputClassName()} name="workArea" defaultValue={shift?.workArea ?? shift?.roomOrArea ?? ""} /></Field>
             <Field label="Role on shift"><input className={inputClassName()} name="roleOnShift" defaultValue={shift?.roleOnShift ?? ""} /></Field>
             <Field label="Display order"><input className={inputClassName()} name="sortOrder" type="number" defaultValue={shift?.sortOrder ?? 0} /></Field>
           </div>
@@ -134,7 +136,7 @@ export function TemplateWeekGrid({ data }: { data: RotaTemplateDataset }) {
                         {shifts.map((shift) => <button key={shift.id} type="button" className={`min-h-24 rounded-xl border p-3 text-left transition hover:border-purple-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-700 ${person.active ? "border-purple-200 bg-white" : "border-amber-200 bg-amber-50"}`} onClick={() => setEditor({ staff: person, dayOfWeek, shift })}>
                           <span className="flex items-center justify-between gap-2 whitespace-nowrap text-sm font-black text-purple-950">{shift.startTime}–{shift.endTime}<Pencil className="h-4 w-4 shrink-0 text-purple-400" /></span>
                           <span className="mt-1 block text-xs font-semibold text-slate-600">{shift.breakMinutes === null ? "Break not specified" : `${shift.breakMinutes} min break`}</span>
-                          {shift.roomOrArea ? <span className="mt-2 block text-sm font-bold text-purple-800">{shift.roomOrArea}</span> : null}
+                          {shift.workArea || shift.roomOrArea ? <span className="mt-2 block text-sm font-bold text-purple-800">{shift.workArea || shift.roomOrArea}</span> : null}
                         </button>)}
                         <button type="button" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 px-3 text-sm font-bold text-purple-700 hover:border-purple-500 hover:bg-purple-50" onClick={() => setEditor({ staff: person, dayOfWeek })}>
                           <Plus className="h-4 w-4" /> Add shift

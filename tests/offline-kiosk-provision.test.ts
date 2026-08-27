@@ -47,7 +47,7 @@ describe("offline kiosk provisioning contract", () => {
       },
       roster: [{
         staffId: "staff-a",
-        displayName: "Areeg",
+        displayName: "Demo B",
         employmentRole: "Practitioner",
         pinVersion: "pin-v1",
         trustedState: {

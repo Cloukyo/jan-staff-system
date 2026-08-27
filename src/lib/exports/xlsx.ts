@@ -1,25 +1,44 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { AttendanceDay, PayPeriodSummary, StaffMember } from "@/types";
-import { formatDateUk, formatDecimalHours, formatDurationCompact, formatHours, formatTimeUk } from "@/lib/dates/format";
+import {
+  formatDateUk,
+  formatDecimalHours,
+  formatDurationCompact,
+  formatHours,
+  formatTimeUk,
+} from "@/lib/dates/format";
+import { getExportIdentity } from "@/lib/exports/identity";
 
 type CellValue = string | number;
+type WorkbookRow = Record<string, CellValue>;
 
-function autoWidth(rows: Record<string, CellValue>[]) {
-  const keys = Object.keys(rows[0] ?? {});
-  return keys.map((key) => ({
-    wch: Math.min(34, Math.max(key.length + 2, ...rows.map((row) => String(row[key] ?? "").length + 2))),
-  }));
+function autoWidth(rows: WorkbookRow[], keys: string[]) {
+  return keys.map((key) =>
+    Math.min(
+      34,
+      Math.max(key.length + 2, ...rows.map((row) => String(row[key] ?? "").length + 2)),
+    ),
+  );
 }
 
-function styleSheet(sheet: XLSX.WorkSheet, rows: Record<string, CellValue>[]) {
-  sheet["!cols"] = autoWidth(rows);
-  sheet["!autofilter"] = { ref: sheet["!ref"] ?? "A1:A1" };
-  sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
-  const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1:A1");
-  for (let column = range.s.c; column <= range.e.c; column += 1) {
-    const header = sheet[XLSX.utils.encode_cell({ r: 0, c: column })];
-    if (header) header.s = { font: { bold: true } };
-  }
+function addSheet(workbook: ExcelJS.Workbook, name: string, rows: WorkbookRow[]) {
+  const sheet = workbook.addWorksheet(name, {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  const keys = Object.keys(rows[0] ?? {});
+  const widths = autoWidth(rows, keys);
+  sheet.columns = keys.map((key, index) => ({
+    header: key,
+    key,
+    width: widths[index],
+  }));
+  rows.forEach((row) => sheet.addRow(row));
+  sheet.getRow(1).font = { bold: true };
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(1, sheet.rowCount), column: Math.max(1, keys.length) },
+  };
+  return sheet;
 }
 
 export function createPayWorkbook(
@@ -28,7 +47,7 @@ export function createPayWorkbook(
   staff: StaffMember[],
   periodStart: string,
   periodEnd: string,
-): XLSX.WorkBook {
+): ExcelJS.Workbook {
   const payRows = summaries.map((summary) => {
     const person = staff.find((item) => item.id === summary.staffId);
     return {
@@ -37,15 +56,23 @@ export function createPayWorkbook(
       "Pay type": summary.payType,
       "Period start": formatDateUk(periodStart),
       "Period end": formatDateUk(periodEnd),
-      "Contracted weekly hours": formatDurationCompact(person?.contractedWeeklyMinutes ?? 0),
+      "Contracted weekly hours": formatDurationCompact(
+        person?.contractedWeeklyMinutes ?? 0,
+      ),
       "Worked approved hours": formatDecimalHours(summary.workedApprovedMinutes),
       "Paid holiday hours": formatDecimalHours(summary.paidHolidayMinutes),
       "Paid sickness hours": formatDecimalHours(summary.paidSicknessMinutes),
       "Paid training hours": formatDecimalHours(summary.paidTrainingMinutes),
       "Total approved payable hours": formatDecimalHours(summary.approvedMinutes),
-      "Hourly rate": summary.applicableHourlyRatePence ? summary.applicableHourlyRatePence / 100 : "",
-      "Calculated hourly pay": summary.calculatedHourlyPayPence ? summary.calculatedHourlyPayPence / 100 : "",
-      "Standard salary": summary.standardSalaryPence ? summary.standardSalaryPence / 100 : "",
+      "Hourly rate": summary.applicableHourlyRatePence
+        ? summary.applicableHourlyRatePence / 100
+        : "",
+      "Calculated hourly pay": summary.calculatedHourlyPayPence
+        ? summary.calculatedHourlyPayPence / 100
+        : "",
+      "Standard salary": summary.standardSalaryPence
+        ? summary.standardSalaryPence / 100
+        : "",
       Additions: summary.additionsPence / 100,
       Deductions: summary.deductionsPence / 100,
       "Final gross pay": summary.finalGrossPayPence / 100,
@@ -77,23 +104,29 @@ export function createPayWorkbook(
     };
   });
 
-  const workbook = XLSX.utils.book_new();
-  const paySheet = XLSX.utils.json_to_sheet(payRows);
-  const attendanceSheet = XLSX.utils.json_to_sheet(attendanceRows);
-  styleSheet(paySheet, payRows);
-  styleSheet(attendanceSheet, attendanceRows);
-  XLSX.utils.book_append_sheet(workbook, paySheet, "Pay Summary");
-  XLSX.utils.book_append_sheet(workbook, attendanceSheet, "Attendance Detail");
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = getExportIdentity().productName;
+  addSheet(workbook, "Pay Summary", payRows);
+  addSheet(workbook, "Attendance Detail", attendanceRows);
   return workbook;
 }
 
-export function exportPayWorkbook(
+export async function exportPayWorkbook(
   summaries: PayPeriodSummary[],
   days: AttendanceDay[],
   staff: StaffMember[],
   periodStart: string,
   periodEnd: string,
-) {
+): Promise<void> {
   const workbook = createPayWorkbook(summaries, days, staff, periodStart, periodEnd);
-  XLSX.writeFile(workbook, `jan-staff-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`, { compression: true });
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer as BlobPart], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${getExportIdentity().siteSlug}-pay-workbook-${periodStart}-to-${periodEnd}.xlsx`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

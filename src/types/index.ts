@@ -1,3 +1,5 @@
+export * from "./tenancy";
+
 export type PayType = "hourly" | "salaried";
 export type EmploymentStatus = "employed" | "former" | "on_leave";
 export type ShiftStatus = "working" | "off" | "holiday" | "sick" | "training";
@@ -14,6 +16,7 @@ export type CertificateStatus = "valid" | "expiring_90" | "expiring_60" | "expir
 export type ComplianceIndicator = "complete" | "attention" | "urgent" | "incomplete";
 export type EvidenceStatus = "not_required" | "awaiting" | "received" | "verified";
 export type ChecklistStatus = "complete" | "incomplete" | "not_applicable";
+export * from "./customer-domain";
 
 export interface StaffMember {
   id: string;
@@ -52,6 +55,7 @@ export interface StaffAccount {
 
 export interface StaffProfile {
   id: string;
+  organisationId?: string | null;
   fullName: string;
   displayName: string;
   employmentRole: string;
@@ -69,6 +73,7 @@ export interface StaffProfile {
 
 export interface StaffQualification {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   qualificationName: string;
   qualificationLevel: string | null;
@@ -88,6 +93,7 @@ export interface StaffQualification {
 
 export interface StaffCertificate {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   certificateType: string;
   customTitle: string | null;
@@ -107,6 +113,7 @@ export interface StaffCertificate {
 
 export interface StaffCentralRecord {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   appointmentInductionCompleted: boolean;
   appointmentInductionCheckedAt: string | null;
@@ -145,6 +152,7 @@ export interface StaffCentralRecord {
 
 export interface StaffReferenceCheck {
   id: string;
+  organisationId?: string | null;
   staffId: string;
   referenceType: "current_last_employer" | "previous_employer" | "alternative";
   referenceName: string | null;
@@ -176,6 +184,7 @@ export interface LeaveRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision?: number;
 }
 
 export interface PayRateHistory {
@@ -201,6 +210,8 @@ export interface RotaShift {
   creditedMinutes?: number;
   payableMinutes?: number;
   managerNote?: string;
+  workArea?: string;
+  /** @deprecated Compatibility input for pre-neutralisation demo data. */
   roomOrRole?: string;
   notes?: string;
 }
@@ -291,8 +302,11 @@ export interface PayPeriodSummary {
   status: PayStatus;
 }
 
-export interface NurserySettings {
-  nurseryDisplayName: string;
+export interface PlatformSettings {
+  organisationDisplayName?: string;
+  siteDisplayName?: string;
+  /** Read-only compatibility input for demo data created before neutralisation. */
+  nurseryDisplayName?: string;
   defaultBreakMinutes: number;
   lateArrivalThresholdMinutes: number;
   overtimeWarningThresholdMinutes: number;
@@ -313,6 +327,7 @@ export interface NurserySettings {
 
 export interface DemoState {
   schemaVersion?: number;
+  industryProfileId?: import("@/lib/platform/industry-profile").IndustryProfileId;
   staff: StaffMember[];
   staffAccounts: StaffAccount[];
   leaveRequests: LeaveRequest[];
@@ -322,5 +337,8 @@ export interface DemoState {
   attendanceAdjustments: AttendanceAdjustment[];
   attendanceApprovals: AttendanceApproval[];
   paySummaries: PayPeriodSummary[];
-  settings: NurserySettings;
+  settings: PlatformSettings;
 }
+
+/** @deprecated Use PlatformSettings. */
+export type NurserySettings = PlatformSettings;

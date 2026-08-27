@@ -1,5 +1,6 @@
 import type { AttendanceDay, PayPeriodSummary, StaffMember } from "@/types";
 import { formatDateUk, formatDecimalHours, formatDurationCompact, formatHours, formatMoney, formatTimeUk } from "@/lib/dates/format";
+import { getExportIdentity } from "@/lib/exports/identity";
 
 export function escapeCsv(value: string | number | null | undefined): string {
   const text = value === null || value === undefined ? "" : String(value);
@@ -61,7 +62,7 @@ export function exportAttendanceCsv(days: AttendanceDay[], staff: StaffMember[],
       ];
     }),
   ];
-  downloadCsv(`jan-staff-attendance-${periodStart}-to-${periodEnd}.csv`, rows);
+  downloadCsv(`${getExportIdentity().siteSlug}-attendance-${periodStart}-to-${periodEnd}.csv`, rows);
 }
 
 export function exportPayCsv(summaries: PayPeriodSummary[], staff: StaffMember[], periodStart: string, periodEnd: string): void {
@@ -112,5 +113,5 @@ export function exportPayCsv(summaries: PayPeriodSummary[], staff: StaffMember[]
       ];
     }),
   ];
-  downloadCsv(`jan-staff-pay-preparation-${periodStart}-to-${periodEnd}.csv`, rows);
+  downloadCsv(`${getExportIdentity().siteSlug}-pay-preparation-${periodStart}-to-${periodEnd}.csv`, rows);
 }

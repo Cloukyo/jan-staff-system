@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import type { AppMode } from "@/lib/app-mode";
 import type { ProductionRotaDataset, ProductionRotaShift, ProductionRotaWeek, RotaLeaveWarning } from "@/lib/rota/types";
+import { readAvailableWorkAreas, readWorkArea } from "@/lib/platform/work-areas";
 
 export function rotaRepositorySource(mode: AppMode): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
@@ -19,6 +20,7 @@ function mapWeek(row: Record<string, unknown>): ProductionRotaWeek {
 }
 
 function mapShift(row: Record<string, unknown>): ProductionRotaShift {
+  const workArea = readWorkArea(row);
   return {
     id: String(row.id),
     rotaWeekId: String(row.rota_week_id),
@@ -28,7 +30,8 @@ function mapShift(row: Record<string, unknown>): ProductionRotaShift {
     endTime: String(row.end_time).slice(0, 5),
     breakMinutes: Number(row.break_minutes),
     breakUnspecified: Boolean(row.break_unspecified),
-    roomOrArea: row.room_or_area ? String(row.room_or_area) : null,
+    workArea,
+    roomOrArea: workArea,
     roleOnShift: row.role_on_shift ? String(row.role_on_shift) : null,
     notes: row.notes ? String(row.notes) : null,
     status: String(row.status) as ProductionRotaShift["status"],
@@ -88,7 +91,8 @@ export async function loadProductionRota(weekStart: string): Promise<ProductionR
       closingTime: String(settings.closing_time).slice(0, 5),
       defaultBreakMinutes: settings.default_break_minutes,
       shiftIntervalMinutes: settings.shift_interval_minutes,
-      availableRooms: settings.available_rooms ?? [],
+      availableWorkAreas: readAvailableWorkAreas(settings as Record<string, unknown>),
+      availableRooms: readAvailableWorkAreas(settings as Record<string, unknown>),
       allowOverlapOverride: settings.allow_overlap_override,
       allowInactiveStaffOverride: settings.allow_inactive_staff_override,
     },

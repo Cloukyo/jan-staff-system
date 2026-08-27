@@ -1,4 +1,5 @@
 import { requireAccount } from "@/lib/auth/permissions";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { resolveEffectiveEvents } from "@/lib/attendance/effective-events";
 import { requireAttendanceDateRange } from "@/lib/attendance/date-range";
@@ -234,15 +235,27 @@ export function buildAttendanceReviewRows(
 }
 
 export async function loadAttendanceReviewDay(dateValue?: string): Promise<AttendanceReviewDay> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.review", { siteRequired: true });
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue ?? "") ? dateValue! : isoDateInLondon();
   const supabase = await createSupabaseServerClient();
-  const [attendance, profiles, requests] = await Promise.all([
+  let profilesQuery = supabase.from("staff_profiles").select("id,full_name").eq("active", true).order("full_name");
+  let requestsQuery = supabase.from("attendance_correction_requests").select("id,staff_id,issue_type,staff_note,status").eq("attendance_date", date).eq("status", "pending");
+  if (actor.kind === "commercial") {
+    profilesQuery = profilesQuery.eq("organisation_id", actor.context.organisationId);
+    requestsQuery = requestsQuery.eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!);
+  }
+  const assignmentPromise = actor.kind === "commercial"
+    ? supabase.from("staff_site_assignments").select("staff_id")
+      .eq("organisation_id", actor.context.organisationId).eq("site_id", actor.context.selectedSiteId!)
+      .lte("effective_from", date).or(`effective_to.is.null,effective_to.gte.${date}`)
+    : Promise.resolve({ data: null, error: null });
+  const [attendance, profiles, requests, assignments] = await Promise.all([
     loadAttendanceDay(date),
-    supabase.from("staff_profiles").select("id,full_name").eq("active", true).order("full_name"),
-    supabase.from("attendance_correction_requests").select("id,staff_id,issue_type,staff_note,status").eq("attendance_date", date).eq("status", "pending"),
+    profilesQuery,
+    requestsQuery,
+    assignmentPromise,
   ]);
-  if (profiles.error || requests.error) {
+  if (profiles.error || requests.error || assignments.error) {
     throw new Error("Attendance review data could not be loaded.");
   }
 
@@ -253,9 +266,10 @@ export async function loadAttendanceReviewDay(dateValue?: string): Promise<Atten
     requestsByStaff.set(request.staff_id, list);
   }
 
+  const eligibleStaffIds = assignments.data ? new Set(assignments.data.map((row) => row.staff_id)) : null;
   const rows = buildAttendanceReviewRows(
     attendance.rows,
-    (profiles.data ?? []) as Array<{ id: string; full_name: string }>,
+    (profiles.data ?? []).filter((profile) => !eligibleStaffIds || eligibleStaffIds.has(profile.id)) as Array<{ id: string; full_name: string }>,
     requestsByStaff,
   );
 

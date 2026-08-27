@@ -44,6 +44,8 @@ function LeaveDetails({ request, staffName, canCancel = false }: { request: Leav
       {canCancel && request.status === "pending" && (
         <ProductionActionForm action={cancelLeaveRequestAction} submitLabel="Cancel request" submitVariant="secondary" className="mt-3">
           <input type="hidden" name="requestId" value={request.id} />
+          <input type="hidden" name="operationId" value={crypto.randomUUID()} />
+          {request.revision ? <input type="hidden" name="revision" value={request.revision} /> : null}
         </ProductionActionForm>
       )}
     </div>
@@ -92,6 +94,7 @@ export function ProductionLeaveRequest({ account }: { account: StaffAccount }) {
       <Panel>
         <ProductionActionForm action={createLeaveRequestAction} submitLabel="Submit leave request">
           <input type="hidden" name="staffId" value={account.staffId} />
+          <input type="hidden" name="operationId" value={crypto.randomUUID()} />
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Leave type">
               <select className={inputClassName()} name="leaveType" value={input.leaveType} onChange={(event) => setInput({ ...input, leaveType: event.target.value as LeaveType })}>
@@ -152,6 +155,8 @@ export function ProductionManagerLeave({ requests, accounts }: { requests: Leave
                   {(["approved", "rejected"] as const).map((decision) => (
                     <ProductionActionForm key={decision} action={reviewLeaveRequestAction} submitLabel={decision === "approved" ? "Approve" : "Reject"} submitVariant={decision === "approved" ? "primary" : "danger"}>
                       <input type="hidden" name="requestId" value={request.id} />
+                      <input type="hidden" name="operationId" value={crypto.randomUUID()} />
+                      {request.revision ? <input type="hidden" name="revision" value={request.revision} /> : null}
                       <input type="hidden" name="status" value={decision} />
                       <Field label="Manager note"><input className={inputClassName()} name="managerNote" /></Field>
                     </ProductionActionForm>

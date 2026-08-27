@@ -24,8 +24,9 @@ function workerHarness(options?: { fetchRejects?: boolean }) {
   const caches = {
     open: vi.fn(async () => cache),
     keys: vi.fn(async () => [
-      "jan-staff-clock-shell-v0",
       "jan-staff-clock-shell-v1",
+      "workforce-platform-clock-shell-v0",
+      "workforce-platform-clock-shell-v1",
       "unrelated-cache",
     ]),
     delete: vi.fn(async () => true),
@@ -72,10 +73,7 @@ describe("offline kiosk service worker", () => {
     });
     await completion;
 
-    expect(cache.addAll).toHaveBeenCalledWith([
-      "/clock",
-      "/brand/jan-logo.png",
-    ]);
+    expect(cache.addAll).toHaveBeenCalledWith(["/clock"]);
     const serialised = JSON.stringify(cache.addAll.mock.calls);
     expect(serialised).not.toMatch(
       /attendance|payroll|compliance|api\/kiosk|supabase/i,
@@ -93,10 +91,9 @@ describe("offline kiosk service worker", () => {
     });
     await completion;
 
-    expect(caches.delete).toHaveBeenCalledWith("jan-staff-clock-shell-v0");
-    expect(caches.delete).not.toHaveBeenCalledWith(
-      "jan-staff-clock-shell-v1",
-    );
+    expect(caches.delete).toHaveBeenCalledWith("jan-staff-clock-shell-v1");
+    expect(caches.delete).toHaveBeenCalledWith("workforce-platform-clock-shell-v0");
+    expect(caches.delete).not.toHaveBeenCalledWith("workforce-platform-clock-shell-v1");
     expect(caches.delete).not.toHaveBeenCalledWith("unrelated-cache");
     expect(worker.clients.claim).toHaveBeenCalled();
   });
@@ -181,12 +178,12 @@ describe("offline kiosk service worker", () => {
     expect(registration).not.toContain(".sync.register");
   });
 
-  it("uses Background Sync only to wake a foreground queue worker", async () => {
+  it.each(["workforce-platform-clock-sync", "jan-staff-clock-sync"])("uses Background Sync tag %s only to wake a foreground queue worker", async (tag) => {
     const { listeners, worker, foregroundClient } = workerHarness();
     let completion = Promise.resolve();
 
     listeners.sync({
-      tag: "jan-staff-clock-sync",
+      tag,
       waitUntil(value: Promise<void>) {
         completion = value;
       },

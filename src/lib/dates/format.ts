@@ -211,5 +211,5 @@ export function weekDates(date: Date | string, includeWeekend = false): string[]
 }
 
 export function toDateTime(date: string, time: string): Date {
-  return parseISO(`${date}T${time}:00`);
+  return londonLocalDateTimeToUtc(`${date}T${time}:00`).timestamp;
 }

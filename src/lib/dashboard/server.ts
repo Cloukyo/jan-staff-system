@@ -1,6 +1,7 @@
 import type { AppMode } from "@/lib/app-mode";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import type { DashboardRotaStatus, ProductionDashboardSummary } from "@/lib/dashboard/types";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 
 export function dashboardRepositorySource(mode: AppMode): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
@@ -54,7 +55,8 @@ export function mapDashboardSummary(row: Record<string, unknown>): ProductionDas
       displayName: String(item.display_name),
       startTime: String(item.start_time).slice(0, 5),
       endTime: String(item.end_time).slice(0, 5),
-      roomOrArea: item.room_or_area ? String(item.room_or_area) : null,
+      workArea: item.work_area ? String(item.work_area) : item.room_or_area ? String(item.room_or_area) : null,
+      roomOrArea: item.work_area ? String(item.work_area) : item.room_or_area ? String(item.room_or_area) : null,
       roleOnShift: item.role_on_shift ? String(item.role_on_shift) : null,
       rotaStatus: String(item.rota_status) as ProductionDashboardSummary["upcomingShifts"][number]["rotaStatus"],
     })),
@@ -62,7 +64,17 @@ export function mapDashboardSummary(row: Record<string, unknown>): ProductionDas
 }
 
 export async function loadProductionDashboard(referenceDate: string): Promise<ProductionDashboardSummary> {
+  const actor = await requireAttendanceActor("attendance.read", { siteRequired: true });
   const supabase = await createSupabaseServerClient();
+  if (actor.kind === "commercial") {
+    const { data, error } = await supabase.rpc("get_commercial_attendance_dashboard", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      reference_date: referenceDate,
+    });
+    if (error || !data || Array.isArray(data) || typeof data !== "object") throw new Error("Live dashboard data could not be loaded from Supabase.");
+    return mapDashboardSummary(data as Record<string, unknown>);
+  }
   const [summary, attendance] = await Promise.all([
     supabase.rpc("get_manager_dashboard_summary", { reference_date: referenceDate }),
     supabase.rpc("get_manager_attendance_dashboard", { reference_date: referenceDate }),

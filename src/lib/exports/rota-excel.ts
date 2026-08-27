@@ -4,12 +4,16 @@ import { formatDateUk, isoDate } from "@/lib/dates/format";
 import type { ProductionRotaDataset, ProductionRotaShift } from "@/lib/rota/types";
 import type { RotaTemplate, RotaTemplateShift } from "@/lib/rota/template-types";
 import { leaveWarningsForShift, overlapWarningsForShift, shiftDurationMinutes } from "@/lib/rota/validation";
+import { getExportIdentity, safeExportSlug } from "@/lib/exports/identity";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 
 export type RotaExportOptions = {
   format: "compact" | "detailed";
   includeWeekends: boolean;
   includeBreaks: boolean;
-  includeRooms: boolean;
+  includeWorkAreas?: boolean;
+  /** @deprecated Use includeWorkAreas. */
+  includeRooms?: boolean;
   includeRoles: boolean;
   includeWarnings: boolean;
   includeArchivedOrCancelled: boolean;
@@ -30,24 +34,28 @@ const border: Partial<ExcelJS.Borders> = {
 };
 
 export function rotaExportFilename(weekStart: string): string {
-  return `Jan-Preschool-Rota-${weekStart}.xlsx`;
+  return `${getExportIdentity().siteSlug}-rota-${weekStart}.xlsx`;
 }
 
 export function templateExportFilename(templateName: string): string {
-  const safe = templateName.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `Jan-Preschool-Rota-Template-${safe || "Export"}.xlsx`;
+  return `${getExportIdentity().siteSlug}-rota-template-${safeExportSlug(templateName)}.xlsx`;
 }
 
 export function parseRotaExportOptions(searchParams: URLSearchParams): RotaExportOptions {
+  const includeWorkAreas = searchParams.get("workAreas") === "1" || searchParams.get("rooms") === "1";
   return {
     format: searchParams.get("format") === "detailed" ? "detailed" : "compact",
     includeWeekends: searchParams.get("weekends") === "1",
     includeBreaks: searchParams.get("breaks") === "1",
-    includeRooms: searchParams.get("rooms") === "1",
+    includeWorkAreas,
     includeRoles: searchParams.get("roles") === "1",
     includeWarnings: searchParams.get("warnings") === "1",
     includeArchivedOrCancelled: searchParams.get("archived") === "1",
   };
+}
+
+function includesWorkAreas(options: RotaExportOptions): boolean {
+  return options.includeWorkAreas ?? options.includeRooms ?? false;
 }
 
 function timeRange(shifts: ProductionRotaShift[]): string {
@@ -131,7 +139,7 @@ function getExportShifts(data: ProductionRotaDataset, options: RotaExportOptions
         if (overlapWarningsForShift(shift, data.shifts).length) warnings.push("Overlapping shift");
         if (!person?.active) warnings.push("Inactive staff");
         if (shift.breakUnspecified) warnings.push("Break unspecified");
-        if (options.includeRooms && !shift.roomOrArea) warnings.push("Room not recorded");
+        if (includesWorkAreas(options) && !(shift.workArea || shift.roomOrArea)) warnings.push("Work area not recorded");
         if (options.includeRoles && !shift.roleOnShift) warnings.push("Role not recorded");
         if (shift.status === "cancelled" || shift.archivedAt) warnings.push("Archived or cancelled shift included");
       }
@@ -140,6 +148,8 @@ function getExportShifts(data: ProductionRotaDataset, options: RotaExportOptions
 }
 
 function addWeeklyRotaSheet(workbook: ExcelJS.Workbook, data: ProductionRotaDataset, options: RotaExportOptions) {
+  const identity = getExportIdentity();
+  const profile = getActiveIndustryProfile();
   const sheet = workbook.addWorksheet("Weekly rota", { properties: { defaultRowHeight: 21 } });
   const dates = Array.from({ length: options.includeWeekends ? 7 : 5 }, (_, index) => isoDate(addDays(parseISO(data.weekStart), index)));
   const columnsPerDay = options.includeBreaks ? 4 : 3;
@@ -147,7 +157,7 @@ function addWeeklyRotaSheet(workbook: ExcelJS.Workbook, data: ProductionRotaData
   const headerRow = data.week?.status === "draft" ? 5 : 4;
   addTitle(
     sheet,
-    "Jan Pre-School and Nursery",
+    identity.siteDisplayName,
     `Weekly rota | Week commencing ${formatDateUk(data.weekStart)} | ${data.week?.status ?? "No rota"}`,
     lastColumn,
     data.week?.status === "draft" ? "DRAFT ROTA: this schedule has not been published." : undefined,
@@ -191,7 +201,7 @@ function addWeeklyRotaSheet(workbook: ExcelJS.Workbook, data: ProductionRotaData
       row.getCell(cellColumn + 2).value = dayShifts.length ? minutesAsExcelDays(grossMinutes(dayShifts)) : null;
       row.getCell(cellColumn + 2).numFmt = "[h]:mm";
       const comments = sorted.flatMap((shift) => [
-        options.includeRooms && shift.roomOrArea ? `Room: ${shift.roomOrArea}` : "",
+        includesWorkAreas(options) && (shift.workArea || shift.roomOrArea) ? `${profile.workAreaSingular}: ${shift.workArea || shift.roomOrArea}` : "",
         options.includeRoles && shift.roleOnShift ? `Role: ${shift.roleOnShift}` : "",
         options.includeWarnings && shift.warnings.length ? `Warnings: ${shift.warnings.join(", ")}` : "",
         shift.notes ? `Notes: ${shift.notes}` : "",
@@ -222,7 +232,7 @@ function addWeeklyRotaSheet(workbook: ExcelJS.Workbook, data: ProductionRotaData
 
 function addShiftDetailsSheet(workbook: ExcelJS.Workbook, data: ProductionRotaDataset, options: RotaExportOptions, shifts: ExportShift[]) {
   const sheet = workbook.addWorksheet("Shift details", { properties: { defaultRowHeight: 20 } });
-  const headers = ["Staff name", "Staff ID", "Date", "Day", "Start", "Finish", "Gross hours", "Confirmed break", "Net hours", "Room or area", "Role", "Status", "Warnings", "Notes"];
+  const headers = ["Staff name", "Staff ID", "Date", "Day", "Start", "Finish", "Gross hours", "Confirmed break", "Net hours", "Work area", "Role", "Status", "Warnings", "Notes"];
   addTitle(sheet, "Shift details", `Week commencing ${formatDateUk(data.weekStart)}`, headers.length);
   const headerRow = 4;
   headers.forEach((header, index) => { sheet.getCell(headerRow, index + 1).value = header; });
@@ -240,7 +250,7 @@ function addShiftDetailsSheet(workbook: ExcelJS.Workbook, data: ProductionRotaDa
       minutesAsExcelDays(gross),
       confirmedBreak === null ? "Not specified" : confirmedBreak,
       confirmedBreak === null ? null : minutesAsExcelDays(gross - confirmedBreak),
-      options.includeRooms ? shift.roomOrArea ?? "" : "",
+      includesWorkAreas(options) ? shift.workArea ?? shift.roomOrArea ?? "" : "",
       options.includeRoles ? shift.roleOnShift ?? "" : "",
       shift.status,
       shift.warnings.join("; "),
@@ -287,7 +297,8 @@ function addExportInformationSheet(
   const sheet = workbook.addWorksheet("Export information");
   addTitle(sheet, "Export information", values.title, 2);
   const rows: Array<[string, string]> = [
-    ["Nursery", "Jan Pre-School and Nursery"],
+    ["Organisation", getExportIdentity().organisationDisplayName],
+    ["Site", getExportIdentity().siteDisplayName],
     ["Week commencing", values.weekStart ? formatDateUk(values.weekStart) : "Reusable weekday template"],
     ["Status", values.status],
     ["Exported at", new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/London" }).format(new Date())],
@@ -310,7 +321,7 @@ function addExportInformationSheet(
 export async function buildRotaWorkbook(data: ProductionRotaDataset, options: RotaExportOptions, exportedBy: string): Promise<Buffer> {
   if (!data.week) throw new Error("No production rota exists for the selected week.");
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Jan Pre-School Staff Rota System";
+  workbook.creator = getExportIdentity().productName;
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
@@ -341,13 +352,14 @@ export async function buildTemplateWorkbook(
   exportedBy: string,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Jan Pre-School Staff Rota System";
+  const identity = getExportIdentity();
+  workbook.creator = identity.productName;
   workbook.created = new Date();
   const days = Array.from({ length: options.includeWeekends ? 7 : 5 }, (_, index) => index + 1);
   const columnsPerDay = options.includeBreaks ? 4 : 3;
   const lastColumn = 1 + days.length * columnsPerDay + 1;
   const sheet = workbook.addWorksheet("Weekly rota");
-  addTitle(sheet, "Jan Pre-School and Nursery", `ROTA TEMPLATE | ${template.name}`, lastColumn, "TEMPLATE ONLY: this is not a published rota.");
+  addTitle(sheet, identity.siteDisplayName, `ROTA TEMPLATE | ${template.name}`, lastColumn, "TEMPLATE ONLY: this is not a published rota.");
   const headerRow = 5;
   const weekdayRow = 4;
   sheet.getCell(weekdayRow, 1).value = "Staff member";

@@ -1,6 +1,9 @@
 import ExcelJS from "exceljs";
+import { createHash } from "node:crypto";
 import { format, parseISO } from "date-fns";
-import { formatTimeUk } from "@/lib/dates/format";
+import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
+import { CommercialIdentityError } from "@/lib/commercial-identity/errors";
+import { requirePermission } from "@/lib/commercial-identity/guards";
 import { splitPayrollDatesIntoWeeks } from "@/lib/exports/payroll-detail";
 import {
   payrollModeIncludesClocked,
@@ -8,6 +11,404 @@ import {
   type PayrollExportHoursMode,
 } from "@/lib/exports/payroll-options";
 import type { PayrollExportDetail, PayrollPreparationRow } from "@/lib/payroll/types";
+import { getCommercialExportIdentity, getExportIdentity } from "@/lib/exports/identity";
+import type { CommercialPayrollCommandResult } from "@/lib/payroll/tenant-actions";
+import type { CommercialMembershipContext } from "@/types/tenancy";
+
+export const COMMERCIAL_PAYROLL_EXPORT_MAX_ROWS = 50_000;
+export const COMMERCIAL_PAYROLL_EXPORT_MAX_WORKSHEETS = 4;
+const COMMERCIAL_PAYROLL_EXPORT_MAX_TEXT_LENGTH = 32_767;
+
+export type CommercialApprovedPayrollExportRow = {
+  rowId?: string;
+  organisationId: string;
+  runId: string;
+  staffId: string;
+  sourceKind?: "attendance" | "staff_summary" | "adjustment_summary";
+  fullName: string;
+  employmentRole: string;
+  siteId: string | null;
+  siteDisplayName: string | null;
+  operationalDate: string;
+  payType: "hourly" | "salaried" | null;
+  rawMinutes: number;
+  adjustmentMinutes: number;
+  payableMinutes: number;
+  ordinaryMinutes: number;
+  overtimeMinutes: number;
+  estimatedGrossValue: number | null;
+  currencyCode: string;
+  warnings: string[];
+};
+
+export type CommercialApprovedPayrollExport = {
+  organisationId: string;
+  organisationDisplayName: string;
+  siteId: string | null;
+  siteDisplayName: string | null;
+  periodId: string;
+  periodStart: string;
+  periodEnd: string;
+  runId: string;
+  approvalId: string;
+  revision: number;
+  approvalStatus: "approved" | "reopened";
+  rowFingerprint: string;
+  payableMinutesTotal: number;
+  adjustmentMinutesTotal: number;
+  adjustmentSnapshots: Array<{
+    adjustmentId: string;
+    lineageRootId: string;
+    staffId: string;
+    targetKind: "attendance" | "organisation_summary" | "site_summary";
+    siteId: string | null;
+    operationalDate: string | null;
+    adjustmentMinutes: number;
+    reason: string;
+    createdAt: string;
+  }>;
+  readiness: {
+    blocker: number;
+    warning: number;
+    informational: number;
+  };
+  rows: CommercialApprovedPayrollExportRow[];
+};
+
+export type CommercialPayrollExportRequest = {
+  context: CommercialMembershipContext;
+  periodId: string;
+  approvalId: string;
+  expectedRevision: number;
+  requestedSiteId: string | null;
+  plannedDetail?: PayrollExportDetail;
+};
+
+export type CommercialPayrollExportDependencies = {
+  loadApprovedRevision: (scope: {
+    organisationId: string;
+    periodId: string;
+    approvalId: string;
+    expectedRevision: number;
+    siteId: string | null;
+  }) => Promise<CommercialApprovedPayrollExport>;
+  recordExport: (input: {
+    periodId: string;
+    approvalId: string;
+    expectedRevision: number;
+    operationId: string;
+    format: "xlsx";
+    fileName: string;
+    contentSha256: string;
+    rowCount: number;
+    rowFingerprint: string;
+    payableMinutes: number;
+    adjustmentMinutes: number;
+  }) => Promise<CommercialPayrollCommandResult>;
+  createOperationId: () => string;
+};
+
+function boundedExcelText(value: string | null | undefined): string {
+  return String(value ?? "").slice(0, COMMERCIAL_PAYROLL_EXPORT_MAX_TEXT_LENGTH);
+}
+
+function safeExcelText(value: string | null | undefined): string {
+  const text = String(value ?? "");
+  return /^[=+\-@]/.test(text)
+    ? `'${text.slice(0, COMMERCIAL_PAYROLL_EXPORT_MAX_TEXT_LENGTH - 1)}`
+    : boundedExcelText(text);
+}
+
+function styleHeader(row: ExcelJS.Row): void {
+  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
+  row.alignment = { vertical: "middle", wrapText: true };
+}
+
+function commercialWorkbookText(input: CommercialApprovedPayrollExport): string {
+  const identity = getCommercialExportIdentity(input);
+  return boundedExcelText([identity.organisationDisplayName, identity.siteDisplayName]
+    .filter(Boolean).join(" | "));
+}
+
+function assertCommercialApprovedEvidence(input: CommercialApprovedPayrollExport): void {
+  const payableMinutes = input.rows.reduce((sum, row) => sum + row.payableMinutes, 0);
+  const adjustmentMinutes = input.rows.reduce((sum, row) => sum + row.adjustmentMinutes, 0);
+  const snapshotIds = input.adjustmentSnapshots.map((snapshot) => snapshot.adjustmentId);
+  if (!validEvidenceFingerprint(input.rowFingerprint)
+    || payableMinutes !== input.payableMinutesTotal
+    || adjustmentMinutes !== input.adjustmentMinutesTotal
+    || new Set(snapshotIds).size !== snapshotIds.length) {
+    throw new Error("The approved payroll evidence does not reconcile.");
+  }
+}
+
+function validEvidenceFingerprint(value: string): boolean {
+  return /^[0-9a-f]{64}$/.test(value);
+}
+
+export async function createCommercialPayrollWorkbook(
+  input: CommercialApprovedPayrollExport,
+  plannedDetail?: PayrollExportDetail,
+): Promise<Buffer> {
+  if (input.rows.length > COMMERCIAL_PAYROLL_EXPORT_MAX_ROWS) {
+    throw new Error(`The commercial payroll export row limit is ${COMMERCIAL_PAYROLL_EXPORT_MAX_ROWS}.`);
+  }
+  if (!Number.isInteger(input.revision) || input.revision < 1
+    || input.approvalStatus !== "approved") {
+    throw new Error("The approved payroll revision is invalid.");
+  }
+  if (input.rows.some((row) => row.organisationId !== input.organisationId
+    || row.runId !== input.runId
+    || (input.siteId !== null && row.siteId !== input.siteId))) {
+    throw new Error("The approved payroll revision contains rows outside its export scope.");
+  }
+  assertCommercialApprovedEvidence(input);
+
+  const identity = getCommercialExportIdentity(input);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = identity.productName;
+  workbook.subject = boundedExcelText(`${commercialWorkbookText(input)} payroll preparation revision ${input.revision}`);
+  workbook.title = boundedExcelText(`${identity.organisationDisplayName} payroll preparation`);
+  workbook.company = boundedExcelText(identity.organisationDisplayName);
+  workbook.created = new Date();
+
+  const summary = workbook.addWorksheet("Summary", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  const organisationMinutes = input.payableMinutesTotal;
+  const adjustmentMinutes = input.adjustmentMinutesTotal;
+  const siteMinutes = new Map<string, number>();
+  const categoryMinutes = new Map<string, number>();
+  for (const row of input.rows) {
+    if (row.sourceKind !== "staff_summary") {
+      const site = row.siteDisplayName ?? "Unattributed";
+      siteMinutes.set(site, (siteMinutes.get(site) ?? 0) + row.payableMinutes);
+    }
+    const category = row.payType ?? "Missing pay category";
+    categoryMinutes.set(category, (categoryMinutes.get(category) ?? 0) + row.payableMinutes);
+  }
+  summary.columns = [
+    { header: "Report", key: "label", width: 34 },
+    { header: "Value", key: "value", width: 52 },
+  ];
+  summary.addRows([
+    { label: "Product", value: identity.productName },
+    { label: "Organisation", value: safeExcelText(identity.organisationDisplayName) },
+    { label: "Site filter", value: safeExcelText(identity.siteDisplayName ?? "All authorised sites") },
+    { label: "Period", value: `${formatDateUk(input.periodStart)} to ${formatDateUk(input.periodEnd)}` },
+    { label: "Approved revision", value: `Revision ${input.revision}` },
+    { label: "Approval state", value: "Approved" },
+    { label: "Organisation total", value: `${organisationMinutes} minutes` },
+    { label: "Adjustment total", value: `${adjustmentMinutes} minutes` },
+    { label: "Readiness blockers", value: input.readiness.blocker },
+    { label: "Readiness warnings", value: input.readiness.warning },
+    { label: "Readiness information", value: input.readiness.informational },
+    ...[...siteMinutes].map(([site, minutes]) => ({
+      label: safeExcelText(`Site-attributed minutes: ${site}`),
+      value: minutes,
+    })),
+    ...[...categoryMinutes].map(([category, minutes]) => ({
+      label: safeExcelText(`Pay category: ${category}`),
+      value: minutes,
+    })),
+  ]);
+  styleHeader(summary.getRow(1));
+  summary.eachRow((row, rowNumber) => {
+    if (rowNumber > 1) row.alignment = { vertical: "top", wrapText: true };
+  });
+
+  const groupedStaff = new Map<string, {
+    fullName: string;
+    employmentRole: string;
+    payType: string;
+    payableMinutes: number;
+    ordinaryMinutes: number;
+    overtimeMinutes: number;
+    adjustmentMinutes: number;
+    estimatedGrossValue: number | null;
+  }>();
+  for (const row of input.rows) {
+    const current = groupedStaff.get(row.staffId) ?? {
+      fullName: row.fullName,
+      employmentRole: row.employmentRole,
+      payType: row.payType ?? "Missing",
+      payableMinutes: 0,
+      ordinaryMinutes: 0,
+      overtimeMinutes: 0,
+      adjustmentMinutes: 0,
+      estimatedGrossValue: null,
+    };
+    current.payableMinutes += row.payableMinutes;
+    current.ordinaryMinutes += row.ordinaryMinutes;
+    current.overtimeMinutes += row.overtimeMinutes;
+    current.adjustmentMinutes += row.adjustmentMinutes;
+    if (row.estimatedGrossValue !== null) {
+      current.estimatedGrossValue = (current.estimatedGrossValue ?? 0) + row.estimatedGrossValue;
+    }
+    groupedStaff.set(row.staffId, current);
+  }
+  const staff = workbook.addWorksheet("Staff totals", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  staff.columns = [
+    { header: "Staff name", key: "fullName", width: 30 },
+    { header: "Role", key: "employmentRole", width: 24 },
+    { header: "Pay category", key: "payType", width: 18 },
+    { header: "Payable minutes", key: "payableMinutes", width: 18 },
+    { header: "Ordinary minutes", key: "ordinaryMinutes", width: 18 },
+    { header: "Overtime minutes", key: "overtimeMinutes", width: 18 },
+    { header: "Adjustment minutes", key: "adjustmentMinutes", width: 20 },
+    { header: "Estimated preparation value", key: "estimatedGrossValue", width: 28 },
+  ];
+  for (const value of groupedStaff.values()) {
+    staff.addRow({
+      ...value,
+      fullName: safeExcelText(value.fullName),
+      employmentRole: safeExcelText(value.employmentRole),
+      payType: safeExcelText(value.payType),
+    });
+  }
+  styleHeader(staff.getRow(1));
+  staff.getColumn("H").numFmt = '£#,##0.00';
+
+  const detail = workbook.addWorksheet("Approved detail", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  detail.columns = [
+    { header: "Staff name", key: "fullName", width: 30 },
+    { header: "Role", key: "employmentRole", width: 24 },
+    { header: "Site", key: "site", width: 24 },
+    { header: "Date", key: "date", width: 14 },
+    { header: "Pay category", key: "payType", width: 18 },
+    { header: "Raw minutes", key: "rawMinutes", width: 15 },
+    { header: "Adjustment minutes", key: "adjustmentMinutes", width: 20 },
+    { header: "Payable minutes", key: "payableMinutes", width: 18 },
+    { header: "Ordinary minutes", key: "ordinaryMinutes", width: 18 },
+    { header: "Overtime minutes", key: "overtimeMinutes", width: 18 },
+    { header: "Estimated preparation value", key: "estimatedGrossValue", width: 28 },
+    { header: "Warnings", key: "warnings", width: 42 },
+  ];
+  for (const row of input.rows) {
+    detail.addRow({
+      fullName: safeExcelText(row.fullName),
+      employmentRole: safeExcelText(row.employmentRole),
+      site: safeExcelText(row.sourceKind === "staff_summary"
+        ? "No attendance"
+        : row.sourceKind === "adjustment_summary" && row.siteId === null
+          ? "Organisation adjustment"
+          : row.siteDisplayName ?? "Unattributed"),
+      date: row.sourceKind === "attendance"
+        ? new Date(`${row.operationalDate}T12:00:00.000Z`)
+        : null,
+      payType: safeExcelText(row.payType ?? "Missing"),
+      rawMinutes: row.rawMinutes,
+      adjustmentMinutes: row.adjustmentMinutes,
+      payableMinutes: row.payableMinutes,
+      ordinaryMinutes: row.ordinaryMinutes,
+      overtimeMinutes: row.overtimeMinutes,
+      estimatedGrossValue: row.estimatedGrossValue,
+      warnings: safeExcelText(row.warnings.join("; ")),
+    });
+  }
+  styleHeader(detail.getRow(1));
+  detail.getColumn("D").numFmt = "dd/mm/yyyy";
+  detail.getColumn("K").numFmt = '£#,##0.00';
+
+  if (plannedDetail) {
+    const planned = workbook.addWorksheet("Planned hours", {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    planned.columns = [
+      { header: "Staff name", key: "fullName", width: 30 },
+      { header: "Role", key: "employmentRole", width: 24 },
+      { header: "Date", key: "date", width: 14 },
+      { header: "Planned break minutes", key: "plannedBreakMinutes", width: 24 },
+      { header: "Planned net hours", key: "plannedHours", width: 20 },
+    ];
+    for (const row of plannedDetail.dailyRows.filter((detailRow) => detailRow.plannedMinutes > 0)) {
+      planned.addRow({
+        fullName: safeExcelText(row.fullName),
+        employmentRole: safeExcelText(row.employmentRole),
+        date: new Date(`${row.date}T12:00:00.000Z`),
+        plannedBreakMinutes: row.plannedBreakMinutes,
+        plannedHours: decimalHours(row.plannedMinutes),
+      });
+    }
+    styleHeader(planned.getRow(1));
+    planned.autoFilter = { from: "A1", to: "E1" };
+    planned.getColumn("C").numFmt = "dd/mm/yyyy";
+    planned.getColumn("E").numFmt = "0.00";
+    planned.eachRow((row, rowNumber) => {
+      row.alignment = { vertical: "top", wrapText: rowNumber > 1 };
+    });
+  }
+
+  if (workbook.worksheets.length > COMMERCIAL_PAYROLL_EXPORT_MAX_WORKSHEETS) {
+    throw new Error("The commercial payroll export workbook limit was exceeded.");
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+function assertApprovedExportMatchesRequest(
+  stored: CommercialApprovedPayrollExport,
+  request: CommercialPayrollExportRequest,
+  siteId: string | null,
+): void {
+  if (stored.organisationId !== request.context.organisationId
+    || stored.periodId !== request.periodId
+    || stored.approvalId !== request.approvalId
+    || stored.revision !== request.expectedRevision
+    || stored.approvalStatus !== "approved"
+    || stored.siteId !== siteId
+    || stored.rows.some((row) => row.organisationId !== stored.organisationId
+      || row.runId !== stored.runId
+      || (siteId !== null && row.siteId !== siteId))) {
+    throw new Error("The approved payroll revision does not match the authorised export request.");
+  }
+}
+
+export async function prepareCommercialPayrollExport(
+  request: CommercialPayrollExportRequest,
+  dependencies: CommercialPayrollExportDependencies,
+) {
+  requirePermission(request.context, "payroll.read");
+  requirePermission(request.context, "payroll.export");
+  const siteId = request.context.selectedSiteId;
+  if (request.requestedSiteId !== siteId
+    || (siteId !== null && (!request.context.permittedSiteIds.includes(siteId)
+      || !request.context.sitePermissions[siteId]?.includes("payroll.export")))) {
+    throw new CommercialIdentityError("site_unavailable");
+  }
+  const stored = await dependencies.loadApprovedRevision({
+    organisationId: request.context.organisationId,
+    periodId: request.periodId,
+    approvalId: request.approvalId,
+    expectedRevision: request.expectedRevision,
+    siteId,
+  });
+  assertApprovedExportMatchesRequest(stored, request, siteId);
+  assertCommercialApprovedEvidence(stored);
+  const workbook = await createCommercialPayrollWorkbook(stored, request.plannedDetail);
+  const digest = createHash("sha256").update(workbook).digest("hex");
+  const identity = getCommercialExportIdentity(stored);
+  const fileName = `${identity.fileSlug}-payroll-${stored.periodStart}-to-${stored.periodEnd}-r${stored.revision}.xlsx`;
+  const receipt = await dependencies.recordExport({
+    periodId: stored.periodId,
+    approvalId: stored.approvalId,
+    expectedRevision: stored.revision,
+    operationId: dependencies.createOperationId(),
+    format: "xlsx",
+    fileName,
+    contentSha256: digest,
+    rowCount: stored.rows.length,
+    rowFingerprint: stored.rowFingerprint,
+    payableMinutes: stored.payableMinutesTotal,
+    adjustmentMinutes: stored.adjustmentMinutesTotal,
+  });
+  if (!receipt.ok) throw new Error(`Payroll export audit failed: ${receipt.code}`);
+  return { workbook, fileName, digest, rowCount: stored.rows.length, receipt };
+}
 
 const decimalHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
 
@@ -51,7 +452,8 @@ export async function createPayrollPreparationWorkbook(
   options: PayrollWorkbookOptions = { hours: "both" },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Jan Pre-School Staff System";
+  const identity = getExportIdentity();
+  workbook.creator = identity.productName;
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
   const includePlanned = payrollModeIncludesPlanned(options.hours);
@@ -60,10 +462,10 @@ export async function createPayrollPreparationWorkbook(
     includeClocked && (reviewState.unresolved > 0 || reviewState.pendingRequests > 0);
   const workbookLabel =
     options.hours === "planned"
-      ? "Jan Pre-School planned hours export"
+      ? `${identity.siteDisplayName} planned hours export`
       : isUnreviewed
         ? "UNREVIEWED PAYROLL PREPARATION"
-        : "Jan Pre-School payroll preparation";
+        : `${identity.siteDisplayName} payroll preparation`;
   workbook.subject = workbookLabel;
   if (includeClocked) {
     const sheet = workbook.addWorksheet("Pay Summary", {

@@ -1,5 +1,7 @@
 begin;
 
+select plan(1);
+
 create or replace function pg_temp.assert_true(condition boolean, message text)
 returns void language plpgsql as $$
 begin
@@ -223,5 +225,8 @@ begin
 end;
 $$;
 reset role;
+
+select pass('manager attendance exception workflow database contract');
+select * from finish();
 
 rollback;

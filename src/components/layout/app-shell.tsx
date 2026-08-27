@@ -16,11 +16,14 @@ import { BrandMark } from "@/components/ui/brand";
 import { Button } from "@/components/ui/primitives";
 import { signOutAction } from "@/lib/auth/actions";
 import {
+  commercialAdminNavigation,
   itemIsActive,
   managerNavigation,
+  navigationForPermissions,
   type NavGroup,
 } from "@/lib/navigation/manager-navigation";
 import type { AppRole } from "@/types";
+import { browserIdentifiers } from "@/lib/platform/browser-identifiers";
 
 const staffNavigation: NavGroup[] = [
   {
@@ -35,13 +38,16 @@ const staffNavigation: NavGroup[] = [
   },
 ];
 
-export function AppShell({ children, role = "manager" }: { children: React.ReactNode; role?: AppRole }) {
+export function AppShell({ children, role = "manager", commercialPermissions }: { children: React.ReactNode; role?: AppRole; commercialPermissions?: readonly string[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const navigation = role === "staff" ? staffNavigation : managerNavigation;
+  const roleNavigation = role === "staff" ? staffNavigation : managerNavigation;
+  const navigation = commercialPermissions
+    ? navigationForPermissions(commercialAdminNavigation, commercialPermissions)
+    : roleNavigation;
 
   useEffect(() => {
     function handlePageScroll(event: KeyboardEvent) {
@@ -157,7 +163,10 @@ export function AppShell({ children, role = "manager" }: { children: React.React
   );
 
   const signOut = (
-    <form className="app-shell__signout" action={signOutAction} onSubmit={() => window.localStorage.removeItem("jan-staff-manager-session")}>
+    <form className="app-shell__signout" action={signOutAction} onSubmit={() => {
+      window.localStorage.removeItem(browserIdentifiers.managerSessionStorage.current);
+      browserIdentifiers.managerSessionStorage.legacy.forEach((key) => window.localStorage.removeItem(key));
+    }}>
       <Button type="submit" variant="ghost" className="w-full justify-start app-shell__signout-button">
         <LogOut className="h-4 w-4" /> Sign out
       </Button>

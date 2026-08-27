@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
+import { executeCommercialRotaCommand } from "@/lib/rota/tenant-service";
 import type { RotaActionState } from "@/lib/rota/actions";
 import type { RotaTemplateApplyMode } from "@/lib/rota/template-types";
+import { workAreaPayload } from "@/lib/platform/work-areas";
 import { shiftDurationMinutes } from "@/lib/rota/validation";
 
 const success = (message: string): RotaActionState => ({ ok: true, message });
@@ -78,7 +81,7 @@ export async function saveRotaTemplateShiftAction(_state: RotaActionState, formD
     start_time: startTime,
     end_time: endTime,
     break_minutes: breakMinutes,
-    room_or_area: text(formData, "roomOrArea"),
+    ...workAreaPayload(formData.get("workArea") ?? formData.get("roomOrArea")),
     role_on_shift: text(formData, "roleOnShift"),
     notes: text(formData, "notes"),
     sort_order: Number(text(formData, "sortOrder") ?? "0"),
@@ -125,7 +128,7 @@ export async function duplicateRotaTemplateShiftAction(_state: RotaActionState, 
     start_time: data.start_time,
     end_time: data.end_time,
     break_minutes: data.break_minutes,
-    room_or_area: data.room_or_area,
+    ...workAreaPayload(data.work_area ?? data.room_or_area),
     role_on_shift: data.role_on_shift,
     notes: data.notes,
     sort_order: data.sort_order,
@@ -169,7 +172,7 @@ export async function copyRotaTemplateStaffPatternAction(_state: RotaActionState
     end_time: shift.end_time,
     break_minutes: shift.break_minutes,
     break_unspecified: shift.break_unspecified,
-    room_or_area: shift.room_or_area,
+    ...workAreaPayload(shift.work_area ?? shift.room_or_area),
     role_on_shift: shift.role_on_shift,
     notes: shift.notes,
     sort_order: shift.sort_order,
@@ -235,10 +238,18 @@ export async function duplicateRotaTemplateAction(_state: RotaActionState, formD
 }
 
 export async function saveRotaWeekAsTemplateAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const weekId = text(formData, "weekId");
   const name = text(formData, "name");
   if (!weekId || !name) return failure("Rota week and template name are required.");
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "save_week_as_template", {
+      weekId, name, description: text(formData, "description"),
+    }, { idempotencyKey: text(formData, "operationId") ?? crypto.randomUUID() });
+    if (result.outcome !== "success") return failure("The rota week could not be saved as a template.");
+    refreshTemplates();
+    return success("The rota week was saved as an independent template.");
+  }
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("save_rota_week_as_template", {
     source_week_id: weekId,
@@ -252,7 +263,7 @@ export async function saveRotaWeekAsTemplateAction(_state: RotaActionState, form
 }
 
 export async function applyRotaTemplateAction(_state: RotaActionState, formData: FormData): Promise<RotaActionState> {
-  await requireAccount(["manager"]);
+  const actor = await requireCustomerDomainActor("rota.manage", { siteRequired: true });
   const templateId = text(formData, "templateId");
   const weekId = text(formData, "weekId");
   const requestKey = text(formData, "requestKey");
@@ -262,6 +273,21 @@ export async function applyRotaTemplateAction(_state: RotaActionState, formData:
   }
   if (mode === "replace" && formData.get("confirmReplace") !== "on") {
     return failure("Tick the replacement confirmation before applying this mode.");
+  }
+  if (actor.kind === "commercial") {
+    const result = await executeCommercialRotaCommand(actor.context, "apply_template", {
+      templateId, weekId, mode,
+      leaveOverrideReason: text(formData, "leaveOverrideReason"),
+      overlapOverrideReason: text(formData, "overlapOverrideReason"),
+    }, { idempotencyKey: requestKey, expectedRevision: Number(text(formData, "revision")) || null });
+    if (result.outcome === "workflow_changed") return failure("The rota changed after this preview. Reload and preview the template again.");
+    if (result.outcome !== "success") {
+      if (result.code === "cross_site_overlap") return failure("A staff member has an overlapping shift at another site.");
+      if (result.code === "approved_leave_conflict") return failure("Approved leave conflicts must be resolved before applying this template.");
+      return failure("The template could not be applied.");
+    }
+    refreshTemplates();
+    return success(`${result.copiedShifts ?? 0} shifts created.`);
   }
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("apply_rota_template", {

@@ -22,6 +22,9 @@ import {
   copyShiftHoursToDaysAction,
   saveRotaShiftAction,
 } from "@/lib/rota/actions";
+import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
+
+const industryProfile = getActiveIndustryProfile();
 import {
   dayCoverage,
   formatScheduledHours,
@@ -54,6 +57,8 @@ function ShiftEditorDrawer({
   onClose: () => void;
 }) {
   const shift = editor.shift;
+  const [saveOperationId] = useState(() => crypto.randomUUID());
+  const [archiveOperationId] = useState(() => crypto.randomUUID());
   const previousDate = format(addDays(parseISO(editor.date), -1), "yyyy-MM-dd");
   const previousShifts = previousDayShifts(editor.staff.id, editor.date, data.shifts);
   const laterDates = shift ? laterWeekDates(data.weekStart, editor.date) : [];
@@ -87,11 +92,11 @@ function ShiftEditorDrawer({
             <span className="rounded-xl bg-white p-2 text-purple-700 shadow-sm"><Copy className="h-5 w-5" /></span>
             <div>
               <h3 id="copy-hours-title" className="font-black text-purple-950">Copy hours</h3>
-              <p className="mt-1 text-sm text-slate-600">Copies start, finish and break only. Room, role and notes stay separate.</p>
+              <p className="mt-1 text-sm text-slate-600">Copies start, finish and break only. {industryProfile.workAreaSingular}, role and notes stay separate.</p>
             </div>
           </div>
 
-          <RotaActionForm
+          {!data.organisationId ? <RotaActionForm
             action={copyPreviousDayPatternAction}
             submitLabel="Copy previous day"
             pendingLabel="Copying..."
@@ -109,9 +114,9 @@ function ShiftEditorDrawer({
                 ? "Previous-day copying is available from Tuesday onwards."
                 : `Use ${format(parseISO(previousDate), "EEEE")}'s ${previousShifts.length ? previousShifts.map((item) => `${item.startTime} to ${item.endTime}`).join(" and ") : "not working"} pattern.`}
             </p>
-          </RotaActionForm>
+          </RotaActionForm> : null}
 
-          {shift && shift.status !== "cancelled" && laterDates.length ? (
+          {!data.organisationId && shift && shift.status !== "cancelled" && laterDates.length ? (
             <RotaActionForm
               action={copyShiftHoursToDaysAction}
               submitLabel="Copy to other days"
@@ -144,7 +149,9 @@ function ShiftEditorDrawer({
           onSuccess={onClose}
         >
           {hidden("rotaWeekId", data.week?.id ?? "")}
+          {hidden("operationId", saveOperationId)}
           {shift ? hidden("shiftId", shift.id) : null}
+          {shift?.revision ? hidden("revision", String(shift.revision)) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Staff member">
               <select className={inputClassName()} name="staffId" defaultValue={editor.staff.id} required>
@@ -182,8 +189,13 @@ function ShiftEditorDrawer({
                 <option value="completed">Completed</option>
               </select>
             </Field>
-            <Field label="Room or area">
-              <input className={inputClassName()} name="roomOrArea" list="rota-rooms" defaultValue={shift?.roomOrArea ?? ""} />
+            <Field label={industryProfile.workAreaSingular}>
+              {data.settings.workAreaOptions ? (
+                <select className={inputClassName()} name="workAreaId" defaultValue={shift?.workAreaId ?? ""}>
+                  <option value="">No work area</option>
+                  {data.settings.workAreaOptions.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+              ) : <input className={inputClassName()} name="workArea" list="rota-work-areas" defaultValue={shift?.workArea ?? shift?.roomOrArea ?? ""} />}
             </Field>
             <Field label="Role on shift">
               <input className={inputClassName()} name="roleOnShift" defaultValue={shift?.roleOnShift ?? ""} />
@@ -216,6 +228,8 @@ function ShiftEditorDrawer({
             onSuccess={onClose}
           >
             {hidden("shiftId", shift.id)}
+            {hidden("operationId", archiveOperationId)}
+            {shift.revision ? hidden("revision", String(shift.revision)) : null}
           </RotaActionForm>
         ) : null}
       </section>
@@ -264,8 +278,8 @@ function ShiftCellButton({
       <span className="mt-1 block text-xs font-semibold text-slate-600">
         {shift.breakUnspecified ? "Break not specified" : `${shift.breakMinutes} min break`} · {formatScheduledHours(total.minutes)}
       </span>
-      {shift.roomOrArea || shift.roleOnShift ? (
-        <span className="mt-2 block text-sm font-bold text-purple-800">{shift.roomOrArea || shift.roleOnShift}</span>
+      {shift.workArea || shift.roomOrArea || shift.roleOnShift ? (
+        <span className="mt-2 block text-sm font-bold text-purple-800">{shift.workArea || shift.roomOrArea || shift.roleOnShift}</span>
       ) : null}
       <span className="mt-2 flex items-center justify-between gap-2">
         <StatusPill tone={shift.status === "scheduled" ? "purple" : shift.status === "completed" ? "green" : "grey"}>{shift.status}</StatusPill>
@@ -324,7 +338,7 @@ export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
 
   return (
     <>
-      <datalist id="rota-rooms">{data.settings.availableRooms.map((room) => <option key={room} value={room} />)}</datalist>
+      <datalist id="rota-work-areas">{(data.settings.availableWorkAreas ?? data.settings.availableRooms).map((area) => <option key={area} value={area} />)}</datalist>
       <section className="overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-soft" aria-label="Weekly staff rota grid">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-purple-100 px-4 py-3">
           <div>

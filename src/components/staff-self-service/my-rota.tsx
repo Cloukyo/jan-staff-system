@@ -65,7 +65,7 @@ export function MyRota({ data }: { data: StaffRotaWeek }) {
                           <p className="mt-1 text-sm text-slate-600">
                             Break: {shift.breakUnspecified ? "Not specified" : `${shift.breakMinutes} minutes`}
                           </p>
-                          {shift.roomOrArea ? <p className="mt-2 flex items-center gap-2 text-sm font-bold text-purple-800"><MapPin className="h-4 w-4" />{shift.roomOrArea}</p> : null}
+                          {shift.workArea || shift.roomOrArea ? <p className="mt-2 flex items-center gap-2 text-sm font-bold text-purple-800"><MapPin className="h-4 w-4" />{shift.workArea || shift.roomOrArea}</p> : null}
                           {shift.roleOnShift ? <p className="mt-1 text-sm text-slate-600">Role: {shift.roleOnShift}</p> : null}
                         </div>
                         <StatusPill tone={shift.status === "completed" ? "grey" : "green"}>{shift.status === "completed" ? "Completed" : "Published"}</StatusPill>

@@ -365,7 +365,7 @@ describe("payroll Excel export", () => {
     await workbook.xlsx.load(buffer as never);
 
     expect(workbook.getWorksheet("Read Me")?.getCell("A1").value).toBe(
-      "Jan Pre-School payroll preparation",
+      "Site payroll preparation",
     );
   });
 

@@ -1,6 +1,8 @@
 import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import type { ClockEvent, DemoState, LeaveRequest, PayRateHistory, RotaShift, StaffAccount, StaffMember } from "@/types";
 import { prototypeHashPin } from "@/lib/pin/service";
+import { getDemoPreset } from "@/lib/demo-data/presets";
+import { getActiveIndustryProfile, type IndustryProfileId } from "@/lib/platform/industry-profile";
 
 const now = "2026-06-08T08:00:00+01:00";
 
@@ -20,19 +22,19 @@ function at(date: string, time: string): string {
   return `${date}T${time}:00+01:00`;
 }
 
-const staffSeed: StaffMember[] = [
+const baseStaffSeed: StaffMember[] = [
   ["stf-001", "Amelia Brooks", "Amelia", "Manager", "salaried", null, pence(3250), 40 * 60, 30, true, "2468"],
-  ["stf-002", "Priya Shah", "Priya", "Deputy Manager", "salaried", null, pence(2850), 38 * 60, 30, true, "1357"],
-  ["stf-003", "Hannah Clarke", "Hannah", "Room Leader", "hourly", pence(14.75), null, 36 * 60, 30, true, "1122"],
-  ["stf-004", "Maya Patel", "Maya", "Nursery Practitioner", "hourly", pence(12.6), null, 30 * 60, 30, true, "3344"],
-  ["stf-005", "Sophie Martin", "Sophie", "Nursery Practitioner", "hourly", pence(12.25), null, 24 * 60, 30, true, "5566"],
-  ["stf-006", "Leah Williams", "Leah", "Apprentice", "hourly", pence(8.9), null, 32 * 60, 45, true, "7788"],
-  ["stf-007", "Grace Evans", "Grace", "Room Leader", "hourly", pence(14.2), null, 35 * 60, 30, true, "9090"],
-  ["stf-008", "Nadia Khan", "Nadia", "Nursery Practitioner", "hourly", pence(12.8), null, 20 * 60, 30, true, "1212"],
+  ["stf-002", "Priya Shah", "Priya", "Deputy", "salaried", null, pence(2850), 38 * 60, 30, true, "1357"],
+  ["stf-003", "Hannah Clarke", "Hannah", "Team lead", "hourly", pence(14.75), null, 36 * 60, 30, true, "1122"],
+  ["stf-004", "Maya Patel", "Maya", "Staff member", "hourly", pence(12.6), null, 30 * 60, 30, true, "3344"],
+  ["stf-005", "Sophie Martin", "Sophie", "Staff member", "hourly", pence(12.25), null, 24 * 60, 30, true, "5566"],
+  ["stf-006", "Leah Williams", "Leah", "Trainee", "hourly", pence(8.9), null, 32 * 60, 45, true, "7788"],
+  ["stf-007", "Grace Evans", "Grace", "Team lead", "hourly", pence(14.2), null, 35 * 60, 30, true, "9090"],
+  ["stf-008", "Nadia Khan", "Nadia", "Staff member", "hourly", pence(12.8), null, 20 * 60, 30, true, "1212"],
   ["stf-009", "Olivia Reed", "Olivia", "Administrator", "salaried", null, pence(2100), 30 * 60, 0, true, "3434"],
-  ["stf-010", "Emily Turner", "Emily", "Nursery Practitioner", "hourly", pence(11.95), null, 18 * 60, 30, true, "5656"],
-  ["stf-011", "Zara Ahmed", "Zara", "Nursery Practitioner", "hourly", pence(12.1), null, 25 * 60, 30, true, "7878"],
-  ["stf-012", "Rebecca Jones", "Rebecca", "Former Practitioner", "hourly", pence(11.5), null, 0, 30, false, "9999"],
+  ["stf-010", "Emily Turner", "Emily", "Staff member", "hourly", pence(11.95), null, 18 * 60, 30, true, "5656"],
+  ["stf-011", "Zara Ahmed", "Zara", "Staff member", "hourly", pence(12.1), null, 25 * 60, 30, true, "7878"],
+  ["stf-012", "Rebecca Jones", "Rebecca", "Former staff member", "hourly", pence(11.5), null, 0, 30, false, "9999"],
 ].map(([staffId, fullName, displayName, role, payType, hourlyRatePence, monthlySalaryPence, contractedWeeklyMinutes, defaultBreakMinutes, active, pin]) => ({
   id: staffId as string,
   fullName: fullName as string,
@@ -55,18 +57,26 @@ const staffSeed: StaffMember[] = [
   updatedAt: now,
 }));
 
-const accountSeed: StaffAccount[] = staffSeed.slice(0, 8).map((person, index) => ({
+function staffForProfile(profileId: IndustryProfileId): StaffMember[] {
+  const preset = getDemoPreset(profileId);
+  return baseStaffSeed.map((person, index) => ({ ...person, role: preset.staffRoles[index] }));
+}
+
+function accountsForProfile(staff: StaffMember[], profileId: IndustryProfileId): StaffAccount[] {
+  const domain = getDemoPreset(profileId).emailDomain;
+  return staff.slice(0, 8).map((person, index) => ({
   id: id("acct", index + 1),
   authUserId: null,
   staffId: person.id,
   fullName: person.fullName,
-  email: index === 0 ? "manager@janpreschool.local" : `${person.displayName.toLowerCase()}@janpreschool.local`,
+  email: index === 0 ? `manager@${domain}` : `${person.displayName.toLowerCase()}@${domain}`,
   role: index === 0 ? "manager" : "staff",
   active: person.active,
   mustChangePassword: false,
   createdAt: now,
   updatedAt: now,
-}));
+  }));
+}
 
 const leaveRequestSeed: LeaveRequest[] = [
   {
@@ -128,7 +138,8 @@ const leaveRequestSeed: LeaveRequest[] = [
   },
 ];
 
-function buildRota(): RotaShift[] {
+function buildRota(staffSeed: StaffMember[], profileId: IndustryProfileId): RotaShift[] {
+  const preset = getDemoPreset(profileId);
   const monday = startOfWeek(new Date("2026-06-08T12:00:00+01:00"), { weekStartsOn: 1 });
   const rows: RotaShift[] = [];
   let count = 1;
@@ -169,8 +180,8 @@ function buildRota(): RotaShift[] {
           creditedMinutes,
           payableMinutes: payTreatment === "paid" ? creditedMinutes : 0,
           managerNote: status === "sick" ? "Unpaid sickness in demo data" : undefined,
-          roomOrRole: person.role.includes("Leader") ? "Preschool room" : person.role.includes("Manager") ? "Office cover" : "Nursery floor",
-          notes: status === "training" ? "Safeguarding refresher" : undefined,
+          workArea: person.role.includes("Manager") ? preset.workAreas[0] : person.role.includes("Lead") || person.role.includes("Senior") || person.role.includes("Leader") ? preset.workAreas[1] : preset.workAreas[2],
+          notes: status === "training" ? preset.trainingLabel : undefined,
         });
       }
     }
@@ -224,8 +235,12 @@ function buildClockEvents(): ClockEvent[] {
   return events;
 }
 
-export function createSeedState(): DemoState {
-  const rota = buildRota();
+export function createSeedState(profileValue?: IndustryProfileId): DemoState {
+  const profileId = profileValue ?? getActiveIndustryProfile().id;
+  const preset = getDemoPreset(profileId);
+  const staffSeed = staffForProfile(profileId);
+  const accountSeed = accountsForProfile(staffSeed, profileId);
+  const rota = buildRota(staffSeed, profileId);
   const clockEvents = buildClockEvents();
   const payRates: PayRateHistory[] = staffSeed.flatMap((person, index) => [
     {
@@ -241,7 +256,8 @@ export function createSeedState(): DemoState {
   ]);
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
+    industryProfileId: profileId,
     staff: staffSeed,
     staffAccounts: accountSeed,
     leaveRequests: leaveRequestSeed,
@@ -264,7 +280,8 @@ export function createSeedState(): DemoState {
     ],
     paySummaries: [],
     settings: {
-      nurseryDisplayName: "Jan Pre-School and Nursery",
+      organisationDisplayName: preset.organisationDisplayName,
+      siteDisplayName: preset.siteDisplayName,
       defaultBreakMinutes: 30,
       lateArrivalThresholdMinutes: 10,
       overtimeWarningThresholdMinutes: 30,

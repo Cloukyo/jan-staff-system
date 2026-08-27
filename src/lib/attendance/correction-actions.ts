@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { AttendanceEventType } from "@/lib/attendance/effective-events";
-import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { requireAttendanceActor } from "@/lib/attendance/server-actor";
 import { londonLocalDateTimeToUtc } from "@/lib/dates/format";
 
 export type CorrectionActionInput = {
@@ -169,7 +169,7 @@ function attendanceChangedResult(): CorrectionActionResult {
 }
 
 async function saveClockEventCorrection(input: CorrectionActionInput): Promise<CorrectionActionResult> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.correct", { siteRequired: true });
   if (!isCorrectionActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
   if (
@@ -194,7 +194,20 @@ async function saveClockEventCorrection(input: CorrectionActionInput): Promise<C
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("save_manual_clock_event_correction", {
+  const { error } = actor.kind === "commercial"
+    ? await supabase.rpc("save_commercial_clock_event_correction", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      target_event_id: input.targetEventId?.trim() || null,
+      primary_correction_id: input.correctionId,
+      requested_event_type: input.eventType,
+      requested_event_timestamp: localDateTime.timestamp.toISOString(),
+      reason,
+      expected_revision: input.expectedRevision,
+    })
+    : await supabase.rpc("save_manual_clock_event_correction", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     target_event_id: input.targetEventId?.trim() || null,
@@ -203,7 +216,7 @@ async function saveClockEventCorrection(input: CorrectionActionInput): Promise<C
     requested_event_timestamp: localDateTime.timestamp.toISOString(),
     reason,
     expected_revision: input.expectedRevision,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) return { ok: false, code: "save_failed", message: "The correction could not be recorded." };
 
@@ -236,18 +249,26 @@ export async function saveBoundClockEventCorrectionAction(
 }
 
 async function applyPlannedHours(input: PlannedHoursActionInput): Promise<CorrectionActionResult> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.correct", { siteRequired: true });
   if (!isPlannedHoursActionInput(input)) return invalidCorrection;
   const reason = input.reason.trim();
   if (!input.staffId || !validDate(input.attendanceDate) || reason.length < 5) return invalidCorrection;
-
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("use_planned_hours", {
+  const { data, error } = actor.kind === "commercial"
+    ? await supabase.rpc("use_commercial_planned_hours", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      reason,
+      expected_revision: input.expectedRevision,
+    })
+    : await supabase.rpc("use_planned_hours", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     reason,
     expected_revision: input.expectedRevision,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) return { ok: false, code: "save_failed", message: "Planned hours could not be applied." };
   if (!data) return { ok: true, code: "no_changes", message: "Attendance already matches the published planned hours." };
@@ -271,7 +292,7 @@ export async function useBoundPlannedHoursAction(
 }
 
 async function removeClockEventFromHours(input: RemoveClockEventActionInput): Promise<CorrectionActionResult> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.correct", { siteRequired: true });
   if (!isRemoveClockEventActionInput(input) || !input.confirmed) return invalidRemovalConfirmation;
   const reason = input.reason.trim();
   if (
@@ -286,14 +307,25 @@ async function removeClockEventFromHours(input: RemoveClockEventActionInput): Pr
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("remove_clock_event_from_hours", {
+  const { error } = actor.kind === "commercial"
+    ? await supabase.rpc("remove_commercial_clock_event_from_hours", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      target_event_id: input.targetEventId,
+      reason,
+      expected_revision: input.expectedRevision,
+      operation_id: input.correctionId,
+    })
+    : await supabase.rpc("remove_clock_event_from_hours", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     target_event_id: input.targetEventId,
     reason,
     expected_revision: input.expectedRevision,
     operation_id: input.correctionId,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) {
     return {
@@ -331,7 +363,7 @@ export async function removeBoundClockEventAction(
 async function resetAttendanceToPlannedHours(
   input: ResetAttendanceToPlannedHoursActionInput,
 ): Promise<CorrectionActionResult> {
-  await requireAccount(["manager"]);
+  const actor = await requireAttendanceActor("attendance.correct", { siteRequired: true });
   if (!isResetAttendanceToPlannedHoursActionInput(input) || !input.confirmed) return invalidResetConfirmation;
   const reason = input.reason.trim();
   if (
@@ -347,7 +379,19 @@ async function resetAttendanceToPlannedHours(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("reset_attendance_to_planned_hours", {
+  const { error } = actor.kind === "commercial"
+    ? await supabase.rpc("reset_commercial_attendance_to_planned_hours", {
+      target_organisation_id: actor.context.organisationId,
+      target_site_id: actor.context.selectedSiteId!,
+      target_staff_id: input.staffId,
+      target_date: input.attendanceDate,
+      reason,
+      expected_revision: input.expectedRevision,
+      operation_id: input.correctionId,
+      expected_planned_start: input.plannedStart,
+      expected_planned_finish: input.plannedFinish,
+    })
+    : await supabase.rpc("reset_attendance_to_planned_hours", {
     target_staff_id: input.staffId,
     target_date: input.attendanceDate,
     reason,
@@ -355,7 +399,7 @@ async function resetAttendanceToPlannedHours(
     operation_id: input.correctionId,
     expected_planned_start: input.plannedStart,
     expected_planned_finish: input.plannedFinish,
-  });
+    });
   if (attendanceChanged(error)) return attendanceChangedResult();
   if (error) {
     return {

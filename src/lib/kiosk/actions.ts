@@ -63,7 +63,7 @@ export async function verifyKioskPinAction(staffId: string, pin: string): Promis
   const deviceToken = await getKioskDeviceToken();
   if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("verify_device_kiosk_pin", { device_token: deviceToken, target_staff_id: staffId, candidate_pin: pin });
+  const { data, error } = await supabase.rpc("verify_tenant_aware_device_kiosk_pin", { device_token: deviceToken, target_staff_id: staffId, candidate_pin: pin });
   if (error) return { ok: false, code: "request_failed", message: kioskResultMessage("request_failed") };
   return mapKioskVerificationResponse(data as KioskActionRpcResponse | KioskActionRpcResponse[] | null);
 }
@@ -82,7 +82,7 @@ export async function performKioskAttendanceAction(
   const deviceToken = await getKioskDeviceToken();
   if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("perform_device_kiosk_attendance_action", {
+  const { data, error } = await supabase.rpc("perform_tenant_aware_kiosk_attendance_action", {
     device_token: deviceToken,
     target_staff_id: input.staffId,
     candidate_pin: input.pin,
@@ -120,7 +120,7 @@ export async function changeTemporaryKioskPinAction(input: {
   const deviceToken = await getKioskDeviceToken();
   if (!deviceToken) return { ok: false, code: "device_required", message: "This kiosk device is not active." };
   const supabase = createPublicKioskClient();
-  const { data, error } = await supabase.rpc("change_device_kiosk_pin", {
+  const { data, error } = await supabase.rpc("change_tenant_aware_device_kiosk_pin", {
     device_token: deviceToken,
     target_staff_id: input.staffId,
     temporary_pin: input.temporaryPin,

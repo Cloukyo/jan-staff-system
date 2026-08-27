@@ -1,6 +1,6 @@
 import { differenceInMinutes, parseISO } from "date-fns";
 import { pairAttendanceByOperationalDay } from "@/lib/attendance/pairing";
-import type { PayArrangement, PayrollAttendanceReview, PayrollPreparationRow, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
+import type { PayArrangement, PayrollAttendanceReview, PayrollPreparationArithmetic, PayrollPreparationRow, ProductionClockEvent, ProductionStaffRow } from "@/lib/payroll/types";
 
 export function arrangementsForPeriod(arrangements: PayArrangement[], start: string, end: string): PayArrangement[] {
   return arrangements
@@ -57,6 +57,33 @@ function salaryForPeriod(arrangement: PayArrangement, periodStart: string, perio
   return null;
 }
 
+export function calculatePayrollPreparationArithmetic(
+  arrangement: PayArrangement | null,
+  recordedMinutes: number,
+  periodStart: string,
+  periodEnd: string,
+): PayrollPreparationArithmetic {
+  const periodDays = Math.max(1, differenceInMinutes(parseISO(`${periodEnd}T12:00:00`), parseISO(`${periodStart}T12:00:00`)) / 1440 + 1);
+  const ordinaryLimit = arrangement?.contractedWeeklyHours === null || arrangement?.contractedWeeklyHours === undefined
+    ? null
+    : Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7);
+  const ordinaryMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
+    ? Math.min(recordedMinutes, ordinaryLimit)
+    : recordedMinutes;
+  const overtimeMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
+    ? Math.max(0, recordedMinutes - ordinaryLimit)
+    : 0;
+  const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
+    ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
+    : null;
+  return {
+    ordinaryMinutes,
+    overtimeMinutes,
+    estimatedGross,
+    salaryBasis: arrangement?.payType === "salaried" ? salaryForPeriod(arrangement, periodStart, periodEnd) : null,
+  };
+}
+
 export function createPayrollPreparationRow(
   staff: ProductionStaffRow,
   originalEvents: ProductionClockEvent[],
@@ -78,19 +105,12 @@ export function createPayrollPreparationRow(
   if (periodArrangements.length > 1) warnings.push("Pay arrangement changes within period");
   if (effectiveTotals.recordedMinutes === 0) warnings.push("Zero recorded hours");
   if (arrangement && arrangement.hoursBasis !== "contracted") warnings.push("Contracted hours not tracked");
-  const periodDays = Math.max(1, differenceInMinutes(parseISO(`${periodEnd}T12:00:00`), parseISO(`${periodStart}T12:00:00`)) / 1440 + 1);
-  const ordinaryLimit = arrangement?.contractedWeeklyHours === null || arrangement?.contractedWeeklyHours === undefined
-    ? null
-    : Math.round(arrangement.contractedWeeklyHours * 60 * periodDays / 7);
-  const ordinaryMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.min(effectiveTotals.recordedMinutes, ordinaryLimit)
-    : effectiveTotals.recordedMinutes;
-  const overtimeMinutes = arrangement?.payType === "hourly" && ordinaryLimit !== null
-    ? Math.max(0, effectiveTotals.recordedMinutes - ordinaryLimit)
-    : 0;
-  const estimatedGross = arrangement?.payType === "hourly" && arrangement.hourlyRate !== null
-    ? Math.round(((ordinaryMinutes / 60) * arrangement.hourlyRate + (overtimeMinutes / 60) * arrangement.hourlyRate * arrangement.overtimeMultiplier) * 100) / 100
-    : null;
+  const arithmetic = calculatePayrollPreparationArithmetic(
+    arrangement,
+    effectiveTotals.recordedMinutes,
+    periodStart,
+    periodEnd,
+  );
   const workedDates = new Set([
     ...rawStaffEvents.map((event) => event.recordedDate),
     ...staffEvents.map((event) => event.recordedDate),
@@ -112,11 +132,11 @@ export function createPayrollPreparationRow(
     hoursBasis: arrangement?.hoursBasis ?? null,
     recordedMinutes: rawTotals.recordedMinutes,
     adjustedMinutes: effectiveTotals.recordedMinutes,
-    ordinaryMinutes,
-    overtimeMinutes,
+    ordinaryMinutes: arithmetic.ordinaryMinutes,
+    overtimeMinutes: arithmetic.overtimeMinutes,
     hourlyRate: arrangement?.hourlyRate ?? null,
-    estimatedGross,
-    salaryBasis: arrangement?.payType === "salaried" ? salaryForPeriod(arrangement, periodStart, periodEnd) : null,
+    estimatedGross: arithmetic.estimatedGross,
+    salaryBasis: arithmetic.salaryBasis,
     workedDays: workedDates.size,
     reviewedDays: reviewedDates.size,
     unresolvedDays,

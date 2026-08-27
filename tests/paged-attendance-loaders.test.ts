@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createSupabaseServerClient: vi.fn(),
   createServiceRoleClient: vi.fn(),
   requireAccount: vi.fn(),
+  requireAttendanceSelfActor: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/supabase-server", () => ({
@@ -17,6 +18,10 @@ vi.mock("@supabase/supabase-js", () => ({
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAccount: mocks.requireAccount,
+}));
+
+vi.mock("@/lib/attendance/server-actor", () => ({
+  requireAttendanceSelfActor: mocks.requireAttendanceSelfActor,
 }));
 
 vi.mock("@/lib/auth/config", () => ({
@@ -76,6 +81,10 @@ describe("paged attendance data loaders", () => {
       id: "account",
       staffId: "own-staff",
       role: "staff",
+    });
+    mocks.requireAttendanceSelfActor.mockResolvedValue({
+      kind: "legacy",
+      account: { id: "account-1", role: "staff", staffId: "own-staff" },
     });
   });
 

@@ -78,12 +78,12 @@ describe("production rota Excel export", () => {
       format: "compact",
       includeWeekends: false,
       includeBreaks: false,
-      includeRooms: false,
+      includeWorkAreas: false,
       includeRoles: false,
       includeWarnings: false,
       includeArchivedOrCancelled: false,
     });
-    expect(rotaExportFilename("2026-06-15")).toBe("Jan-Preschool-Rota-2026-06-15.xlsx");
+    expect(rotaExportFilename("2026-06-15")).toBe("site-rota-2026-06-15.xlsx");
   });
 
   it("opens successfully with compact, detail, warnings and information sheets", async () => {
@@ -141,7 +141,7 @@ describe("rota template Excel export", () => {
     expect(workbook.getWorksheet("Weekly rota")?.getCell("A3").value).toContain("TEMPLATE ONLY");
     expect(workbook.getWorksheet("Weekly rota")?.getCell("B4").value).toBe("Monday");
     expect(workbook.getWorksheet("Weekly rota")?.getCell("E6").value).toBe("Not specified");
-    expect(templateExportFilename(template.name)).toBe("Jan-Preschool-Rota-Template-Standard-Weekly-Rota.xlsx");
+    expect(templateExportFilename(template.name)).toBe("site-rota-template-standard-weekly-rota.xlsx");
   });
 });
 

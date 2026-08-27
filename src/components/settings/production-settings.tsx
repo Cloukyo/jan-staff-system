@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { Field, Panel, inputClassName } from "@/components/ui/primitives";
-import { saveProductionNurserySettingsAction, type SettingsActionResult } from "@/lib/settings/actions";
-import type { ProductionNurserySettings } from "@/lib/settings/server";
+import { saveProductionSiteSettingsAction, type SettingsActionResult } from "@/lib/settings/actions";
+import type { ProductionSiteSettings } from "@/lib/settings/server";
 
 const initialState: SettingsActionResult = { ok: false, message: "" };
 const weekDays = [
@@ -17,12 +17,12 @@ const weekDays = [
   { value: 7, label: "Sunday" },
 ];
 
-export function ProductionSettingsScreen({ settings }: { settings: ProductionNurserySettings }) {
+export function ProductionSettingsScreen({ settings }: { settings: ProductionSiteSettings }) {
   return (
     <div className="grid gap-5">
       <div>
-        <h1 className="text-3xl font-black text-purple-950">Nursery settings</h1>
-        <p className="mt-2 text-slate-600">Set the nursery work week and open related setup areas.</p>
+        <h1 className="text-3xl font-black text-purple-950">Site settings</h1>
+        <p className="mt-2 text-slate-600">Set the site work week and open related setup areas.</p>
       </div>
       <ProductionSettingsForm settings={settings} />
       <div className="grid gap-5 md:grid-cols-2">
@@ -33,7 +33,7 @@ export function ProductionSettingsScreen({ settings }: { settings: ProductionNur
         </Panel>
         <Panel>
           <h2 className="text-xl font-black text-purple-950">Clocking-in devices</h2>
-          <p className="mt-2 text-sm text-slate-600">Register nursery devices and refresh the Staff Clock.</p>
+          <p className="mt-2 text-sm text-slate-600">Register site devices and refresh the Staff Clock.</p>
           <Link className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/settings/kiosk">Open clocking-in devices</Link>
         </Panel>
       </div>
@@ -41,8 +41,8 @@ export function ProductionSettingsScreen({ settings }: { settings: ProductionNur
   );
 }
 
-function ProductionSettingsForm({ settings }: { settings: ProductionNurserySettings }) {
-  const [state, action, pending] = useActionState(saveProductionNurserySettingsAction, initialState);
+function ProductionSettingsForm({ settings }: { settings: ProductionSiteSettings }) {
+  const [state, action, pending] = useActionState(saveProductionSiteSettingsAction, initialState);
   return (
     <Panel>
       <h2 className="text-xl font-black text-purple-950">Work week</h2>

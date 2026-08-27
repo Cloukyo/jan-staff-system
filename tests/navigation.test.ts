@@ -70,7 +70,7 @@ describe("role-aware navigation", () => {
     const help = source("src/lib/help/manager-help.ts");
 
     expect(dashboard).toContain(">Home<");
-    expect(settings).toContain("Nursery settings");
+    expect(settings).toContain("Site settings");
     expect(help).toContain('href: "/rota"');
     for (const managerFile of [dashboard, rota, settings]) {
       expect(managerFile).not.toMatch(/Production data|Supabase/);

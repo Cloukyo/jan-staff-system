@@ -284,3 +284,10 @@ export async function loadPayrollRotaShifts(
     archivedAt: shift.archived_at,
   }));
 }
+
+// Explicit names for the inherited Jan compatibility path. The established
+// exports remain available until the production pages move to tenant workspaces.
+export const loadJanLegacyPayrollStaffRows = loadProductionStaffRows;
+export const loadJanLegacyPayrollAttendanceData = loadProductionAttendanceData;
+export const loadJanLegacyPayrollAttendanceReviews = loadPayrollAttendanceReviews;
+export const loadJanLegacyPayrollRotaShifts = loadPayrollRotaShifts;

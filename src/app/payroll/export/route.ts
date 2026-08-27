@@ -5,6 +5,13 @@ import { loadAttendanceReviewReadiness } from "@/lib/attendance/review-server";
 import { createPayrollPreparationRow } from "@/lib/payroll/calculations";
 import { createPayrollExportDetail } from "@/lib/exports/payroll-detail";
 import { createPayrollPreparationWorkbook } from "@/lib/exports/payroll-excel";
+import { prepareCommercialPayrollExport } from "@/lib/exports/payroll-excel";
+import { recordCommercialPayrollExport } from "@/lib/payroll/tenant-actions";
+import {
+  loadApprovedCommercialPayrollExport,
+  loadPayrollWorkspace,
+} from "@/lib/payroll/tenant-server";
+import { CommercialIdentityError } from "@/lib/commercial-identity/errors";
 import {
   parsePayrollExportHoursMode,
   payrollModeIncludesClocked,
@@ -22,7 +29,6 @@ import { loadOfflinePayrollReadiness } from "@/lib/payroll/offline-readiness-ser
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  await requireAccount(["manager"]);
   const params = new URL(request.url).searchParams;
   const validation = validateAttendanceDateRange(
     params.get("from") ?? "",
@@ -35,6 +41,69 @@ export async function GET(request: Request) {
     );
   }
   const { from: periodStart, to: periodEnd } = validation.range;
+  const actor = await loadPayrollWorkspace({ periodStart, periodEnd });
+  if (actor.kind === "commercial") {
+    const periodId = params.get("period") ?? "";
+    const approvalId = params.get("approval") ?? "";
+    const expectedRevision = Number(params.get("revision"));
+    const requestedSiteId = params.get("site");
+    if (!periodId || !approvalId || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+      return NextResponse.json(
+        { error: "Choose an approved payroll revision before exporting." },
+        { status: 400 },
+      );
+    }
+    try {
+      const result = await prepareCommercialPayrollExport({
+        context: actor.context,
+        periodId,
+        approvalId,
+        expectedRevision,
+        requestedSiteId,
+        plannedDetail: createPayrollExportDetail({
+          staff: actor.workspace.staff.map((person) => ({
+            id: person.id,
+            fullName: person.fullName,
+            displayName: person.fullName,
+            employmentRole: person.employmentRole,
+            mainQualificationLevel: null,
+            active: true,
+            loginStatus: "No login",
+            kioskStatus: "Disabled",
+            isManager: false,
+            payArrangements: [],
+          })),
+          shifts: actor.workspace.rotaShifts,
+          attendance: { effectiveEvents: [], audit: { originalEvents: [], correctionRecords: [] } },
+          reviews: [],
+          periodStart,
+          periodEnd,
+        }),
+      }, {
+        loadApprovedRevision: loadApprovedCommercialPayrollExport,
+        recordExport: recordCommercialPayrollExport,
+        createOperationId: () => crypto.randomUUID(),
+      });
+      return new NextResponse(new Uint8Array(result.workbook), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${result.fileName}"`,
+          "Cache-Control": "private, no-store",
+          "Digest": `sha-256=${Buffer.from(result.digest, "hex").toString("base64")}`,
+        },
+      });
+    } catch (error) {
+      if (error instanceof CommercialIdentityError) {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+      return NextResponse.json(
+        { error: "The approved payroll revision could not be exported." },
+        { status: 409 },
+      );
+    }
+  }
+
+  await requireAccount(["manager"]);
   const includeInactive = params.get("inactive") === "1";
   const includeManagers = params.get("managers") === "1";
   const includeZero = params.get("zero") !== "0";
@@ -122,7 +191,7 @@ export async function GET(request: Request) {
   return new NextResponse(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="jan-${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
+      "Content-Disposition": `attachment; filename="${unreviewedPrefix}payroll-preparation-${periodStart}-to-${periodEnd}.xlsx"`,
       "Cache-Control": "private, no-store",
     },
   });

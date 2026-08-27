@@ -27,6 +27,8 @@ export type AttendanceExceptionStatus =
   | "dismissed";
 
 export type EffectiveAttendanceEvent = {
+  organisationId?: string;
+  siteId?: string;
   eventId: string;
   eventOrderKey: string;
   originalEventId: string | null;
@@ -38,6 +40,8 @@ export type EffectiveAttendanceEvent = {
 };
 
 export type AttendanceExceptionSummary = {
+  organisationId?: string;
+  siteId?: string;
   id: string;
   staffId: string;
   operationalDate: string;
@@ -53,6 +57,9 @@ export type AttendanceWarning = {
 };
 
 export type AttendanceStateResult = {
+  organisationId?: string;
+  siteId?: string;
+  staffId?: string;
   state: AttendanceState;
   operationalDate: string;
   currentEvent: EffectiveAttendanceEvent | null;

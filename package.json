@@ -1,25 +1,32 @@
 {
-  "name": "jan-staff",
+  "name": "workforce-operations-platform",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.13.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:dependencies": "npm audit --audit-level=high",
+    "verify:migrations": "vitest run tests/migration-history.test.ts",
+    "verify:browser-bundle": "node scripts/verify-browser-bundle.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.0",
-    "@supabase/supabase-js": "^2.108.1",
+    "@supabase/ssr": "0.12.4",
+    "@supabase/supabase-js": "2.112.1",
     "date-fns": "^4.4.0",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.17.0",
-    "next": "16.2.7",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "xlsx": "^0.18.5",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "stripe": "^22.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -30,7 +37,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.7",
+    "eslint-config-next": "16.3.0",
     "fake-indexeddb": "6.2.5",
     "jsdom": "^29.1.1",
     "playwright": "^1.60.0",

@@ -21,6 +21,7 @@ import {
   replaceRosterAtomically,
   installOfflineProvisioningPackage,
   resetOfflineDatabaseSafely,
+  OFFLINE_DB_NAME,
   OFFLINE_DB_VERSION,
   saveDeviceKeys,
 } from "@/lib/kiosk/offline/database";
@@ -123,7 +124,7 @@ describe("offline kiosk IndexedDB", () => {
       server: { time: "2026-08-03T19:00:00.000Z", timezone: "Europe/London", operationalDayStart: "00:00" },
       roster: [{
         staffId: "staff-a",
-        displayName: "Areeg",
+        displayName: "Demo B",
         employmentRole: "Practitioner",
         pinVersion: "pin-v1",
         trustedState: trustedState().state,
@@ -144,6 +145,7 @@ describe("offline kiosk IndexedDB", () => {
   });
 
   it("uses schema version 2 and preserves a version 1 pending action during upgrade", async () => {
+    expect(OFFLINE_DB_NAME).toBe("workforce-platform-clock");
     expect(OFFLINE_DB_VERSION).toBe(2);
     const legacy = pending();
     await new Promise<void>((resolve, reject) => {
@@ -176,7 +178,7 @@ describe("offline kiosk IndexedDB", () => {
       roster("roster-1", [
         {
           staffId: "staff-a",
-          displayName: "Areeg",
+          displayName: "Demo B",
           employmentRole: "Practitioner",
           offlineReady: true,
         },
@@ -208,7 +210,7 @@ describe("offline kiosk IndexedDB", () => {
         entries: [
           expect.objectContaining({
             staffId: "staff-a",
-            displayName: "Areeg",
+            displayName: "Demo B",
           }),
         ],
       }),
@@ -396,7 +398,7 @@ describe("offline kiosk IndexedDB", () => {
       roster("roster-1", [
         {
           staffId: "staff-a",
-          displayName: "Areeg",
+          displayName: "Demo B",
           employmentRole: "Practitioner",
           offlineReady: true,
         },
