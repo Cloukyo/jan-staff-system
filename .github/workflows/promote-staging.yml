@@ -63,10 +63,14 @@ jobs:
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
       - name: Build once for staging
         run: vercel build --token="$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
           DEPLOYMENT_SHA: ${{ inputs.git_ref }}
       - name: Deploy prebuilt staging artifact
         id: deploy
@@ -76,6 +80,8 @@ jobs:
           echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
       - name: Record staging deployment
         run: echo "Commercial staging deployment ${{ steps.deploy.outputs.url }} at ${{ inputs.git_ref }}" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify deployed staging SHA
