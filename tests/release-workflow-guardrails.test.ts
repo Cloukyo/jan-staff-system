@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("commercial production release workflow", () => {
   const workflow = readFileSync(resolve(".github/workflows/release.yml"), "utf8");
+  const stagingWorkflow = readFileSync(resolve(".github/workflows/promote-staging.yml"), "utf8");
 
   it("requires the exact staging SHA and health evidence before production", () => {
     expect(workflow).toContain("expected_sha");
@@ -24,5 +25,15 @@ describe("commercial production release workflow", () => {
     expect(workflow).toContain("COMMERCIAL_STAGING_DATABASE_URL");
     expect(workflow).toContain("COMMERCIAL_PRODUCTION_DATABASE_URL");
     expect(workflow).toContain("verify-remote-migration-ledger");
+  });
+
+  it.each([
+    ["staging", stagingWorkflow],
+    ["production", workflow],
+  ])("uses a protected-secret-compatible remote build for %s", (_name, source) => {
+    expect(source).toContain('--build-env "DEPLOYMENT_SHA=');
+    expect(source).toContain('--env "DEPLOYMENT_SHA=');
+    expect(source).not.toContain("vercel build");
+    expect(source).not.toContain("--prebuilt");
   });
 });

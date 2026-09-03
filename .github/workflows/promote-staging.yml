@@ -47,19 +47,17 @@ jobs:
       - run: npm run audit:dependencies
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
-      - name: Pull Commercial Staging configuration
-        run: vercel pull --yes --environment=preview --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}"
-        env:
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
-      - name: Build exact candidate
-        run: vercel build --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}"
-        env:
-          DEPLOYMENT_SHA: ${{ inputs.expected_sha }}
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
       - name: Deploy exact candidate
-        run: vercel deploy --prebuilt --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > staging-url.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          vercel deploy --yes \
+            --build-env "DEPLOYMENT_SHA=${{ inputs.expected_sha }}" \
+            --env "DEPLOYMENT_SHA=${{ inputs.expected_sha }}" \
+            --meta "githubCommitSha=${{ inputs.expected_sha }}" \
+            --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" 2>&1 | tee deployment.log
+          grep -Eo 'https://[^[:space:]]+\.vercel\.app' deployment.log | tail -1 > staging-url.txt
+          test -s staging-url.txt
         env:
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
@@ -69,8 +67,8 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           staging_url="$(cat staging-url.txt)"
-          curl --fail --silent --show-error "$staging_url/api/health/live" > live.json
-          curl --fail --silent --show-error "$staging_url/api/health/ready" > ready.json
+          vercel curl "$staging_url/api/health/live" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > live.json
+          vercel curl "$staging_url/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > ready.json
           node - <<'NODE'
           const fs = require('fs');
           for (const file of ['live.json', 'ready.json']) {
