@@ -5,8 +5,13 @@ type RecipientInput = {
 };
 
 export function resolveNotificationRecipient(input: RecipientInput): string {
+  if (input.appEnvironment === "production") {
+    const recipient = input.intendedRecipient.trim().toLowerCase();
+    if (!recipient) throw new Error("Production notification recipient is missing.");
+    return recipient;
+  }
   if (input.appEnvironment !== "staging") {
-    throw new Error("Transactional delivery is enabled for Commercial Staging only.");
+    throw new Error("Transactional delivery requires Commercial Staging or Production.");
   }
   const recipient = input.stagingRecipient?.trim().toLowerCase();
   if (!recipient || !/^(delivered|bounced|complained)(\+[a-z0-9._-]+)?@resend\.dev$/.test(recipient)) {

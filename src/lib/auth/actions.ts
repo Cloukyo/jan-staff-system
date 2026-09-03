@@ -5,6 +5,12 @@ import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { validatePrivatePassword } from "@/lib/auth/password-validation";
 import { safeCommercialContinuation } from "@/lib/invitations/continuation";
+import {
+  PILOT_SIGNUP_MESSAGE,
+  bindPilotSignup,
+  releasePilotSignup,
+  reservePilotSignup,
+} from "@/lib/pilot-access/signup-authorisation";
 
 export type AuthActionState = {
   message: string;
@@ -49,6 +55,9 @@ export async function signUpAction(
   const passwordIssue = validatePrivatePassword(password, email);
   if (passwordIssue) return { ok: false, message: passwordIssue, email };
 
+  const pilotReservation = await reservePilotSignup(email);
+  if (pilotReservation === false) return { ok: false, message: PILOT_SIGNUP_MESSAGE, email };
+
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -59,7 +68,16 @@ export async function signUpAction(
         : undefined,
     },
   });
-  if (error) return { ok: false, message: "Your account could not be created. Try again or sign in if you already registered.", email };
+  if (error) {
+    if (pilotReservation) await releasePilotSignup(pilotReservation);
+    return { ok: false, message: "Your account could not be created. Try again or sign in if you already registered.", email };
+  }
+  if (pilotReservation) {
+    if (!data.user || !(await bindPilotSignup(pilotReservation, data.user.id))) {
+      await releasePilotSignup(pilotReservation);
+      return { ok: false, message: PILOT_SIGNUP_MESSAGE, email };
+    }
+  }
   if (data.session) redirect(nextPath);
   return { ok: true, message: "Check your inbox and verify your email address to continue.", email };
 }

@@ -187,7 +187,7 @@ describe("commercial environment validation", () => {
     expect(() => validateEnvironment({ ...staging, RESEND_STAGING_RECIPIENT: "person@example.com" }))
       .toThrow("controlled resend.dev test recipient");
     expect(() => validateEnvironment({ ...staging, APP_ENV: "preview" }))
-      .toThrow("Commercial Staging only");
+      .toThrow("requires Commercial Staging or Production");
     expect(() => validateEnvironment({ ...staging, NEXT_PUBLIC_RESEND_API_KEY: "forbidden" }))
       .toThrow("must never use a NEXT_PUBLIC_ variable");
   });

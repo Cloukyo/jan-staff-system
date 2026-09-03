@@ -1,10 +1,10 @@
-name: Promote Commercial Staging
+name: Deploy Commercial Staging Candidate
 
 on:
   workflow_dispatch:
     inputs:
-      git_ref:
-        description: Exact commercial commit SHA to deploy to staging
+      expected_sha:
+        description: Full SHA currently at commercial main
         required: true
         type: string
 
@@ -12,81 +12,72 @@ permissions:
   contents: read
 
 concurrency:
-  group: commercial-staging
+  group: commercial-staging-deployment
   cancel-in-progress: false
 
 jobs:
-  staging:
-    name: Build and deploy commercial staging
+  deploy:
+    name: Deploy and verify exact staging SHA
     if: github.repository == 'Cloukyo/sh-workforce-platform'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: commercial-staging
     steps:
-      - name: Check out requested commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.git_ref }}
-          persist-credentials: false
-      - name: Verify exact commit
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
+      - name: Require the exact commercial main SHA
         shell: bash
         run: |
-          test "${{ github.repository }}" = "Cloukyo/sh-workforce-platform"
-          test "$(git rev-parse HEAD)" = "${{ inputs.git_ref }}"
-          test "${{ inputs.git_ref }}" = "$(git rev-parse HEAD)"
-          case "$(git remote get-url origin)" in
-            https://github.com/Cloukyo/sh-workforce-platform|https://github.com/Cloukyo/sh-workforce-platform.git) ;;
-            *) exit 1 ;;
-          esac
-      - name: Verify staging deployment authority is configured
-        shell: bash
-        env:
-          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
-        run: |
-          test -n "$VERCEL_TOKEN"
-          test -n "$VERCEL_ORG_ID"
-          test -n "$VERCEL_PROJECT_ID"
-      - name: Use Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
+          test "$(git rev-parse origin/main)" = "${{ inputs.expected_sha }}"
+      - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Run release checks
-        run: npm test
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run verify:migrations
+      - run: npm run verify:browser-bundle
+      - run: npm run audit:dependencies
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
-      - name: Pull commercial staging configuration
-        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+      - name: Pull Commercial Staging configuration
+        run: vercel pull --yes --environment=preview --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
-      - name: Build once for staging
-        run: vercel build --token="$VERCEL_TOKEN"
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+      - name: Build exact candidate
+        run: vercel build --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
-          DEPLOYMENT_SHA: ${{ inputs.git_ref }}
-      - name: Deploy prebuilt staging artifact
-        id: deploy
+          DEPLOYMENT_SHA: ${{ inputs.expected_sha }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+      - name: Deploy exact candidate
+        run: vercel deploy --prebuilt --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > staging-url.txt
+        env:
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+      - name: Verify staging identity, liveness, readiness, and SHA
         shell: bash
-        run: |
-          deployment_url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
-          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
         env:
-          VERCEL_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_VERCEL_PROJECT_ID }}
-      - name: Record staging deployment
-        run: echo "Commercial staging deployment ${{ steps.deploy.outputs.url }} at ${{ inputs.git_ref }}" >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify deployed staging SHA
-        env:
-          DEPLOYED_URL: ${{ steps.deploy.outputs.url }}
-          EXPECTED_SHA: ${{ inputs.git_ref }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
-          node -e 'const response=await fetch(process.env.DEPLOYED_URL+"/api/health/ready");if(!response.ok)throw new Error("staging readiness failed");const body=await response.json();if(body.environment!=="staging"||body.deploymentSha!==process.env.EXPECTED_SHA)throw new Error("staging SHA or environment mismatch")'
+          staging_url="$(cat staging-url.txt)"
+          curl --fail --silent --show-error "$staging_url/api/health/live" > live.json
+          curl --fail --silent --show-error "$staging_url/api/health/ready" > ready.json
+          node - <<'NODE'
+          const fs = require('fs');
+          for (const file of ['live.json', 'ready.json']) {
+            const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (result.environment !== 'staging') throw new Error(`${file} is not Commercial Staging`);
+            if (result.deploymentSha !== process.env.EXPECTED_SHA) throw new Error(`${file} SHA mismatch`);
+            if (result.ok !== true) throw new Error(`${file} is not healthy`);
+          }
+          NODE
+          echo "Commercial Staging verified at $staging_url for $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"

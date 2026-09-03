@@ -100,17 +100,39 @@ export function validateEnvironment(
   if (appEnvironment === "production" && billingValues.some(Boolean)) {
     issues.push("Live commercial billing is not enabled in this milestone.");
   }
+  if (
+    value(env, "NEXT_PUBLIC_RESEND_API_KEY") ||
+    value(env, "NEXT_PUBLIC_CRON_SECRET") ||
+    value(env, "NEXT_PUBLIC_COMMERCIAL_PILOT_ACCESS_HMAC_SECRET")
+  ) {
+    issues.push("Server secrets must never use a NEXT_PUBLIC_ variable.");
+  }
   if (value(env, "NOTIFICATION_DELIVERY_ENABLED") === "true") {
-    if (value(env, "NEXT_PUBLIC_RESEND_API_KEY") || value(env, "NEXT_PUBLIC_CRON_SECRET")) {
-      issues.push("Notification delivery secrets must never use a NEXT_PUBLIC_ variable.");
+    if (!["staging", "production"].includes(appEnvironment)) {
+      issues.push("Transactional notification delivery requires Commercial Staging or Production.");
     }
-    if (appEnvironment !== "staging") issues.push("Transactional notification delivery is enabled for Commercial Staging only.");
-    for (const key of ["RESEND_API_KEY", "RESEND_FROM_ADDRESS", "RESEND_STAGING_RECIPIENT", "CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    for (const key of ["RESEND_API_KEY", "RESEND_FROM_ADDRESS", "CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY"]) {
       if (!value(env, key)) issues.push(`${key} is required when transactional notification delivery is enabled.`);
     }
-    const stagingRecipient = value(env, "RESEND_STAGING_RECIPIENT")?.toLowerCase();
-    if (stagingRecipient && !/^(delivered|bounced|complained)(\+[a-z0-9._-]+)?@resend\.dev$/.test(stagingRecipient)) {
-      issues.push("RESEND_STAGING_RECIPIENT must be a controlled resend.dev test recipient.");
+    if (appEnvironment === "staging") {
+      const stagingRecipient = value(env, "RESEND_STAGING_RECIPIENT")?.toLowerCase();
+      if (!stagingRecipient) {
+        issues.push("RESEND_STAGING_RECIPIENT is required for Commercial Staging delivery.");
+      } else if (!/^(delivered|bounced|complained)(\+[a-z0-9._-]+)?@resend\.dev$/.test(stagingRecipient)) {
+        issues.push("RESEND_STAGING_RECIPIENT must be a controlled resend.dev test recipient.");
+      }
+    }
+  }
+  if (value(env, "COMMERCIAL_PILOT_SIGNUP_GATE") === "true") {
+    if (appEnvironment !== "production") {
+      issues.push("The application pilot signup gate may be enabled only in Commercial Production.");
+    }
+    const pilotSecret = value(env, "COMMERCIAL_PILOT_ACCESS_HMAC_SECRET");
+    if (!pilotSecret || Buffer.byteLength(pilotSecret, "utf8") < 32) {
+      issues.push("COMMERCIAL_PILOT_ACCESS_HMAC_SECRET must be at least 32 bytes when pilot signup is enabled.");
+    }
+    if (!value(env, "SUPABASE_SERVICE_ROLE_KEY")) {
+      issues.push("SUPABASE_SERVICE_ROLE_KEY is required when pilot signup is enabled.");
     }
   }
 

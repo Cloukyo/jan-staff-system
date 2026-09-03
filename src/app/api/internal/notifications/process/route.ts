@@ -1,31 +1,41 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { validateEnvironment } from "@/lib/config/environment";
 import { createResendEmailProvider } from "@/lib/notifications/resend-provider";
+import { evaluateNotificationRoute } from "@/lib/notifications/route-policy";
 import { processNotificationBatch } from "@/lib/notifications/worker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function authorised(request: Request, expected: string): boolean {
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  const left = Buffer.from(supplied);
-  const right = Buffer.from(expected);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
 export async function GET(request: Request) {
   const environment = validateEnvironment();
-  const workerSecret = process.env.CRON_SECRET?.trim() ?? "";
-  if (environment.appEnvironment !== "staging" || process.env.NOTIFICATION_DELIVERY_ENABLED !== "true" || !workerSecret || !authorised(request, workerSecret)) {
+  const decision = evaluateNotificationRoute({
+    appEnvironment: environment.appEnvironment,
+    authorization: request.headers.get("authorization"),
+    workerSecret: process.env.CRON_SECRET?.trim() ?? null,
+    deliveryEnabled: process.env.NOTIFICATION_DELIVERY_ENABLED === "true",
+  });
+  if (decision === "not_found") {
     return NextResponse.json({ ok: false }, { status: 404 });
+  }
+  if (decision === "disabled") {
+    return NextResponse.json({
+      ok: true,
+      delivery: "disabled",
+      claimed: 0,
+      accepted: 0,
+      retryableFailures: 0,
+      permanentFailures: 0,
+    }, { headers: { "Cache-Control": "no-store" } });
   }
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const fromAddress = process.env.RESEND_FROM_ADDRESS?.trim();
   const stagingRecipient = process.env.RESEND_STAGING_RECIPIENT?.trim();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (!apiKey || !fromAddress || !stagingRecipient || !siteUrl) return NextResponse.json({ ok: false }, { status: 503 });
+  if (!apiKey || !fromAddress || !siteUrl || (environment.appEnvironment === "staging" && !stagingRecipient)) {
+    return NextResponse.json({ ok: false, code: "worker_not_configured" }, { status: 503 });
+  }
   const supabase = createSupabaseAdminClient();
   const result = await processNotificationBatch({
     appEnvironment: environment.appEnvironment,

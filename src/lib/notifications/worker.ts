@@ -27,7 +27,7 @@ export type NotificationWorkerDependencies = {
   appEnvironment: string;
   siteUrl: string;
   fromAddress: string;
-  stagingRecipient: string;
+  stagingRecipient?: string;
 };
 
 export type NotificationBatchResult = {
@@ -93,7 +93,7 @@ export async function processNotificationBatch(
       }),
       fromAddress: dependencies.fromAddress,
       ...rendered,
-      tags: [{ name: "environment", value: "staging" }, { name: "message_type", value: claim.messageType }],
+      tags: [{ name: "environment", value: dependencies.appEnvironment }, { name: "message_type", value: claim.messageType }],
     });
     if (delivery.outcome === "accepted") {
       result.accepted += 1;
