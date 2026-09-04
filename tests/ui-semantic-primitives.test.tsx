@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StatusBadge as SharedStatusBadge } from "@/components/shared/status-badge";
@@ -150,5 +152,28 @@ describe("legacy status compatibility", () => {
 
     expect(html).toContain("Approved");
     expect(html).toContain('data-semantic-tone="success"');
+  });
+});
+
+describe("commercial UI design-system documentation", () => {
+  it("records semantic, responsive and authority boundaries", () => {
+    const documentation = readFileSync(
+      resolve(process.cwd(), "docs/commercial/ui-design-system.md"),
+      "utf8",
+    );
+
+    for (const tone of [
+      "neutral",
+      "information",
+      "success",
+      "attention",
+      "blocking",
+    ]) {
+      expect(documentation).toContain(`\`${tone}\``);
+    }
+    expect(documentation).toContain("44px");
+    expect(documentation).toContain("Desktop: overview, comparison and bulk operations");
+    expect(documentation).toContain("Mobile: lookup, focused decision and individual action");
+    expect(documentation).toContain("server-authoritative");
   });
 });
