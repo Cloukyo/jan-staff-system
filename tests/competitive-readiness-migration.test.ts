@@ -9,6 +9,14 @@ function migrationSource(): string {
   return readFileSync(resolve("supabase/migrations", names[0]), "utf8");
 }
 
+function allMigrationSource(): string {
+  return readdirSync(resolve("supabase/migrations"))
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => readFileSync(resolve("supabase/migrations", name), "utf8"))
+    .join("\n");
+}
+
 describe("competitive readiness migration contract", () => {
   it("adds tenant-scoped recruitment evidence with manager-only RLS", () => {
     const sql = migrationSource();
@@ -42,5 +50,12 @@ describe("competitive readiness migration contract", () => {
     expect(sql).toContain("dbs_reference_encrypted");
     expect(sql).not.toMatch(/grant\s+select[^;]*dbs_reference_encrypted/i);
     expect(sql).toContain("security_invoker = true");
+  });
+
+  it("keeps private readiness and retention helpers outside API execution grants", () => {
+    const sql = allMigrationSource();
+    expect(sql).toContain("revoke all on function private.set_statutory_retention_until() from public,anon,authenticated");
+    expect(sql).toContain("revoke all on function private.staff_may_begin_work(uuid,text,date) from public,anon,authenticated");
+    expect(sql).toContain("Derived operational readiness under caller RLS");
   });
 });
