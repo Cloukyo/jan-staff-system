@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { StatusBadge as SharedStatusBadge } from "@/components/shared/status-badge";
+import { StatusPill } from "@/components/ui/primitives";
 import {
   ActionSummary,
   Alert,
@@ -122,5 +124,31 @@ describe("ActionSummary", () => {
     expect(html).toContain('data-semantic-tone="blocking"');
     expect(html).toContain("Fix attendance");
     expect(html).toContain('href="/attendance?status=open"');
+  });
+});
+
+describe("legacy status compatibility", () => {
+  it.each([
+    ["green", "success"],
+    ["amber", "attention"],
+    ["red", "blocking"],
+    ["grey", "neutral"],
+    ["purple", "information"],
+  ] as const)("maps %s to the %s semantic state", (legacyTone, semanticTone) => {
+    const html = renderToStaticMarkup(
+      <StatusPill tone={legacyTone}>{legacyTone} state</StatusPill>,
+    );
+
+    expect(html).toContain(`${legacyTone} state`);
+    expect(html).toContain(`data-semantic-tone="${semanticTone}"`);
+  });
+
+  it("preserves the shared StatusBadge compatibility export", () => {
+    const html = renderToStaticMarkup(
+      <SharedStatusBadge tone="green">Approved</SharedStatusBadge>,
+    );
+
+    expect(html).toContain("Approved");
+    expect(html).toContain('data-semantic-tone="success"');
   });
 });

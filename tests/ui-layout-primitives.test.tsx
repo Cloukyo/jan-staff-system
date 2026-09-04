@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EmptyState as SharedEmptyState } from "@/components/shared/empty-state";
 import {
   DetailDisclosure,
   FormActions,
@@ -72,5 +73,32 @@ describe("ResponsiveDataView", () => {
     expect(html).toContain("ui-responsive-data__mobile");
     expect(html).toContain("<table");
     expect(html).toContain("Ready");
+  });
+});
+
+describe("EmptyState compatibility", () => {
+  it("preserves existing title and body output", () => {
+    const html = renderToStaticMarkup(
+      <SharedEmptyState title="No records" body="Change the filters." />,
+    );
+
+    expect(html).toContain("No records");
+    expect(html).toContain("Change the filters.");
+  });
+
+  it("supports first-use actions after the explanation", () => {
+    const html = renderToStaticMarkup(
+      <SharedEmptyState
+        title="No staff yet"
+        body="Add the first staff member to begin."
+        kind="first-use"
+        action={<a href="/staff/new">Add staff member</a>}
+      />,
+    );
+
+    expect(html).toContain('data-empty-state-kind="first-use"');
+    expect(html.indexOf("Add the first staff member")).toBeLessThan(
+      html.indexOf("Add staff member"),
+    );
   });
 });

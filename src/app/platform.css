@@ -1130,6 +1130,26 @@ tbody tr:hover {
   padding: 20px;
 }
 
+.ui-empty-state__action {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.ui-empty-state__action a,
+.ui-empty-state__action button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--brand-purple);
+  padding: 0 14px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 @media (max-width: 639px) {
   .ui-alert {
     align-items: stretch;
