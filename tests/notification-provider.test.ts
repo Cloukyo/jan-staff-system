@@ -72,4 +72,57 @@ describe("commercial notification delivery", () => {
     expect(result).toEqual({ outcome: "retryable_failure", code: "provider_rate_limited" });
     expect(JSON.stringify(result)).not.toContain("provider detail");
   });
+
+  it("treats provider network failures as retryable without leaking the exception", async () => {
+    const request = vi.fn<typeof fetch>(async () => {
+      throw new Error("private provider transport detail");
+    });
+    const provider = createResendEmailProvider({ apiKey: "test-key", request });
+
+    const result = await provider.send({
+      messageId: "00000000-0000-4000-8000-000000000125",
+      messageType: "payment_failure",
+      templateVersion: "payment_failure_v1",
+      recipientAddress: "delivered+pilot@resend.dev",
+      fromAddress: "Workforce Platform <staging@notifications.example.test>",
+      subject: "Payment needs attention",
+      html: "<p>Review billing</p>",
+      text: "Review billing",
+      tags: [],
+    });
+
+    expect(result).toEqual({ outcome: "retryable_failure", code: "provider_unavailable" });
+    expect(JSON.stringify(result)).not.toContain("private provider transport detail");
+  });
+
+  it("treats bounded client rejection as permanent and malformed success as retryable", async () => {
+    const rejected = createResendEmailProvider({
+      apiKey: "test-key",
+      request: vi.fn<typeof fetch>(async () => new Response("invalid sender", { status: 422 })),
+    });
+    const malformed = createResendEmailProvider({
+      apiKey: "test-key",
+      request: vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 })),
+    });
+    const message = {
+      messageId: "00000000-0000-4000-8000-000000000126",
+      messageType: "trial_ending" as const,
+      templateVersion: "trial_ending_v1" as const,
+      recipientAddress: "delivered+pilot@resend.dev",
+      fromAddress: "Workforce Platform <staging@notifications.example.test>",
+      subject: "Your trial is ending soon",
+      html: "<p>Review billing</p>",
+      text: "Review billing",
+      tags: [],
+    };
+
+    await expect(rejected.send(message)).resolves.toEqual({
+      outcome: "permanent_failure",
+      code: "provider_rejected",
+    });
+    await expect(malformed.send(message)).resolves.toEqual({
+      outcome: "retryable_failure",
+      code: "provider_response_invalid",
+    });
+  });
 });

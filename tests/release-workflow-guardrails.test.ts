@@ -36,4 +36,10 @@ describe("commercial production release workflow", () => {
     expect(source).not.toContain("vercel build");
     expect(source).not.toContain("--prebuilt");
   });
+
+  it("requires the Commercial Staging deployment to run in London", () => {
+    expect(stagingWorkflow).toContain("deployment.json");
+    expect(stagingWorkflow).toContain("deployment.regions");
+    expect(stagingWorkflow).toContain('includes("lhr1")');
+  });
 });

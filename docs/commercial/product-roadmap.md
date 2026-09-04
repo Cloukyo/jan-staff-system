@@ -18,11 +18,9 @@ The commercial wedge is staff operations. Competition across rota, clocking, liv
 
 Control pilot signup, contain public signup, repair the notification worker path, reconcile release lineage, require exact-SHA staging evidence, strengthen deployment guardrails, align password and abuse controls, and document administrator-security prerequisites. Complete and verify this milestone before later work.
 
-## Milestone 2: Domain, email, and production security
+## Milestone 2: Production security, recovery, and communications foundation
 
-Select the permanent brand and domain architecture before final Auth redirects, email branding, Stripe webhooks, legal URLs, and marketing links. The likely pattern is a public `brand.co.uk` site and an `app.brand.co.uk` application, but names are not assumed yet.
-
-Configure production-capable verification, invitation, security, trial, payment-recovery, and operational email with SPF, DKIM, DMARC, bounce handling, suppression handling, and delivery-failure visibility. Complete the PITR decision and restore rehearsal, administrator MFA and recovery controls, network and SSL hardening, usage alerts, abuse controls, CAPTCHA/rate-limit decisions, and practical region alignment.
+Complete the PITR decision and restore plan, administrator MFA and recovery controls, network and SSL assessment, usage safeguards, Auth abuse controls, practical region alignment, minimum monitoring signals, and the provider-independent email delivery foundation. Production email remains disabled until a sender provider and technically necessary application domain are approved.
 
 ## Milestone 3: Competitive readiness
 
@@ -39,11 +37,9 @@ Consolidate the completed independent audits into one implementation specificati
 
 Priorities are dashboard work queues, attendance review, payroll hierarchy, rota warning hierarchy, mobile rota, mobile attendance/payroll, compliance polish, shared design consistency, accessibility verification, and remaining screen polish. Keep useful desktop tables, the weekly rota grid, and the simple kiosk flow unless user testing supports a change. Avoid decorative trends, unnecessary cards, animation, and whitespace that slow busy managers.
 
-## Milestone 5: Public website and SEO
+## Milestone 5: Production communications
 
-Launch the public website relatively early with `Join the pilot` as the initial primary CTA. Cover staff management, rota, clock-in, attendance, leave, compliance, payroll-ready hours, and pricing.
-
-Research regulatory and high-intent content from current authoritative UK sources before publication, including nursery DBS and volunteer requirements, starting before DBS clearance, EYFS suitability, leave and holiday-pay records, rota software, and clock-in/payroll hours. Content must be useful and accurate rather than SEO spam.
+Select only the domain infrastructure needed for the application, Auth redirects, CAPTCHA, production email, billing callbacks, legal links, and support. Configure production Auth and transactional email with SPF, DKIM, DMARC, bounce handling, suppression handling, and delivery-failure visibility. Do not build the public marketing site in this milestone.
 
 ## Milestone 6: Billing and commercial operations
 
@@ -53,9 +49,23 @@ After domain and email foundations, configure live Stripe products and prices, C
 
 Before normal paid customers, establish external uptime and error monitoring, notification and cron alerts, billing webhook monitoring, database health, incident response, support, privacy and terms, retention/deletion procedures, vendor documentation, business contact details, and production cost alerts.
 
-## Milestone 8: Controlled real-nursery pilot
+## Milestone 8: Full acceptance testing
+
+Exercise the complete candidate with fictional data across owner onboarding, organisation setup, invitations, compliance, rota, kiosk, attendance, leave, payroll preparation/export, recovery, security, email, billing sandbox, cancellation/export, and incident procedures. Close every release-blocking defect before external data is introduced.
+
+## Milestone 9: Controlled real-nursery pilot
 
 Onboard at least one external nursery through owner signup, organisation setup, staff import/invitations, compliance, rota, kiosk, clocking, attendance review, leave, payroll preparation, and export. Exercise email, recovery, MFA, any enabled pilot billing, cancellation/export, support, and incident procedures. The proof point is operation without developer intervention.
+
+## Milestone 10: Final application release candidate
+
+Consolidate pilot evidence, close operational findings, re-run security and recovery checks, freeze the exact application and migration lineage, and produce the controlled launch decision. The application must reach release-candidate quality before public-site work becomes the priority.
+
+## Milestone 11: Public website, SEO, and marketing analytics
+
+After the commercial application reaches final release-candidate quality, launch the public website with an appropriately controlled CTA. Cover staff management, rota, clock-in, attendance, leave, compliance, payroll-ready hours, and pricing. Add privacy-conscious marketing analytics only after the consent and legal approach is approved.
+
+Research regulatory and high-intent content from current authoritative UK sources before publication, including nursery DBS and volunteer requirements, starting before DBS clearance, EYFS suitability, leave and holiday-pay records, rota software, and clock-in/payroll hours. Content must be useful and accurate rather than SEO spam.
 
 ## Go-to-market sequence
 
@@ -71,4 +81,3 @@ Evaluate major work against four questions:
 4. Commercial: does it materially help acquisition, conversion, retention, or supportability?
 
 Avoid features that score poorly across these dimensions merely because a competitor offers them.
-

@@ -65,12 +65,20 @@ jobs:
         shell: bash
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
         run: |
           staging_url="$(cat staging-url.txt)"
+          vercel inspect "$staging_url" --json --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > deployment.json
           vercel curl "$staging_url/api/health/live" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > live.json
           vercel curl "$staging_url/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > ready.json
           node - <<'NODE'
           const fs = require('fs');
+          const deployment = JSON.parse(fs.readFileSync('deployment.json', 'utf8'));
+          const project = deployment.projectId ?? deployment.project?.id;
+          if (project !== process.env.EXPECTED_PROJECT) throw new Error('Staging deployment project mismatch');
+          if (!Array.isArray(deployment.regions) || !deployment.regions.includes("lhr1")) {
+            throw new Error('Commercial Staging functions are not running in London');
+          }
           for (const file of ['live.json', 'ready.json']) {
             const result = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (result.environment !== 'staging') throw new Error(`${file} is not Commercial Staging`);

@@ -15,3 +15,5 @@
 - Supabase Auth: set minimum password length to 12, enable lowercase/uppercase/digit/symbol requirements if supported, review signup and email rate limits, and enable CAPTCHA only after its production domain and provider keys are ready.
 
 No provider MFA or recovery setting is considered complete until verified in that provider's administrator dashboard.
+
+Use [Operator security checklist](operator-security-checklist.md) for the account-by-account procedure and [Production security, recovery and communications foundation](production-security-recovery-foundation.md) for the current evidence, deferred controls and domain dependencies.
