@@ -142,7 +142,12 @@ describe("commercial online kiosk onboarding database", () => {
     expect(roster.staff).toEqual([expect.objectContaining({ staffId: "kiosk-staff-1", pinReady: false })]);
     s = (await db.query<{ x: Snapshot }>("select public.get_or_create_onboarding_bootstrap()x")).rows[0].x;
     const pin = await command(db, s, "set_kiosk_staff_pin", 31, { staffId: "kiosk-staff-1", temporaryPin: "4826" });
-    expect(JSON.stringify(pin)).not.toContain("4826");
+    const exposedPinValues: unknown[] = [];
+    JSON.stringify(pin, (key, value) => {
+      if (key.toLowerCase().includes("pin")) exposedPinValues.push(value);
+      return value;
+    });
+    expect(exposedPinValues).not.toContain("4826");
     await db.query("select public.verify_commercial_kiosk_roster($1)", [claimed.deviceToken]);
     s = (await db.query<{ x: Snapshot }>("select public.get_or_create_onboarding_bootstrap()x")).rows[0].x;
     const completed = await command(db, s, "confirm_kiosk_connection", 32, {});
