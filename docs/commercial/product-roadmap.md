@@ -81,3 +81,8 @@ Evaluate major work against four questions:
 4. Commercial: does it materially help acquisition, conversion, retention, or supportability?
 
 Avoid features that score poorly across these dimensions merely because a competitor offers them.
+# Competitive readiness implementation note
+
+The approved Option B implementation candidate strengthens the nursery staff-operations wedge without expanding into child-management features. It covers recruitment and suitability evidence, operational start safeguards, inspection-oriented staff evidence, annual-leave and holiday-pay retention, and derived connected staff-operation states. It does not certify legal compliance or change payroll calculations.
+
+The public marketing website remains deferred until the commercial application reaches release-candidate quality. After this milestone, the intended sequence remains UI/UX consolidation, communications, billing, monitoring and operations, full acceptance testing, an external nursery pilot, and final release-candidate review before public marketing work.

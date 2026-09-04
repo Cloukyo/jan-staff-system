@@ -25,6 +25,7 @@ import type { ProductionStaffRow } from "@/lib/payroll/types";
 import type { StaffRecordSection } from "@/lib/staff/record-sections";
 import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
+import { deriveRecruitmentReadiness } from "@/lib/compliance/recruitment-readiness";
 
 const checklist = [
   ["appointment_induction", "Appointment and induction"],
@@ -79,6 +80,14 @@ export function ProductionComplianceDetail({
     payPerson?.payArrangements ?? [],
     isoDateInLondon(),
   );
+  const recruitmentReadiness = deriveRecruitmentReadiness({
+    active: staff.active, engagementType: staff.engagementType ?? "employee", proposedStartDate: staff.appointmentDate,
+    dbsRequirement: centralRecord?.dbsRequirement ?? "assessment_needed", dbsCheckLevel: centralRecord?.dbsCheckLevel ?? null,
+    dbsStatus: centralRecord?.dbsStatus ?? "not_started", dbsCertificateReceivedDate: centralRecord?.dbsCertificateReceivedDate ?? null,
+    dbsVerifiedAt: centralRecord?.dbsVerifiedAt ?? null, hasFullDbsReference: centralRecord?.dbsReferenceRecorded ?? false,
+    suitabilityStatus: centralRecord?.suitabilityStatus ?? "not_assessed", suitabilityDecidedAt: centralRecord?.suitabilityDecidedAt ?? null,
+    startAuthorisedAt: centralRecord?.startAuthorisedAt ?? null, volunteerException: centralRecord?.volunteerException ?? null,
+  }, isoDateInLondon());
   return (
     <AppShell>
       <div className="mb-6">
@@ -98,6 +107,7 @@ export function ProductionComplianceDetail({
               ["PIN ready", Boolean(kioskPerson?.pinReady)],
               ["Staff login enabled or not required", loginReady],
               ["Required training and checks", trainingReady],
+              ["Authorised to begin work", recruitmentReadiness.mayStartWork],
               ["Pay details present", payReady],
             ]}
           />
@@ -112,6 +122,7 @@ export function ProductionComplianceDetail({
               <Field label="Full legal name"><input className={inputClassName()} name="fullName" defaultValue={staff.fullName} required /></Field>
               <Field label="Name shown on Staff Clock"><input className={inputClassName()} name="displayName" defaultValue={staff.displayName} /></Field>
               <Field label="Role"><input className={inputClassName()} name="employmentRole" defaultValue={staff.employmentRole} required /></Field>
+              <Field label="Engagement"><select className={inputClassName()} name="engagementType" defaultValue={staff.engagementType ?? "employee"}><option value="employee">Employee</option><option value="volunteer">Volunteer</option></select></Field>
               <Field label="Main qualification"><input className={inputClassName()} name="mainQualificationLevel" defaultValue={staff.mainQualificationLevel ?? ""} /></Field>
               <Field label="Start date"><input className={inputClassName()} name="appointmentDate" type="date" defaultValue={staff.appointmentDate ?? ""} /></Field>
               <Field label="Email"><input className={inputClassName()} name="email" type="email" defaultValue={staff.email ?? account?.email ?? ""} /></Field>
@@ -167,6 +178,9 @@ export function ProductionComplianceDetail({
                 </a>
               ))}
             </nav>
+            <div className="flex justify-end">
+              <a className="inline-flex min-h-11 items-center rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900" href="/staff/checks/export">Download staff checks evidence</a>
+            </div>
         <Panel>
           <h2 id="qualifications" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Qualifications</h2>
           <div className="mt-4 grid gap-4">
@@ -220,15 +234,27 @@ export function ProductionComplianceDetail({
         {includesDbs ? <Panel>
           <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
+          <div className={`mt-3 rounded-xl border p-3 text-sm ${recruitmentReadiness.status === "blocked" ? "border-red-200 bg-red-50 text-red-950" : recruitmentReadiness.status === "ready" ? "border-green-200 bg-green-50 text-green-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
+            <p className="font-black">Work start status: {recruitmentReadiness.status === "ready" ? "Ready" : recruitmentReadiness.status === "blocked" ? "Blocked" : "Needs attention"}</p>
+            {recruitmentReadiness.blockerCodes.length ? <p className="mt-1">{recruitmentReadiness.blockerCodes.length} item(s) must be completed before this person can begin work.</p> : null}
+            {recruitmentReadiness.restrictionCodes.includes("supervision_required") ? <p className="mt-1">This occasional volunteer must remain supervised.</p> : null}
+          </div>
           <ProductionActionForm action={saveCentralRecordAction}>
             <input type="hidden" name="staffId" value={staff.id} />
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsRecorded" type="checkbox" defaultChecked={centralRecord?.dbsRecorded} /> DBS recorded</label>
+              <Field label="DBS requirement"><select className={inputClassName()} name="dbsRequirement" defaultValue={centralRecord?.dbsRequirement ?? "assessment_needed"}><option value="assessment_needed">Assessment needed</option><option value="required">Required</option><option value="not_required">Not required</option></select></Field>
+              <Field label="Check level"><select className={inputClassName()} name="dbsCheckLevel" defaultValue={centralRecord?.dbsCheckLevel ?? ""}><option value="">Not recorded</option><option value="enhanced_childrens_barred_list">Enhanced with children&apos;s barred list</option><option value="enhanced">Enhanced</option><option value="other">Other</option></select></Field>
+              <Field label="DBS progress"><select className={inputClassName()} name="dbsStatus" defaultValue={centralRecord?.dbsStatus ?? "not_started"}><option value="not_started">Not started</option><option value="application_submitted">Application submitted</option><option value="certificate_received">Certificate received</option><option value="verified">Verified by manager</option><option value="renewal_required">Renewal required</option><option value="not_required">Not required</option>{centralRecord?.dbsStatus === "legacy_recorded" ? <option value="legacy_recorded">Legacy record, review needed</option> : null}</select></Field>
               <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsUpdateService" type="checkbox" defaultChecked={centralRecord?.dbsUpdateService} /> Update service</label>
               <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="dbsNewCheckRequired" type="checkbox" defaultChecked={centralRecord?.dbsNewCheckRequired} /> New DBS required</label>
-              <Field label="DBS number (last four only)"><input className={inputClassName()} name="dbsNumberLast4" defaultValue={centralRecord?.dbsNumberLast4 ?? ""} maxLength={4} placeholder={maskDbsNumber(centralRecord?.dbsNumberLast4)} /></Field>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="occasionalSupervisedVolunteer" type="checkbox" defaultChecked={centralRecord?.volunteerException === "occasional_supervised"} /> Occasional supervised volunteer exception</label>
+              <Field label="Full 12-digit DBS certificate number"><input autoComplete="off" className={inputClassName()} inputMode="numeric" name="dbsReference" maxLength={14} placeholder={centralRecord?.dbsReferenceRecorded ? `Stored securely (${maskDbsNumber(centralRecord.dbsNumberLast4)})` : "Enter to store securely"} /></Field>
+              <Field label="Application date"><input className={inputClassName()} name="dbsApplicationDate" type="date" defaultValue={centralRecord?.dbsApplicationDate ?? ""} /></Field>
+              <Field label="Certificate received"><input className={inputClassName()} name="dbsCertificateReceivedDate" type="date" defaultValue={centralRecord?.dbsCertificateReceivedDate ?? ""} /></Field>
               <Field label="Issue date"><input className={inputClassName()} name="dbsIssueDate" type="date" defaultValue={centralRecord?.dbsIssueDate ?? ""} /></Field>
               <Field label="Last checked"><input className={inputClassName()} name="dbsLastCheckedAt" type="date" defaultValue={centralRecord?.dbsLastCheckedAt ?? ""} /></Field>
+              <Field label="Suitability decision"><select className={inputClassName()} name="suitabilityStatus" defaultValue={centralRecord?.suitabilityStatus ?? "not_assessed"}><option value="not_assessed">Not assessed</option><option value="suitable">Suitable</option><option value="suitable_with_restrictions">Suitable with restrictions</option><option value="not_suitable">Not suitable</option></select></Field>
+              <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="authoriseStart" type="checkbox" defaultChecked={Boolean(centralRecord?.startAuthorisedAt)} /> Authorise work start when checks allow</label>
             </div>
             <LegacyChecklistHidden record={centralRecord} />
             <Field label="Manager notes"><textarea className={inputClassName("mt-3 min-h-20 w-full")} name="notes" defaultValue={centralRecord?.notes ?? ""} /></Field>

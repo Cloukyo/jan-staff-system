@@ -134,6 +134,7 @@ export function ProductionManagerLeave({ requests, accounts }: { requests: Leave
       <div>
         <h1 className="text-3xl font-black text-purple-950">Leave requests</h1>
         <p className="mt-2 text-slate-600">Review staff requests. Approved leave appears in rota conflict checks.</p>
+        <Link className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-purple-200 bg-white px-4 text-sm font-bold text-purple-900" href="/leave/records">Leave and holiday pay records</Link>
       </div>
       <LeaveSummary requests={requests} />
       <Panel>

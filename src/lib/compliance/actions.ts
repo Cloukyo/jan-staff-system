@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
+import { encryptDbsReference } from "@/lib/compliance/dbs-reference-crypto";
 
 export type ComplianceActionState = {
   ok: boolean;
@@ -43,10 +44,11 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
   const staffId = text(formData, "staffId");
   const employmentRole = text(formData, "employmentRole");
   if (!staffId || !employmentRole) return fail("Staff ID and role are required.");
-  let query = access.supabase.from("staff_profiles").update({
+  const quickPayload: Record<string, unknown> = {
     employment_role: employmentRole,
     main_qualification_level: text(formData, "mainQualificationLevel"),
-  }).eq("id", staffId);
+  };
+  let query = access.supabase.from("staff_profiles").update(quickPayload).eq("id", staffId);
   if (access.actor.kind === "commercial") query = query.eq("organisation_id", access.actor.context.organisationId);
   const { error } = await query;
   if (error) return fail("Quick edit could not be saved.");
@@ -61,7 +63,7 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
   const fullName = text(formData, "fullName");
   const employmentRole = text(formData, "employmentRole");
   if (!staffId || !fullName || !employmentRole) return fail("Full name and role are required.");
-  let query = access.supabase.from("staff_profiles").update({
+  const profilePayload: Record<string, unknown> = {
     full_name: fullName,
     display_name: text(formData, "displayName") ?? fullName.split(" ")[0],
     employment_role: employmentRole,
@@ -71,7 +73,9 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
     appointment_date: text(formData, "appointmentDate"),
     email: text(formData, "email"),
     notes: text(formData, "notes"),
-  }).eq("id", staffId);
+  };
+  if (access.actor.kind === "commercial") profilePayload.engagement_type = text(formData, "engagementType") ?? "employee";
+  let query = access.supabase.from("staff_profiles").update(profilePayload).eq("id", staffId);
   if (access.actor.kind === "commercial") query = query.eq("organisation_id", access.actor.context.organisationId);
   const { error } = await query;
   if (error) return fail("Staff profile could not be saved.");
@@ -168,7 +172,7 @@ export async function saveCentralRecordAction(_state: ComplianceActionState, for
   if (!supabase) return fail("Demo mode is local only. Configure Supabase to save central records.");
   const staffId = text(formData, "staffId");
   if (!staffId) return fail("Staff profile is required.");
-  const payload = {
+  const basePayload = {
     organisation_id: actor.kind === "commercial" ? actor.context.organisationId : null,
     staff_id: staffId,
     appointment_induction_completed: bool(formData, "appointmentInductionCompleted"),
@@ -192,6 +196,57 @@ export async function saveCentralRecordAction(_state: ComplianceActionState, for
     checked_at: new Date().toISOString(),
     notes: text(formData, "notes"),
   };
+  let payload: Record<string, unknown> = basePayload;
+  if (actor.kind === "commercial") {
+    const dbsRequirement = text(formData, "dbsRequirement") ?? "assessment_needed";
+    const dbsStatus = text(formData, "dbsStatus") ?? "not_started";
+    const suitabilityStatus = text(formData, "suitabilityStatus") ?? "not_assessed";
+    const occasionalSupervisedVolunteer = bool(formData, "occasionalSupervisedVolunteer");
+    if (dbsRequirement === "not_required" && !occasionalSupervisedVolunteer) {
+      return fail("Record the supervised occasional-volunteer exception before marking a DBS check as not required.");
+    }
+    if (dbsRequirement !== "not_required" && dbsStatus === "not_required") {
+      return fail("DBS progress can only be marked not required when the documented requirement is not required.");
+    }
+    const suppliedReference = text(formData, "dbsReference");
+    const existing = await supabase.from("staff_central_records")
+      .select("dbs_reference_encrypted,dbs_number_last4,dbs_verified_at,dbs_verified_by_membership_id,suitability_status,suitability_decided_at,suitability_decided_by_membership_id,start_authorised_at,start_authorised_by_membership_id")
+      .eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId).maybeSingle();
+    if (existing.error) return fail("Existing DBS evidence could not be checked.");
+    let encryptedReference = existing.data?.dbs_reference_encrypted ?? null;
+    let lastFour = existing.data?.dbs_number_last4 ?? null;
+    if (suppliedReference) {
+      try {
+        encryptedReference = encryptDbsReference(suppliedReference);
+        lastFour = suppliedReference.replace(/\D/g, "").slice(-4);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : "DBS reference could not be protected.");
+      }
+    }
+    const now = new Date().toISOString();
+    const verified = dbsStatus === "verified";
+    const suitabilityDecided = suitabilityStatus !== "not_assessed";
+    payload = {
+      ...basePayload,
+      dbs_recorded: verified || dbsStatus === "legacy_recorded",
+      dbs_number_last4: lastFour,
+      dbs_requirement: dbsRequirement,
+      dbs_check_level: text(formData, "dbsCheckLevel"),
+      dbs_status: dbsStatus,
+      dbs_application_date: text(formData, "dbsApplicationDate"),
+      dbs_certificate_received_date: text(formData, "dbsCertificateReceivedDate"),
+      dbs_reference_encrypted: encryptedReference,
+      dbs_verified_at: verified ? existing.data?.dbs_verified_at ?? now : null,
+      dbs_verified_by_membership_id: verified ? existing.data?.dbs_verified_by_membership_id ?? actor.context.membershipId : null,
+      volunteer_exception: dbsRequirement === "not_required" && occasionalSupervisedVolunteer ? "occasional_supervised" : null,
+      suitability_declaration: ["suitable", "suitable_with_restrictions"].includes(suitabilityStatus),
+      suitability_status: suitabilityStatus,
+      suitability_decided_at: suitabilityDecided ? (existing.data?.suitability_status === suitabilityStatus ? existing.data.suitability_decided_at : null) ?? now : null,
+      suitability_decided_by_membership_id: suitabilityDecided ? (existing.data?.suitability_status === suitabilityStatus ? existing.data.suitability_decided_by_membership_id : null) ?? actor.context.membershipId : null,
+      start_authorised_at: bool(formData, "authoriseStart") ? existing.data?.start_authorised_at ?? now : null,
+      start_authorised_by_membership_id: bool(formData, "authoriseStart") ? existing.data?.start_authorised_by_membership_id ?? actor.context.membershipId : null,
+    };
+  }
   const { error } = await supabase.from("staff_central_records").upsert(payload, { onConflict: "staff_id" });
   if (error) return fail("Central record could not be saved.");
   revalidatePath(`/compliance/staff/${staffId}`);

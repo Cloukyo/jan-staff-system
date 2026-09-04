@@ -2,6 +2,11 @@ export * from "./tenancy";
 
 export type PayType = "hourly" | "salaried";
 export type EmploymentStatus = "employed" | "former" | "on_leave";
+export type StaffEngagementType = "employee" | "volunteer";
+export type DbsRequirement = "assessment_needed" | "required" | "not_required";
+export type DbsCheckLevel = "enhanced_childrens_barred_list" | "enhanced" | "other";
+export type DbsLifecycleStatus = "not_started" | "application_submitted" | "certificate_received" | "verified" | "renewal_required" | "not_required" | "legacy_recorded";
+export type StaffSuitabilityStatus = "not_assessed" | "suitable" | "suitable_with_restrictions" | "not_suitable";
 export type ShiftStatus = "working" | "off" | "holiday" | "sick" | "training";
 export type ClockEventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 export type ClockEventSource = "kiosk" | "manager";
@@ -59,6 +64,7 @@ export interface StaffProfile {
   fullName: string;
   displayName: string;
   employmentRole: string;
+  engagementType?: StaffEngagementType;
   mainQualificationLevel: string | null;
   isApprentice: boolean;
   isCoverStaff: boolean;
@@ -131,6 +137,17 @@ export interface StaffCentralRecord {
   dbsLastCheckedAt: string | null;
   dbsNumberLast4: string | null;
   dbsNewCheckRequired: boolean;
+  dbsRequirement?: DbsRequirement;
+  dbsCheckLevel?: DbsCheckLevel | null;
+  dbsStatus?: DbsLifecycleStatus;
+  dbsApplicationDate?: string | null;
+  dbsCertificateReceivedDate?: string | null;
+  dbsReferenceRecorded?: boolean;
+  dbsVerifiedAt?: string | null;
+  volunteerException?: "occasional_supervised" | null;
+  suitabilityStatus?: StaffSuitabilityStatus;
+  suitabilityDecidedAt?: string | null;
+  startAuthorisedAt?: string | null;
   referencesComplete: boolean;
   referencesCheckedAt: string | null;
   starterForm: boolean;

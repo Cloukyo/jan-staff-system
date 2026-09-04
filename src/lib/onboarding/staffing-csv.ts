@@ -3,7 +3,7 @@ import { staffImportUploadPayloadSchema } from "./staffing-contracts";
 
 export const STAFFING_CSV_MAX_BYTES = 1_048_576;
 export const STAFFING_CSV_MAX_ROWS = 250;
-export const STAFFING_CSV_HEADERS = ["external_staff_id", "full_name", "display_name", "email", "employment_status", "start_date", "job_role", "primary_site", "attendance_eligible"] as const;
+export const STAFFING_CSV_HEADERS = ["external_staff_id", "full_name", "display_name", "email", "employment_status", "start_date", "job_role", "primary_site", "attendance_eligible", "engagement_type", "dbs_requirement"] as const;
 
 export type StaffingCsvFile = { name: string; type: string; size: number; text(): Promise<string> };
 
@@ -38,14 +38,16 @@ export async function parseStaffingCsv(file: StaffingCsvFile) {
   const text = await file.text(); const parsed = parseCsv(text.replace(/^\uFEFF/, ""));
   if (!parsed.length) throw new Error("empty_file");
   const headers = parsed[0].map((value) => value.trim().toLowerCase());
-  if (headers.join("|") !== STAFFING_CSV_HEADERS.join("|")) throw new Error("invalid_headers");
+  const legacyHeaders = STAFFING_CSV_HEADERS.slice(0, 9);
+  if (headers.join("|") !== STAFFING_CSV_HEADERS.join("|") && headers.join("|") !== legacyHeaders.join("|")) throw new Error("invalid_headers");
   if (parsed.length - 1 > STAFFING_CSV_MAX_ROWS) throw new Error("too_many_rows");
   const rows = parsed.slice(1).map((values, index) => {
-    if (values.length !== STAFFING_CSV_HEADERS.length) throw new Error("malformed_csv");
-    const [externalStaffId, fullName, displayName, email, employmentStatus, startDate, jobRole, siteName, attendanceEligible] = values.map((value) => value.trim());
+    if (values.length !== headers.length) throw new Error("malformed_csv");
+    const [externalStaffId, fullName, displayName, email, employmentStatus, startDate, jobRole, siteName, attendanceEligible, engagementType, dbsRequirement] = values.map((value) => value.trim());
     if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(startDate)) throw new Error("ambiguous_date");
     return { sourceRowNumber: index + 2, externalStaffId, fullName, displayName: displayName || fullName.split(/\s+/)[0], email,
-      employmentStatus, startDate, jobRole, siteName, attendanceEligible: booleanValue(attendanceEligible) };
+      employmentStatus, startDate, jobRole, siteName, attendanceEligible: booleanValue(attendanceEligible),
+      engagementType: engagementType || "employee", dbsRequirement: dbsRequirement || "assessment_needed" };
   });
   const payload = staffImportUploadPayloadSchema.parse({ safeFilename: file.name.replace(/[^A-Za-z0-9._ -]/g, "_"), fileDigest: createHash("sha256").update(text).digest("hex"), rows });
   return payload;

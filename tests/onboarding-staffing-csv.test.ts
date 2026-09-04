@@ -6,9 +6,22 @@ function file(text: string, name = "fictional-staff.csv", type = "text/csv") { r
 
 describe("commercial onboarding staffing CSV", () => {
   it("normalises a bounded fictional CSV with explicit eligibility", async () => {
-    const result = await parseStaffingCsv(file(`${header}\nEMP-001,Alex Morgan,Alex,alex@example.invalid,active,2026-09-01,staff,,yes`));
-    expect(result.rows[0]).toMatchObject({ externalStaffId: "EMP-001", fullName: "Alex Morgan", attendanceEligible: true, sourceRowNumber: 2 });
+    const result = await parseStaffingCsv(file(`${header}\nEMP-001,Alex Morgan,Alex,alex@example.invalid,active,2026-09-01,staff,,yes,volunteer,required`));
+    expect(result.rows[0]).toMatchObject({
+      externalStaffId: "EMP-001",
+      fullName: "Alex Morgan",
+      attendanceEligible: true,
+      engagementType: "volunteer",
+      dbsRequirement: "required",
+      sourceRowNumber: 2,
+    });
     expect(result.fileDigest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("keeps the previous nine-column template compatible with safe recruitment defaults", async () => {
+    const legacyHeader = header.split(",").slice(0, 9).join(",");
+    const result = await parseStaffingCsv(file(`${legacyHeader}\nEMP-002,Robin Example,Robin,,future_starter,2026-09-10,staff,,no`));
+    expect(result.rows[0]).toMatchObject({ engagementType: "employee", dbsRequirement: "assessment_needed" });
   });
   it.each([
     ["bad.exe", "text/csv", "invalid_file_type"], ["bad.csv", "application/octet-stream", "invalid_file_type"],
@@ -19,12 +32,12 @@ describe("commercial onboarding staffing CSV", () => {
   it("rejects empty, malformed and ambiguous input while preserving row-level eligibility errors for review", async () => {
     await expect(parseStaffingCsv(file(""))).rejects.toThrow("empty_file");
     await expect(parseStaffingCsv(file(`${header}\n\"unclosed`))).rejects.toThrow("malformed_csv");
-    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,,active,01/09/2026,staff,,yes`))).rejects.toThrow("ambiguous_date");
-    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,,active,2026-09-01,staff,,maybe`))).resolves.toMatchObject({ rows: [{ attendanceEligible: "maybe" }] });
-    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,not-an-email,active,2026-09-01,unsupported,,yes`))).resolves.toMatchObject({ rows: [{ email: "not-an-email", jobRole: "unsupported" }] });
+    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,,active,01/09/2026,staff,,yes,employee,assessment_needed`))).rejects.toThrow("ambiguous_date");
+    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,,active,2026-09-01,staff,,maybe,employee,assessment_needed`))).resolves.toMatchObject({ rows: [{ attendanceEligible: "maybe" }] });
+    await expect(parseStaffingCsv(file(`${header}\nE1,Jamie Patel,Jamie,not-an-email,active,2026-09-01,unsupported,,yes,worker,unknown`))).resolves.toMatchObject({ rows: [{ email: "not-an-email", jobRole: "unsupported", engagementType: "worker", dbsRequirement: "unknown" }] });
   });
   it("rejects more than 250 rows", async () => {
-    const rows = Array.from({ length: 251 }, (_, index) => `E${index},Casey Taylor,Casey,,active,2026-09-01,staff,,no`);
+    const rows = Array.from({ length: 251 }, (_, index) => `E${index},Casey Taylor,Casey,,active,2026-09-01,staff,,no,employee,assessment_needed`);
     await expect(parseStaffingCsv(file(`${header}\n${rows.join("\n")}`))).rejects.toThrow("too_many_rows");
   });
 });

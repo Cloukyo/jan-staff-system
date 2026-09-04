@@ -3,8 +3,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { requireAal2 } from "@/lib/commercial-identity/guards";
 import { requireCommercialIdentity } from "@/lib/commercial-identity/server";
+import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
 import type { OnboardingFormState } from "./actions";
 import { executeOnboardingBootstrapCommandServer, loadOnboardingBootstrapServer } from "./server";
 import { manualStaffDraftPayloadSchema, manualStaffPayloadSchema } from "./staffing-contracts";
@@ -56,6 +58,24 @@ export async function uploadStaffingCsvAction(_state: OnboardingFormState, formD
   try {
     const payload = await parseStaffingCsv(file);
     const response = await execute("preview_staff_import", payload, formData);
+    if (["succeeded", "replayed"].includes(response.commandResult.outcome)) {
+      const batchId = response.commandResult.resultReference.importBatchId;
+      const actor = await requireCustomerDomainActor("staff.manage");
+      if (actor.kind !== "commercial" || !batchId) {
+        return { ...empty, code: "recruitment_metadata_unavailable", message: "The staffing file was checked, but its recruitment details could not be attached safely." };
+      }
+      const metadataResult = await (await createSupabaseServerClient()).rpc("attach_staff_import_recruitment_metadata", {
+        target_batch_id: batchId,
+        metadata: payload.rows.map((row) => ({
+          sourceRowNumber: row.sourceRowNumber,
+          engagementType: row.engagementType,
+          dbsRequirement: row.dbsRequirement,
+        })),
+      });
+      if (metadataResult.error) {
+        return { ...empty, code: "recruitment_metadata_invalid", message: "The staffing file was checked, but its engagement or DBS requirement values need attention." };
+      }
+    }
     revalidatePath("/onboarding/staffing");
     return resultState(response, "The file was validated. Review every flagged row before importing.");
   } catch (error) {

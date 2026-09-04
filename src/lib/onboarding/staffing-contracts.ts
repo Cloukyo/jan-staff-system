@@ -2,13 +2,15 @@ import { z } from "zod";
 
 export const staffingEmploymentStatusSchema = z.enum(["active", "future_starter"]);
 export const staffingRoleSchema = z.enum(["staff", "supervisor", "manager"]);
+export const staffingEngagementTypeSchema = z.enum(["employee", "volunteer"]);
+export const staffingDbsRequirementSchema = z.enum(["assessment_needed", "required", "not_required"]);
 export const staffingRowDecisionSchema = z.enum(["include", "exclude", "needs_review", "confirm_new"]);
 export const staffingValidationCodeSchema = z.enum([
   "missing_required_field", "malformed_email", "malformed_date", "ambiguous_date",
   "invalid_employment_status", "unsupported_role", "unknown_site",
   "duplicate_external_id_upload", "duplicate_external_id_organisation",
   "duplicate_email_upload", "duplicate_email_organisation", "probable_duplicate_name",
-  "invalid_attendance_eligibility", "staff_plan_limit_breach", "invalid_assignment_dates",
+  "invalid_attendance_eligibility", "invalid_engagement_type", "invalid_dbs_requirement", "staff_plan_limit_breach", "invalid_assignment_dates",
 ]);
 
 export const manualStaffPayloadSchema = z.object({
@@ -36,6 +38,8 @@ export const staffImportRowSchema = z.object({
   employmentStatus: z.string().trim().max(40), startDate: z.string().trim().max(32),
   jobRole: z.string().trim().max(40), siteName: z.string().trim().max(160).optional(),
   attendanceEligible: z.union([z.boolean(), z.string().trim().max(20)]),
+  engagementType: z.string().trim().max(20).default("employee"),
+  dbsRequirement: z.string().trim().max(32).default("assessment_needed"),
 }).strict();
 
 export const staffImportUploadPayloadSchema = z.object({
