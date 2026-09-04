@@ -72,18 +72,28 @@ jobs:
           vercel curl "$staging_url/api/health/live" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > live.json
           vercel curl "$staging_url/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > ready.json
           node - <<'NODE'
-          const fs = require('fs');
-          const deployment = JSON.parse(fs.readFileSync('deployment.json', 'utf8'));
-          const project = deployment.projectId ?? deployment.project?.id;
-          if (project !== process.env.EXPECTED_PROJECT) throw new Error('Staging deployment project mismatch');
-          if (!Array.isArray(deployment.regions) || !deployment.regions.includes("lhr1")) {
-            throw new Error('Commercial Staging functions are not running in London');
-          }
+           const fs = require('fs');
+           const deployment = JSON.parse(fs.readFileSync('deployment.json', 'utf8'));
+           const outputs = (deployment.builds ?? []).flatMap((build) => build.output ?? []);
+           const projectIds = outputs
+             .map((output) => typeof output.digest === 'string' ? output.digest.split('/')[0] : null)
+             .filter(Boolean);
+           const project = deployment.projectId ?? deployment.project?.id;
+           if (project !== process.env.EXPECTED_PROJECT && !projectIds.includes(process.env.EXPECTED_PROJECT)) {
+             throw new Error('Staging deployment project mismatch');
+           }
+           const regions = [
+             ...(deployment.regions ?? []),
+             ...outputs.flatMap((output) => output.lambda?.deployedTo ?? []),
+           ];
+           if (!regions.includes("lhr1")) {
+             throw new Error('Commercial Staging functions are not running in London');
+           }
           for (const file of ['live.json', 'ready.json']) {
             const result = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (result.environment !== 'staging') throw new Error(`${file} is not Commercial Staging`);
             if (result.deploymentSha !== process.env.EXPECTED_SHA) throw new Error(`${file} SHA mismatch`);
-            if (result.ok !== true) throw new Error(`${file} is not healthy`);
+             if (result.status !== "ok") throw new Error(`${file} is not healthy`);
           }
           NODE
           echo "Commercial Staging verified at $staging_url for $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"

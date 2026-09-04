@@ -39,7 +39,9 @@ describe("commercial production release workflow", () => {
 
   it("requires the Commercial Staging deployment to run in London", () => {
     expect(stagingWorkflow).toContain("deployment.json");
-    expect(stagingWorkflow).toContain("deployment.regions");
+    expect(stagingWorkflow).toContain("deployment.builds");
+    expect(stagingWorkflow).toContain("output.lambda?.deployedTo");
     expect(stagingWorkflow).toContain('includes("lhr1")');
+    expect(stagingWorkflow).toContain('result.status !== "ok"');
   });
 });
