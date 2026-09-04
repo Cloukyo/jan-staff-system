@@ -69,7 +69,7 @@ describe("role-aware navigation", () => {
     const settings = source("src/components/settings/production-settings.tsx");
     const help = source("src/lib/help/manager-help.ts");
 
-    expect(dashboard).toContain(">Home<");
+    expect(dashboard).toContain('title="Home"');
     expect(settings).toContain("Site settings");
     expect(help).toContain('href: "/rota"');
     for (const managerFile of [dashboard, rota, settings]) {
