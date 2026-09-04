@@ -57,6 +57,17 @@ describe("production dashboard separation", () => {
     expect(screen).toContain('title="Live dashboard unavailable"');
     expect(screen).toContain("No demo or placeholder figures have been shown");
   });
+
+  it("preserves the desktop shifts table and provides a focused mobile equivalent", () => {
+    const screen = readFileSync(resolve("src/components/dashboard/production-dashboard.tsx"), "utf8");
+
+    expect(screen).toContain("<ResponsiveDataView");
+    expect(screen).toContain('label="Today and tomorrow shifts"');
+    expect(screen).toContain("ui-dashboard-shift-list");
+    expect(screen).toContain("<th className=\"p-2\">Shift</th>");
+    expect(screen).toContain("<th className=\"p-2\">Work area or role</th>");
+    expect(screen).toContain("Work area or role");
+  });
 });
 
 describe("manager dashboard summary mapping", () => {

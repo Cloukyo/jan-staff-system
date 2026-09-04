@@ -13,9 +13,9 @@ import {
   Users,
 } from "lucide-react";
 import { buildDashboardActionItems } from "@/components/dashboard/dashboard-presentation";
-import { PageHeader } from "@/components/ui/layout-primitives";
+import { PageHeader, ResponsiveDataView } from "@/components/ui/layout-primitives";
 import { ActionSummary, Alert, StatusBadge } from "@/components/ui/semantic-primitives";
-import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
+import { EmptyState, Panel } from "@/components/ui/primitives";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
 import type { ProductionDashboardSummary } from "@/lib/dashboard/types";
 
@@ -148,26 +148,52 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
             <CalendarClock className="h-5 w-5 text-purple-600" aria-hidden />
           </div>
           {data.upcomingShifts.length ? (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-purple-100">
-                    <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Work area or role</th><th className="p-2">Rota</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <ResponsiveDataView
+              label="Today and tomorrow shifts"
+              className="mt-4"
+              desktop={(
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-purple-100">
+                        <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Work area or role</th><th className="p-2">Rota</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.upcomingShifts.map((shift) => (
+                        <tr key={shift.id} className="border-b border-purple-50">
+                          <td className="p-2">{formatDateUk(shift.shiftDate)}</td>
+                          <td className="p-2 font-bold text-purple-950">{shift.displayName}</td>
+                          <td className="p-2">{shift.startTime} to {shift.endTime}</td>
+                          <td className="p-2">{shift.workArea || shift.roomOrArea || shift.roleOnShift || "-"}</td>
+                          <td className="p-2"><StatusBadge tone={shift.rotaStatus === "published" ? "success" : "attention"}>{shift.rotaStatus}</StatusBadge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              mobile={(
+                <ol className="ui-dashboard-shift-list">
                   {data.upcomingShifts.map((shift) => (
-                    <tr key={shift.id} className="border-b border-purple-50">
-                      <td className="p-2">{formatDateUk(shift.shiftDate)}</td>
-                      <td className="p-2 font-bold text-purple-950">{shift.displayName}</td>
-                      <td className="p-2">{shift.startTime} to {shift.endTime}</td>
-                      <td className="p-2">{shift.workArea || shift.roomOrArea || shift.roleOnShift || "-"}</td>
-                      <td className="p-2"><StatusPill tone={shift.rotaStatus === "published" ? "green" : "amber"}>{shift.rotaStatus}</StatusPill></td>
-                    </tr>
+                    <li key={shift.id} className="ui-dashboard-shift-list__item">
+                      <div className="ui-dashboard-shift-list__heading">
+                        <div>
+                          <p className="ui-dashboard-shift-list__label">Staff</p>
+                          <p className="ui-dashboard-shift-list__name">{shift.displayName}</p>
+                        </div>
+                        <StatusBadge tone={shift.rotaStatus === "published" ? "success" : "attention"}>{shift.rotaStatus}</StatusBadge>
+                      </div>
+                      <dl className="ui-dashboard-shift-list__details">
+                        <div><dt>Date</dt><dd>{formatDateUk(shift.shiftDate)}</dd></div>
+                        <div><dt>Shift</dt><dd>{shift.startTime} to {shift.endTime}</dd></div>
+                        <div><dt>Work area or role</dt><dd>{shift.workArea || shift.roomOrArea || shift.roleOnShift || "Not recorded"}</dd></div>
+                      </dl>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ol>
+              )}
+            />
           ) : (
             <EmptyState title="No upcoming shifts" body="No shifts are scheduled for today or tomorrow." />
           )}

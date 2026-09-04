@@ -1150,6 +1150,61 @@ tbody tr:hover {
   font-weight: 800;
 }
 
+.ui-dashboard-shift-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-dashboard-shift-list__item {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.ui-dashboard-shift-list__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ui-dashboard-shift-list__label,
+.ui-dashboard-shift-list__details dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.ui-dashboard-shift-list__name {
+  margin-top: 2px;
+  color: var(--brand-purple-dark);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.ui-dashboard-shift-list__details {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ui-dashboard-shift-list__details div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.ui-dashboard-shift-list__details dd {
+  min-width: 0;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 650;
+}
+
 @media (max-width: 639px) {
   .ui-alert {
     align-items: stretch;
