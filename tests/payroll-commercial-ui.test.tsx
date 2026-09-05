@@ -175,7 +175,7 @@ describe("commercial payroll behavioural UI boundary", () => {
 
     expect(html).toContain("Manager adjustments");
     expect(html).toContain("Add or manage adjustments");
-    expect(html).toMatch(/<details[^>]*>.*Add or manage adjustments/s);
+    expect(html).toMatch(/<details[^>]*>[\s\S]*Add or manage adjustments/);
   });
 
   it("keeps every mutation and export control out of the read-only view", () => {
