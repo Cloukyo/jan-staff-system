@@ -59,11 +59,12 @@ jobs:
     needs: verify-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: commercial-staging
     steps:
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
       - name: Inspect staging deployment
-        run: vercel inspect "${{ inputs.staging_deployment_url }}" --json --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > deployment.json
+        run: vercel inspect "${{ inputs.staging_deployment_url }}" --json --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > deployment.json
         env:
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
@@ -86,8 +87,8 @@ jobs:
           STAGING_URL: ${{ inputs.staging_deployment_url }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
-          vercel curl "$STAGING_URL/api/health/live" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > live.json
-          vercel curl "$STAGING_URL/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_STAGING_VERCEL_TOKEN }}" > ready.json
+          vercel curl "$STAGING_URL/api/health/live" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > live.json
+          vercel curl "$STAGING_URL/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > ready.json
           node - <<'NODE'
           const fs = require('fs');
           for (const file of ['live.json', 'ready.json']) {

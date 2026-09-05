@@ -21,6 +21,14 @@ describe("commercial production release workflow", () => {
     expect(workflow).not.toContain("vercel promote");
   });
 
+  it("uses the protected Commercial Staging environment token contract", () => {
+    expect(stagingWorkflow).toContain("secrets.COMMERCIAL_VERCEL_TOKEN");
+    expect(stagingWorkflow).not.toContain("COMMERCIAL_STAGING_VERCEL_TOKEN");
+    expect(workflow).toContain("environment: commercial-staging");
+    expect(workflow).toContain("secrets.COMMERCIAL_VERCEL_TOKEN");
+    expect(workflow).not.toContain("COMMERCIAL_STAGING_VERCEL_TOKEN");
+  });
+
   it("checks both migration ledgers before deployment", () => {
     expect(workflow).toContain("COMMERCIAL_STAGING_DATABASE_URL");
     expect(workflow).toContain("COMMERCIAL_PRODUCTION_DATABASE_URL");
