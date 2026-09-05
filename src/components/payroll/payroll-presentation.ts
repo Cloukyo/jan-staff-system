@@ -57,7 +57,7 @@ export function buildPayrollWorkflowPresentation({
     return {
       tone: "blocking",
       title: "Payroll needs recalculating",
-      description: "Attendance, pay details or adjustments changed after this preparation was saved.",
+      description: "Payroll inputs changed after this revision was saved. Recalculate before approving or exporting.",
       primaryAction: canPrepare && reporting.period.status === "open" ? "recalculate" : "none",
     };
   }

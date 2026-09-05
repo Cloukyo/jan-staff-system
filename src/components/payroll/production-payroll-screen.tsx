@@ -3,9 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
+import { DetailDisclosure, ResponsiveDataView } from "@/components/ui/layout-primitives";
+import {
+  ActionSummary,
+  Alert,
+  StatusBadge,
+  type SemanticTone,
+} from "@/components/ui/semantic-primitives";
+import {
+  buildPayrollWorkflowPresentation,
+  groupPayrollReadinessIssues,
+  type PayrollReadinessIssuePresentation,
+} from "@/components/payroll/payroll-presentation";
 import type { PayrollPreparationRow } from "@/lib/payroll/types";
 import { Button, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { formatHours, formatMoney } from "@/lib/dates/format";
+import { formatDateUk, formatHours, formatMoney } from "@/lib/dates/format";
 import type { PayrollExportHoursMode } from "@/lib/exports/payroll-options";
 import type { OfflinePayrollReadiness } from "@/lib/payroll/offline-readiness";
 import type { CommercialPayrollSnapshot } from "@/lib/payroll/tenant-types";
@@ -63,6 +75,49 @@ function derivePayrollOperationId(base: string, discriminator: string): string {
     hash = Math.imul(hash, 16_777_619);
   }
   return `${base.slice(0, -8)}${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function PayrollReadinessGroup({
+  title,
+  tone,
+  issues,
+  snapshot,
+}: {
+  title: string;
+  tone: SemanticTone;
+  issues: PayrollReadinessIssuePresentation[];
+  snapshot: CommercialPayrollSnapshot;
+}) {
+  if (!issues.length) return null;
+  return (
+    <section className="mt-4" aria-label={title}>
+      <h3 className="text-sm font-black uppercase tracking-wide text-slate-600">{title}</h3>
+      <ul className="mt-2 grid gap-2">
+        {issues.map((issue, index) => {
+          const staffName = snapshot.staff.find((staff) => staff.staffId === issue.staffId)?.fullName;
+          return (
+            <li key={`${issue.code}:${issue.sourceId ?? issue.staffId ?? index}`} className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={tone}>{issue.label}</StatusBadge>
+                    {staffName ? <strong className="text-sm text-purple-950">{staffName}</strong> : null}
+                  </div>
+                  <p className="mt-2 text-sm text-slate-700">{issue.description}</p>
+                  {issue.operationalDate ? <p className="mt-1 text-xs font-semibold text-slate-600">{formatDateUk(issue.operationalDate)}</p> : null}
+                </div>
+                {issue.href && issue.actionLabel ? (
+                  <a className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50" href={issue.href}>
+                    {issue.actionLabel}
+                  </a>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 export function CommercialPayrollReportingScreen({
@@ -146,9 +201,92 @@ export function CommercialPayrollReportingScreen({
       operationId: operationIds.reopen,
     })
     : null;
+  const workflow = buildPayrollWorkflowPresentation({
+    reporting,
+    canPrepare,
+    canExport,
+    exportScopeMatches,
+  });
+  const readinessGroups = groupPayrollReadinessIssues(snapshot.readiness.issues);
 
   return (
     <div className="grid gap-5">
+      <Panel>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-purple-700">Pay period</p>
+            <h2 className="mt-1 text-2xl font-black text-purple-950">
+              {formatDateUk(snapshot.periodStart)} to {formatDateUk(snapshot.periodEnd)}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">{organisationDisplayName} | {reportingScopeLabel}</p>
+          </div>
+          <StatusBadge tone={workflow.tone}>{workflow.title}</StatusBadge>
+        </div>
+
+        <Alert className="mt-4" tone={workflow.tone} title={workflow.title}>
+          <p>{workflow.description}</p>
+          {workflow.primaryAction === "create_period" && canPrepare && !reporting.period ? (
+            <CommercialPayrollActionForm action={createAction} operationId={operationIds.create} submitLabel="Use this pay period" />
+          ) : null}
+          {(workflow.primaryAction === "prepare" || workflow.primaryAction === "recalculate")
+            && canPrepare && reporting.period?.status === "open" && prepareAction ? (
+            <CommercialPayrollActionForm
+              action={prepareAction}
+              operationId={operationIds.prepare}
+              submitLabel={workflow.primaryAction === "recalculate" ? "Recalculate preparation" : "Prepare payroll hours"}
+            />
+          ) : null}
+          {workflow.primaryAction === "acknowledge_warnings" && canPrepare && reporting.run && acknowledgeAction ? (
+            <CommercialPayrollActionForm action={acknowledgeAction} operationId={operationIds.acknowledge} submitLabel="Acknowledge warnings">
+              {(reporting.run.warningCodes ?? []).map((code) => <input key={code} type="hidden" name="warningCode" value={code} />)}
+              <Field label="Acknowledgement note">
+                <textarea className={inputClassName("min-h-24")} name="note" minLength={5} maxLength={2000} required />
+              </Field>
+            </CommercialPayrollActionForm>
+          ) : null}
+          {workflow.primaryAction === "approve" && canPrepare && approveAction ? (
+            <CommercialPayrollActionForm action={approveAction} operationId={operationIds.approve} submitLabel="Approve exact revision" />
+          ) : null}
+          {workflow.primaryAction === "resolve_blockers" ? (
+            <a
+              className="mt-3 inline-flex min-h-11 items-center rounded-lg bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800"
+              href={readinessGroups.blockers.find((issue) => issue.href)?.href ?? "/attendance?view=needs-attention"}
+            >
+              Review blocking items
+            </a>
+          ) : null}
+          {workflow.primaryAction === "export" && canExport && exportParams ? (
+            <div className="mt-3">
+              <a className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href={`/payroll/export?${exportParams.toString()}`}>
+                <FileSpreadsheet className="h-4 w-4" aria-hidden /> Export approved revision
+              </a>
+              <p className="mt-2 text-sm font-bold text-purple-800">Planned rota hours are included in the export.</p>
+            </div>
+          ) : null}
+          {workflow.primaryAction === "select_scope" ? (
+            <p className="mt-3 text-sm font-bold text-amber-900">Use the site selector to return to the scope stored with this approved preparation.</p>
+          ) : null}
+        </Alert>
+
+        <ActionSummary
+          className="mt-4"
+          title="Review progress"
+          items={[
+            { key: "blockers", label: "Must be fixed", count: summary.blockerCount, tone: summary.blockerCount ? "blocking" : "neutral" },
+            { key: "warnings", label: "Need review", count: summary.warningCount, tone: summary.warningCount ? "attention" : "neutral" },
+            { key: "information", label: "Information only", count: summary.informationalCount, tone: "information" },
+          ]}
+        />
+
+        <PayrollReadinessGroup title="Must be fixed" tone="blocking" issues={readinessGroups.blockers} snapshot={snapshot} />
+        <PayrollReadinessGroup title="Warnings to review" tone="attention" issues={readinessGroups.warnings} snapshot={snapshot} />
+        {readinessGroups.information.length ? (
+          <DetailDisclosure className="mt-4" summary={`Information only (${readinessGroups.information.length})`}>
+            <PayrollReadinessGroup title="Information only" tone="information" issues={readinessGroups.information} snapshot={snapshot} />
+          </DetailDisclosure>
+        ) : null}
+      </Panel>
+
       <Panel>
         <p className="text-sm font-bold text-slate-500">Organisation</p>
         <h2 className="text-xl font-black text-purple-950">{organisationDisplayName}</h2>
@@ -170,67 +308,44 @@ export function CommercialPayrollReportingScreen({
         ) : <p className="mt-4 text-sm text-slate-600">Save a preparation revision to create stored reporting totals.</p>}
       </Panel>
 
-      <Panel>
-        <h2 className="font-black text-purple-950">Preparation and approval</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Period status: {reporting.period?.status ?? "not created"} | Run status: {reporting.run?.status ?? "not prepared"} | Revision: {reporting.period?.revision ?? "not assigned"} | Approval: {reporting.approval?.status ?? "not approved"}
-        </p>
-        <p className="mt-2 text-sm text-slate-600">
-          Stored readiness: {summary.blockerCount} blocker(s), {summary.warningCount} warning(s), {summary.informationalCount} information item(s).
-        </p>
-        {canPrepare && !reporting.period ? <CommercialPayrollActionForm action={createAction} operationId={operationIds.create} submitLabel="Create payroll period" /> : null}
-        {reporting.run && !reporting.isFresh ? (
-          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
-            <p className="font-bold text-amber-950">Payroll inputs changed after this revision was saved.</p>
-            <p className="mt-1 text-sm text-amber-900">Recalculate before approving or exporting this preparation.</p>
-          </div>
-        ) : null}
-        {canPrepare && reporting.period?.status === "open" && (!reporting.run || !reporting.isFresh) && prepareAction ? (
-          <CommercialPayrollActionForm
-            action={prepareAction}
-            operationId={operationIds.prepare}
-            submitLabel={reporting.run ? "Recalculate preparation" : "Save preparation revision"}
-          />
-        ) : null}
-        {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run && reporting.run.warningCount > 0
-          && !reporting.run.warningsAcknowledged && acknowledgeAction ? (
-          <CommercialPayrollActionForm action={acknowledgeAction} operationId={operationIds.acknowledge} submitLabel="Acknowledge warnings">
-            {(reporting.run.warningCodes ?? []).map((code) => <input key={code} type="hidden" name="warningCode" value={code} />)}
-            <Field label="Acknowledgement note">
-              <textarea className={inputClassName("min-h-24")} name="note" minLength={5} maxLength={2000} required />
-            </Field>
-          </CommercialPayrollActionForm>
-        ) : null}
-        {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run?.status === "ready"
-          && (reporting.run.warningCount === 0 || reporting.run.warningsAcknowledged)
-          && !reporting.approval && approveAction
-          ? <CommercialPayrollActionForm action={approveAction} operationId={operationIds.approve} submitLabel="Approve exact revision" /> : null}
+      <DetailDisclosure summary="Audit and revision details">
+        <div className="grid gap-3 text-sm text-slate-700">
+          <p>
+            Period status: <strong>{reporting.period?.status ?? "not created"}</strong> | Run status: <strong>{reporting.run?.status ?? "not prepared"}</strong> | Revision: <strong>{reporting.period?.revision ?? "not assigned"}</strong> | Approval: <strong>{reporting.approval?.status ?? "not approved"}</strong>
+          </p>
+          <p>{summary.sourceLabel} | {reportingScopeLabel}</p>
+          <p>Input fingerprint: <code className="break-all text-xs">{snapshot.inputFingerprint}</code></p>
+          <p>Attendance fingerprint: <code className="break-all text-xs">{snapshot.attendanceFingerprint}</code></p>
+          <p>Pay details fingerprint: <code className="break-all text-xs">{snapshot.payArrangementFingerprint}</code></p>
+          {reporting.lastExport ? <p>Last export: {reporting.lastExport.fileName} from revision {reporting.lastExport.revision}</p> : <p>No export has been recorded for this preparation.</p>}
+        </div>
         {canPrepare && reporting.period?.status === "closed" && reporting.approval?.status === "approved" && reopenAction ? (
-          <CommercialPayrollActionForm action={reopenAction} operationId={operationIds.reopen} submitLabel="Reopen approved revision">
-            <Field label="Reopen reason">
-              <textarea className={inputClassName("min-h-24")} name="reason" minLength={5} maxLength={2000} required />
-            </Field>
-          </CommercialPayrollActionForm>
-        ) : null}
-        {canExport && exportParams ? (
-          <div className="mt-4">
-            <a className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href={`/payroll/export?${exportParams.toString()}`}>
-              <FileSpreadsheet className="h-4 w-4" /> Export approved revision
-            </a>
-            <p className="mt-2 text-sm font-bold text-purple-800">Planned rota hours are included in the export.</p>
+          <div className="mt-4 border-t border-red-200 pt-4">
+            <p className="text-sm font-bold text-red-900">Reopening makes the approved revision unavailable for export until it is prepared and approved again.</p>
+            <CommercialPayrollActionForm action={reopenAction} operationId={operationIds.reopen} submitLabel="Reopen approved revision">
+              <Field label="Reopen reason">
+                <textarea className={inputClassName("min-h-24")} name="reason" minLength={5} maxLength={2000} required />
+              </Field>
+            </CommercialPayrollActionForm>
           </div>
         ) : null}
-        {canExport && reporting.approval?.status === "approved" && !exportScopeMatches ? (
-          <p className="mt-3 text-sm font-bold text-amber-800">Select the stored run site scope before exporting.</p>
-        ) : null}
-        {reporting.lastExport ? <p className="mt-3 text-xs text-slate-500">Last export: {reporting.lastExport.fileName} from revision {reporting.lastExport.revision}</p> : null}
-      </Panel>
+      </DetailDisclosure>
 
       {canPrepare && reporting.isFresh && reporting.period?.status === "open" && reporting.run ? (
         <Panel>
           <h2 className="font-black text-purple-950">Manager adjustments</h2>
           <p className="mt-2 text-sm text-slate-600">Use signed minutes. Positive values add payable time and negative values remove it. Attendance evidence is unchanged.</p>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {(reporting.adjustments ?? []).length ? (
+            <Alert className="mt-4" tone="attention" title={`${reporting.adjustments!.length} active adjustment${reporting.adjustments!.length === 1 ? "" : "s"}`}>
+              Review active adjustments before approving this preparation.
+            </Alert>
+          ) : null}
+          <DetailDisclosure
+            className="mt-4"
+            summary="Add or manage adjustments"
+            defaultOpen={Boolean((reporting.adjustments ?? []).length)}
+          >
+          <div className="grid gap-4 lg:grid-cols-2">
             {reporting.adjustmentTargets.map((adjustmentTarget) => {
               const operationId = derivePayrollOperationId(
                 operationIds.adjustment,
@@ -303,16 +418,46 @@ export function CommercialPayrollReportingScreen({
               </div>
             </div>
           ))}
+          </DetailDisclosure>
         </Panel>
       ) : null}
 
       <Panel>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Pay category</th><th className="p-2">Payable</th><th className="p-2">Ordinary</th><th className="p-2">Overtime</th><th className="p-2">Estimated preparation value</th></tr></thead>
-            <tbody>{summary.staffRows.map((row) => <tr key={row.staffId} className="border-b border-purple-50"><td className="p-2"><strong>{row.fullName}</strong><br /><span className="text-slate-500">{row.employmentRole}</span></td><td className="p-2">{row.payType ?? "Missing"}</td><td className="p-2">{formatHours(row.payableMinutes)}</td><td className="p-2">{formatHours(row.ordinaryMinutes)}</td><td className="p-2">{formatHours(row.overtimeMinutes)}</td><td className="p-2">{formatMoney(row.estimatedGrossValue === null ? null : Math.round(row.estimatedGrossValue * 100))}</td></tr>)}</tbody>
-          </table>
-        </div>
+        <h2 className="text-xl font-black text-purple-950">Payroll staff totals</h2>
+        <p className="mt-1 text-sm text-slate-600">Review payable hours and preparation values for the selected period.</p>
+        <ResponsiveDataView
+          className="mt-4"
+          label="Payroll staff totals"
+          desktop={(
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead><tr className="border-b border-purple-100"><th className="p-2">Staff</th><th className="p-2">Pay category</th><th className="p-2">Payable</th><th className="p-2">Ordinary</th><th className="p-2">Overtime</th><th className="p-2">Estimated preparation value</th></tr></thead>
+                <tbody>{summary.staffRows.map((row) => <tr key={row.staffId} className="border-b border-purple-50"><td className="p-2"><strong>{row.fullName}</strong><br /><span className="text-slate-500">{row.employmentRole}</span></td><td className="p-2">{row.payType ?? "Missing"}</td><td className="p-2">{formatHours(row.payableMinutes)}</td><td className="p-2">{formatHours(row.ordinaryMinutes)}</td><td className="p-2">{formatHours(row.overtimeMinutes)}</td><td className="p-2">{formatMoney(row.estimatedGrossValue === null ? null : Math.round(row.estimatedGrossValue * 100))}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          mobile={(
+            <div className="grid gap-3">
+              {summary.staffRows.map((row) => (
+                <article key={row.staffId} className="rounded-lg border border-purple-100 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-black text-purple-950">{row.fullName}</h3>
+                      <p className="text-sm text-slate-600">{row.employmentRole}</p>
+                    </div>
+                    <StatusBadge tone={row.payType ? "neutral" : "blocking"}>{row.payType ?? "Pay details missing"}</StatusBadge>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div><dt className="text-xs font-bold uppercase text-slate-500">Payable time</dt><dd className="mt-1 font-black text-purple-950">{formatHours(row.payableMinutes)}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-slate-500">Estimated value</dt><dd className="mt-1 font-black text-purple-950">{formatMoney(row.estimatedGrossValue === null ? null : Math.round(row.estimatedGrossValue * 100))}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-slate-500">Ordinary</dt><dd className="mt-1">{formatHours(row.ordinaryMinutes)}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-slate-500">Overtime</dt><dd className="mt-1">{formatHours(row.overtimeMinutes)}</dd></div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          )}
+        />
       </Panel>
       <p className="text-sm font-bold text-purple-800">Payroll preparation only. No PAYE, National Insurance, pension or statutory deductions are calculated.</p>
     </div>
