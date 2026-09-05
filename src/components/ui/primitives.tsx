@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { StatusBadge } from "@/components/ui/semantic-primitives";
 
 export function Button({
   children,
@@ -41,21 +42,42 @@ export function inputClassName(extra = "") {
 }
 
 export function StatusPill({ tone, children }: { tone: "green" | "amber" | "red" | "grey" | "purple"; children: ReactNode }) {
-  const tones = {
-    green: "bg-green-50 text-green-800 ring-green-200",
-    amber: "bg-amber-50 text-amber-800 ring-amber-200",
-    red: "bg-red-50 text-red-800 ring-red-200",
-    grey: "bg-slate-100 text-slate-700 ring-slate-200",
-    purple: "bg-purple-50 text-purple-800 ring-purple-200",
-  };
-  return <span className={`ui-status-pill ui-status-pill--${tone} inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${tones[tone]}`}>{children}</span>;
+  const semanticTones = {
+    green: "success",
+    amber: "attention",
+    red: "blocking",
+    grey: "neutral",
+    purple: "information",
+  } as const;
+  return (
+    <StatusBadge
+      tone={semanticTones[tone]}
+      className={`ui-status-pill ui-status-pill--${tone}`}
+    >
+      {children}
+    </StatusBadge>
+  );
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
+export function EmptyState({
+  title,
+  body,
+  action,
+  kind = "default",
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+  kind?: "first-use" | "filtered" | "default";
+}) {
   return (
-    <div className="ui-empty-state rounded-lg border border-dashed border-purple-200 bg-purple-50/60 p-6 text-center">
+    <div
+      className="ui-empty-state rounded-lg border border-dashed border-purple-200 bg-purple-50/60 p-6 text-center"
+      data-empty-state-kind={kind}
+    >
       <p className="font-bold text-purple-950">{title}</p>
       <p className="mt-1 text-sm text-purple-700">{body}</p>
+      {action ? <div className="ui-empty-state__action">{action}</div> : null}
     </div>
   );
 }

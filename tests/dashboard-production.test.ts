@@ -27,21 +27,46 @@ describe("production dashboard separation", () => {
     expect(screen).not.toContain("estimated payroll");
   });
 
-  it("puts urgent manager work before daily context and summaries", () => {
+  it("puts a semantic manager action summary before daily context", () => {
     const screen = readFileSync(resolve("src/components/dashboard/production-dashboard.tsx"), "utf8");
-    const needsAttention = screen.indexOf(">Needs attention<");
+    const actionSummary = screen.indexOf("<ActionSummary");
     const today = screen.indexOf(">Today<");
     const quickActions = screen.indexOf(">Quick actions<");
     const recordsSummary = screen.indexOf(">Records and checks summary<");
 
-    expect(screen).toContain(">Home<");
-    expect(needsAttention).toBeGreaterThan(-1);
-    expect(today).toBeGreaterThan(needsAttention);
+    expect(screen).toContain("<PageHeader");
+    expect(screen).toContain('title="Home"');
+    expect(screen).toContain("<ActionSummary");
+    expect(screen).toContain("No immediate manager actions");
+    expect(actionSummary).toBeGreaterThan(-1);
+    expect(today).toBeGreaterThan(actionSummary);
     expect(quickActions).toBeGreaterThan(today);
     expect(recordsSummary).toBeGreaterThan(quickActions);
-    expect(screen).toContain("Review {data.missingClockOuts} missing clock-out");
+    expect(screen).not.toContain("function attentionClass");
+    expect(screen).not.toContain("Review {data.missingClockOuts} missing clock-out");
+    expect(screen).toContain('/attendance?view=needs-attention');
+    expect(screen).toContain('/leave/requests');
     expect(screen).not.toContain(">Live<");
     expect(screen).not.toMatch(/Production data|Supabase/);
+  });
+
+  it("uses a blocking shared alert when live data is unavailable", () => {
+    const screen = readFileSync(resolve("src/components/dashboard/production-dashboard.tsx"), "utf8");
+
+    expect(screen).toContain('<Alert tone="blocking"');
+    expect(screen).toContain('title="Live dashboard unavailable"');
+    expect(screen).toContain("No demo or placeholder figures have been shown");
+  });
+
+  it("preserves the desktop shifts table and provides a focused mobile equivalent", () => {
+    const screen = readFileSync(resolve("src/components/dashboard/production-dashboard.tsx"), "utf8");
+
+    expect(screen).toContain("<ResponsiveDataView");
+    expect(screen).toContain('label="Today and tomorrow shifts"');
+    expect(screen).toContain("ui-dashboard-shift-list");
+    expect(screen).toContain("<th className=\"p-2\">Shift</th>");
+    expect(screen).toContain("<th className=\"p-2\">Work area or role</th>");
+    expect(screen).toContain("Work area or role");
   });
 });
 

@@ -86,13 +86,14 @@ const operationIds = {
 
 function renderScreen(input: {
   state?: CommercialPayrollReportingState;
+  snapshot?: CommercialPayrollSnapshot;
   canPrepare: boolean;
   canExport: boolean;
 }) {
   return renderToStaticMarkup(<CommercialPayrollReportingScreen
     organisationDisplayName="Fictional Nursery Group"
     siteId={input.state?.selectedSiteId ?? null}
-    snapshot={snapshot}
+    snapshot={input.snapshot ?? snapshot}
     reporting={input.state ?? reporting()}
     canPrepare={input.canPrepare}
     canExport={input.canExport}
@@ -101,6 +102,82 @@ function renderScreen(input: {
 }
 
 describe("commercial payroll behavioural UI boundary", () => {
+  it("leads with readiness and keeps lifecycle internals in audit details", () => {
+    const html = renderScreen({ canPrepare: true, canExport: false });
+
+    expect(html).toContain("1 warning needs review");
+    expect(html).toContain("Review progress");
+    expect(html).toContain("Audit and revision details");
+    expect(html.indexOf("1 warning needs review")).toBeLessThan(
+      html.indexOf("Stored revision 2"),
+    );
+  });
+
+  it("shows blocking issues with direct authoritative remediation", () => {
+    const html = renderScreen({
+      state: reporting({
+        run: {
+          ...reporting().run!,
+          status: "needs_review",
+          blockerCount: 1,
+          warningCount: 0,
+        },
+      }),
+      snapshot: {
+        ...snapshot,
+        staff: [{
+          staffId: "staff-a",
+          fullName: "Alex Example",
+          employmentRole: "Practitioner",
+          currentSiteId: null,
+          payType: "salaried",
+          payableMinutes: 0,
+          ordinaryMinutes: 0,
+          overtimeMinutes: 0,
+          estimatedGrossValue: null,
+          salaryBasis: null,
+        }],
+        readiness: {
+          counts: { blocker: 1, warning: 0, informational: 0 },
+          issues: [{
+            code: "missing_clock_out",
+            severity: "blocker",
+            organisationId: snapshot.organisationId,
+            staffId: "staff-a",
+            siteId: null,
+            operationalDate: "2026-08-14",
+            sourceId: "event-1",
+          }],
+        },
+      },
+      canPrepare: true,
+      canExport: false,
+    });
+
+    expect(html).toContain("1 thing must be fixed");
+    expect(html).toContain("Missing clock-out");
+    expect(html).toContain("Alex Example");
+    expect(html).toContain("Fix attendance");
+    expect(html).toContain("/attendance?");
+  });
+
+  it("retains desktop comparison and adds task-focused mobile staff totals", () => {
+    const html = renderScreen({ canPrepare: true, canExport: false });
+
+    expect(html).toContain("ui-responsive-data__desktop");
+    expect(html).toContain("ui-responsive-data__mobile");
+    expect(html).toContain("Payroll staff totals");
+    expect(html).toContain("Payable time");
+  });
+
+  it("keeps adjustment controls available through progressive disclosure", () => {
+    const html = renderScreen({ canPrepare: true, canExport: false });
+
+    expect(html).toContain("Manager adjustments");
+    expect(html).toContain("Add or manage adjustments");
+    expect(html).toMatch(/<details[^>]*>[\s\S]*Add or manage adjustments/);
+  });
+
   it("keeps every mutation and export control out of the read-only view", () => {
     const html = renderScreen({ canPrepare: false, canExport: false });
 

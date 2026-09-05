@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  AlertTriangle,
   CalendarClock,
   CalendarDays,
   CalendarX2,
@@ -13,7 +12,10 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
+import { buildDashboardActionItems } from "@/components/dashboard/dashboard-presentation";
+import { PageHeader, ResponsiveDataView } from "@/components/ui/layout-primitives";
+import { ActionSummary, Alert, StatusBadge } from "@/components/ui/semantic-primitives";
+import { EmptyState, Panel } from "@/components/ui/primitives";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
 import type { ProductionDashboardSummary } from "@/lib/dashboard/types";
 
@@ -41,56 +43,41 @@ const recordSummaryItems: SummaryItem[] = [
   { key: "staffMissingPayArrangement", label: "Staff without current pay details", href: "/staff?filter=needs-setup", icon: CreditCard },
 ];
 
-function attentionClass(count: number) {
-  return count > 0
-    ? "border-amber-200 bg-amber-50 text-amber-950 hover:border-amber-300"
-    : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300";
-}
-
 export function ProductionDashboard({ data }: { data: ProductionDashboardSummary }) {
   const rotaHref = `/rota?week=${data.weekStartDate}&view=weekly`;
+  const actionItems = buildDashboardActionItems(data);
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-page__header mb-6">
-        <h1 className="text-3xl font-black text-purple-950">Home</h1>
-        <p className="mt-2 text-slate-600">
-          Staffing and records for {formatDateUk(data.referenceDate)}.
-        </p>
-      </div>
+      <PageHeader
+        title="Home"
+        description={`Staffing and records for ${formatDateUk(data.referenceDate)}.`}
+        className="dashboard-page__header mb-6"
+      />
 
-      <section aria-labelledby="needs-attention-heading">
-        <div className="mb-3 flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-amber-700" aria-hidden />
-          <h2 id="needs-attention-heading" className="text-xl font-black text-purple-950">Needs attention</h2>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Link className={`min-h-11 rounded-lg border p-4 font-bold transition ${attentionClass(data.missingClockOuts)}`} href="/attendance?view=needs-attention">
-            Review {data.missingClockOuts} missing clock-out{data.missingClockOuts === 1 ? "" : "s"}
-          </Link>
-          <Link className={`min-h-11 rounded-lg border p-4 font-bold transition ${attentionClass(data.todayAttendanceExceptions)}`} href="/attendance?view=needs-attention">
-            Review {data.todayAttendanceExceptions} attendance issue{data.todayAttendanceExceptions === 1 ? "" : "s"} today
-          </Link>
-          <Link className={`min-h-11 rounded-lg border p-4 font-bold transition ${attentionClass(data.pendingLeaveRequests)}`} href="/leave/requests">
-            Review {data.pendingLeaveRequests} leave request{data.pendingLeaveRequests === 1 ? "" : "s"}
-          </Link>
-          <Link className={`min-h-11 rounded-lg border p-4 font-bold transition ${attentionClass(data.approvedLeaveRotaConflicts)}`} href={rotaHref}>
-            Resolve {data.approvedLeaveRotaConflicts} rota leave conflict{data.approvedLeaveRotaConflicts === 1 ? "" : "s"}
-          </Link>
-        </div>
+      <section aria-label="Manager actions">
+        {actionItems.length ? (
+          <ActionSummary title="Needs attention" items={actionItems} />
+        ) : (
+          <Alert tone="success" title="No immediate manager actions">
+            Attendance, correction requests, leave decisions and rota leave conflicts are clear.
+          </Alert>
+        )}
         {data.attendanceWarnings.length ? (
-          <div className="mt-3 grid gap-2">
-            {data.attendanceWarnings.map((warning) => (
-              <Link
-                key={`${warning.staffId}-${warning.warning}-${warning.warningDate}`}
-                href="/attendance?view=needs-attention"
-                className="rounded-lg border border-amber-200 bg-white p-3 text-sm text-amber-950"
-              >
-                <strong>{warning.displayName}, {formatDateUk(warning.warningDate)}:</strong>{" "}
-                {warning.warning}
-              </Link>
-            ))}
-          </div>
+          <Alert tone="attention" title="Attendance details" className="mt-3">
+            <div className="grid gap-2">
+              {data.attendanceWarnings.map((warning) => (
+                <Link
+                  key={`${warning.staffId}-${warning.warning}-${warning.warningDate}`}
+                  href="/attendance?view=needs-attention"
+                  className="block min-h-11 rounded-lg bg-white p-3 text-sm text-amber-950 underline decoration-amber-300 underline-offset-2"
+                >
+                  <strong>{warning.displayName}, {formatDateUk(warning.warningDate)}:</strong>{" "}
+                  {warning.warning}
+                </Link>
+              ))}
+            </div>
+          </Alert>
         ) : null}
       </section>
 
@@ -107,9 +94,9 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
             </div>
             {data.currentRota ? (
               <div className="mt-4">
-                <StatusPill tone={data.currentRota.status === "published" ? "green" : "amber"}>
+                <StatusBadge tone={data.currentRota.status === "published" ? "success" : "attention"}>
                   {data.currentRota.status}
-                </StatusPill>
+                </StatusBadge>
                 <p className="mt-3 text-sm text-slate-600">
                   {data.currentRota.status === "published" && data.currentRota.publishedAt
                     ? `Published ${formatDateUk(data.currentRota.publishedAt)} at ${formatTimeUk(data.currentRota.publishedAt)}`
@@ -161,26 +148,52 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
             <CalendarClock className="h-5 w-5 text-purple-600" aria-hidden />
           </div>
           {data.upcomingShifts.length ? (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-purple-100">
-                    <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Work area or role</th><th className="p-2">Rota</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <ResponsiveDataView
+              label="Today and tomorrow shifts"
+              className="mt-4"
+              desktop={(
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-purple-100">
+                        <th className="p-2">Date</th><th className="p-2">Staff</th><th className="p-2">Shift</th><th className="p-2">Work area or role</th><th className="p-2">Rota</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.upcomingShifts.map((shift) => (
+                        <tr key={shift.id} className="border-b border-purple-50">
+                          <td className="p-2">{formatDateUk(shift.shiftDate)}</td>
+                          <td className="p-2 font-bold text-purple-950">{shift.displayName}</td>
+                          <td className="p-2">{shift.startTime} to {shift.endTime}</td>
+                          <td className="p-2">{shift.workArea || shift.roomOrArea || shift.roleOnShift || "-"}</td>
+                          <td className="p-2"><StatusBadge tone={shift.rotaStatus === "published" ? "success" : "attention"}>{shift.rotaStatus}</StatusBadge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              mobile={(
+                <ol className="ui-dashboard-shift-list">
                   {data.upcomingShifts.map((shift) => (
-                    <tr key={shift.id} className="border-b border-purple-50">
-                      <td className="p-2">{formatDateUk(shift.shiftDate)}</td>
-                      <td className="p-2 font-bold text-purple-950">{shift.displayName}</td>
-                      <td className="p-2">{shift.startTime} to {shift.endTime}</td>
-                      <td className="p-2">{shift.workArea || shift.roomOrArea || shift.roleOnShift || "-"}</td>
-                      <td className="p-2"><StatusPill tone={shift.rotaStatus === "published" ? "green" : "amber"}>{shift.rotaStatus}</StatusPill></td>
-                    </tr>
+                    <li key={shift.id} className="ui-dashboard-shift-list__item">
+                      <div className="ui-dashboard-shift-list__heading">
+                        <div>
+                          <p className="ui-dashboard-shift-list__label">Staff</p>
+                          <p className="ui-dashboard-shift-list__name">{shift.displayName}</p>
+                        </div>
+                        <StatusBadge tone={shift.rotaStatus === "published" ? "success" : "attention"}>{shift.rotaStatus}</StatusBadge>
+                      </div>
+                      <dl className="ui-dashboard-shift-list__details">
+                        <div><dt>Date</dt><dd>{formatDateUk(shift.shiftDate)}</dd></div>
+                        <div><dt>Shift</dt><dd>{shift.startTime} to {shift.endTime}</dd></div>
+                        <div><dt>Work area or role</dt><dd>{shift.workArea || shift.roomOrArea || shift.roleOnShift || "Not recorded"}</dd></div>
+                      </dl>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ol>
+              )}
+            />
           ) : (
             <EmptyState title="No upcoming shifts" body="No shifts are scheduled for today or tomorrow." />
           )}
@@ -234,11 +247,11 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
 
 export function ProductionDashboardError() {
   return (
-    <Panel>
-      <h1 className="text-2xl font-black text-red-900">Live dashboard unavailable</h1>
-      <p className="mt-2 text-sm text-red-800">
+    <div className="grid gap-5">
+      <PageHeader title="Home" description="Staffing and records." />
+      <Alert tone="blocking" title="Live dashboard unavailable">
         The dashboard data could not be loaded. No demo or placeholder figures have been shown.
-      </p>
-    </Panel>
+      </Alert>
+    </div>
   );
 }
