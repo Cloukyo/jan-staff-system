@@ -52,4 +52,10 @@ describe("commercial production release workflow", () => {
     expect(stagingWorkflow).toContain('includes("lhr1")');
     expect(stagingWorkflow).toContain('result.status !== "ok"');
   });
+
+  it("provides the staging project context to post-deploy Vercel verification", () => {
+    expect(stagingWorkflow).toMatch(
+      /name: Verify staging identity, liveness, readiness, and SHA[\s\S]*?VERCEL_ORG_ID: \$\{\{ secrets\.COMMERCIAL_STAGING_VERCEL_ORG_ID \}\}[\s\S]*?VERCEL_PROJECT_ID: \$\{\{ secrets\.COMMERCIAL_STAGING_VERCEL_PROJECT_ID \}\}[\s\S]*?run: \|/,
+    );
+  });
 });

@@ -66,6 +66,8 @@ jobs:
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
         run: |
           staging_url="$(cat staging-url.txt)"
           vercel inspect "$staging_url" --json --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > deployment.json

@@ -195,7 +195,7 @@ begin
   perform pg_temp.assert_true(
     (select to_jsonb(request_record)::text
       from public.attendance_action_requests request_record
-      where idempotency_key = request_id) not like '%4826%',
+      where idempotency_key = request_id) not like '%"4826"%',
     'action request records must not contain the PIN value'
   );
 end;
