@@ -68,11 +68,21 @@ jobs:
           EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+          VERCEL_ACCESS_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          STAGING_BYPASS_SECRET: ${{ secrets.COMMERCIAL_STAGING_AUTOMATION_BYPASS_SECRET }}
         run: |
           staging_url="$(cat staging-url.txt)"
-          vercel inspect "$staging_url" --json --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > deployment.json
-          vercel curl "$staging_url/api/health/live" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > live.json
-          vercel curl "$staging_url/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > ready.json
+          staging_host="${staging_url#https://}"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_ACCESS_TOKEN" \
+            "https://api.vercel.com/v13/deployments/$staging_host?teamId=$VERCEL_ORG_ID&withGitRepoInfo=true" \
+            > deployment.json
+          curl --fail --silent --show-error \
+            --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
+            "$staging_url/api/health/live" > live.json
+          curl --fail --silent --show-error \
+            --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
+            "$staging_url/api/health/ready" > ready.json
           node - <<'NODE'
            const fs = require('fs');
            const deployment = JSON.parse(fs.readFileSync('deployment.json', 'utf8'));

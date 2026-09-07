@@ -123,7 +123,8 @@ describe("attendance tenancy executable migration", () => {
     await resetTenantDatabaseRole(db);
     const events = await db.query<{ count: number }>(
       `select count(*)::integer count from public.clock_events
-       where organisation_id = $1::uuid and site_id = $2::uuid and staff_id = $3 and recorded_date = current_date`,
+       where organisation_id = $1::uuid and site_id = $2::uuid and staff_id = $3
+         and recorded_date = (clock_timestamp() at time zone 'Europe/London')::date`,
       [ORG_A, SITE_A1, STAFF_A],
     );
     expect(events.rows[0].count).toBe(1);

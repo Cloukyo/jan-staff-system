@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 describe("commercial production release workflow", () => {
   const workflow = readFileSync(resolve(".github/workflows/release.yml"), "utf8");
   const stagingWorkflow = readFileSync(resolve(".github/workflows/promote-staging.yml"), "utf8");
+  const releaseStagingVerification =
+    workflow.match(/  verify-staging-sha:[\s\S]*?(?=\n  verify-migration-ledgers:)/)?.[0] ?? "";
 
   it("requires the exact staging SHA and health evidence before production", () => {
     expect(workflow).toContain("expected_sha");
@@ -57,5 +59,21 @@ describe("commercial production release workflow", () => {
     expect(stagingWorkflow).toMatch(
       /name: Verify staging identity, liveness, readiness, and SHA[\s\S]*?VERCEL_ORG_ID: \$\{\{ secrets\.COMMERCIAL_STAGING_VERCEL_ORG_ID \}\}[\s\S]*?VERCEL_PROJECT_ID: \$\{\{ secrets\.COMMERCIAL_STAGING_VERCEL_PROJECT_ID \}\}[\s\S]*?run: \|/,
     );
+  });
+
+  it.each([
+    ["staging promotion", stagingWorkflow],
+    ["production precheck", releaseStagingVerification],
+  ])("verifies protected Commercial Staging without user-scoped Vercel CLI access in %s", (_name, source) => {
+    expect(source).toContain("api.vercel.com/v13/deployments");
+    expect(source).toContain("COMMERCIAL_STAGING_AUTOMATION_BYPASS_SECRET");
+    expect(source).toContain("x-vercel-protection-bypass");
+    expect(source).not.toContain("vercel inspect");
+    expect(source).not.toContain("vercel curl");
+  });
+
+  it("uses the deployed health response contract throughout the production release", () => {
+    expect(workflow).not.toContain("result.ok !== true");
+    expect(workflow.match(/result\.status !== "ok"/g)).toHaveLength(2);
   });
 });

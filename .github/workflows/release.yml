@@ -61,13 +61,19 @@ jobs:
     timeout-minutes: 10
     environment: commercial-staging
     steps:
-      - name: Install pinned Vercel CLI
-        run: npm install --global vercel@58.5.1
       - name: Inspect staging deployment
-        run: vercel inspect "${{ inputs.staging_deployment_url }}" --json --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > deployment.json
+        shell: bash
         env:
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+          VERCEL_ACCESS_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+          STAGING_URL: ${{ inputs.staging_deployment_url }}
+        run: |
+          staging_host="${STAGING_URL#https://}"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_ACCESS_TOKEN" \
+            "https://api.vercel.com/v13/deployments/$staging_host?teamId=$VERCEL_ORG_ID&withGitRepoInfo=true" \
+            > deployment.json
       - name: Assert staging project and SHA
         shell: bash
         env:
@@ -86,16 +92,21 @@ jobs:
         env:
           STAGING_URL: ${{ inputs.staging_deployment_url }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          STAGING_BYPASS_SECRET: ${{ secrets.COMMERCIAL_STAGING_AUTOMATION_BYPASS_SECRET }}
         run: |
-          vercel curl "$STAGING_URL/api/health/live" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > live.json
-          vercel curl "$STAGING_URL/api/health/ready" --silent --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" > ready.json
+          curl --fail --silent --show-error \
+            --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
+            "$STAGING_URL/api/health/live" > live.json
+          curl --fail --silent --show-error \
+            --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
+            "$STAGING_URL/api/health/ready" > ready.json
           node - <<'NODE'
           const fs = require('fs');
           for (const file of ['live.json', 'ready.json']) {
             const result = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (result.environment !== 'staging') throw new Error(`${file} is not Commercial Staging`);
             if (result.deploymentSha !== process.env.EXPECTED_SHA) throw new Error(`${file} SHA mismatch`);
-            if (result.ok !== true) throw new Error(`${file} is not healthy`);
+            if (result.status !== "ok") throw new Error(`${file} is not healthy`);
           }
           NODE
 
@@ -161,6 +172,6 @@ jobs:
           const result = require('./production-live.json');
           if (result.environment !== 'production') throw new Error('Deployment is not Commercial Production');
           if (result.deploymentSha !== process.env.EXPECTED_SHA) throw new Error('Production SHA mismatch');
-          if (result.ok !== true) throw new Error('Production liveness failed');
+          if (result.status !== "ok") throw new Error('Production liveness failed');
           NODE
           echo "Deployed $EXPECTED_SHA to $production_url" >> "$GITHUB_STEP_SUMMARY"
