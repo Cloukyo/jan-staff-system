@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { hasSupabaseConfig } from "@/lib/auth/config";
+import { clearCommercialPreference } from "@/lib/commercial-identity/session";
 import { validatePrivatePassword } from "@/lib/auth/password-validation";
 import { safeCommercialContinuation } from "@/lib/invitations/continuation";
 import {
@@ -25,6 +26,7 @@ export async function signInAction(_state: AuthActionState, formData: FormData):
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { message: "The email or password was not recognised." };
+  await clearCommercialPreference();
   if (nextPath?.startsWith("/invitations/manager?token=")) redirect(nextPath);
   const { data: account, error: accountError } = await supabase.from("staff_accounts").select("active,must_change_password,role").eq("auth_user_id", data.user.id).maybeSingle();
   if (accountError) {
@@ -136,6 +138,7 @@ export async function resetRecoveredPasswordAction(
 }
 
 export async function signOutAction() {
+  await clearCommercialPreference();
   if (hasSupabaseConfig()) {
     const supabase = await createSupabaseServerClient();
     await supabase.auth.signOut();
