@@ -9,6 +9,7 @@ import { StaffRecordNav } from "@/components/staff/staff-record-nav";
 import { StaffRecordPay } from "@/components/staff/staff-record-pay";
 import {
   archiveComplianceRecordAction,
+  confirmDbsReceiptAction,
   saveCertificateAction,
   saveCentralRecordAction,
   saveCentralRecordItemAction,
@@ -85,6 +86,7 @@ export function ProductionComplianceDetail({
     dbsRequirement: centralRecord?.dbsRequirement ?? "assessment_needed", dbsCheckLevel: centralRecord?.dbsCheckLevel ?? null,
     dbsStatus: centralRecord?.dbsStatus ?? "not_started", dbsCertificateReceivedDate: centralRecord?.dbsCertificateReceivedDate ?? null,
     dbsVerifiedAt: centralRecord?.dbsVerifiedAt ?? null, hasFullDbsReference: centralRecord?.dbsReferenceRecorded ?? false,
+    dbsReceiptConfirmed: centralRecord?.dbsReceiptConfirmed === true, dbsRecorded: centralRecord?.dbsRecorded === true,
     suitabilityStatus: centralRecord?.suitabilityStatus ?? "not_assessed", suitabilityDecidedAt: centralRecord?.suitabilityDecidedAt ?? null,
     startAuthorisedAt: centralRecord?.startAuthorisedAt ?? null, volunteerException: centralRecord?.volunteerException ?? null,
   }, isoDateInLondon());
@@ -235,10 +237,26 @@ export function ProductionComplianceDetail({
           <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
           <div className={`mt-3 rounded-xl border p-3 text-sm ${recruitmentReadiness.status === "blocked" ? "border-red-200 bg-red-50 text-red-950" : recruitmentReadiness.status === "ready" ? "border-green-200 bg-green-50 text-green-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
-            <p className="font-black">Work start status: {recruitmentReadiness.status === "ready" ? "Ready" : recruitmentReadiness.status === "blocked" ? "Blocked" : "Needs attention"}</p>
+            <p className="font-black">Work start status: {recruitmentReadiness.mayStartWork ? "Ready" : recruitmentReadiness.evidenceState === "future_effective" ? "Evidence is future-effective" : "Not ready"}</p>
+            {recruitmentReadiness.evidenceState === "receipt_unconfirmed" ? <p className="mt-1">Receipt timing unconfirmed - manager confirmation required.</p> : null}
             {recruitmentReadiness.blockerCodes.length ? <p className="mt-1">{recruitmentReadiness.blockerCodes.length} item(s) must be completed before this person can begin work.</p> : null}
             {recruitmentReadiness.restrictionCodes.includes("supervision_required") ? <p className="mt-1">This occasional volunteer must remain supervised.</p> : null}
           </div>
+          {staff.organisationId && centralRecord?.dbsRequirement === "required" ? (
+            <div className="mt-4 rounded-xl border border-purple-100 p-4">
+              <h3 className="font-bold text-purple-950">{centralRecord.dbsReceiptConfirmed ? "Confirmed receipt date" : "Confirm receipt timing"}</h3>
+              <p className="mt-2 text-sm text-slate-700">Existing historical DBS evidence is retained. An issue date or last-check date is not proof of receipt. A replacement DBS is not required solely because receipt timing is unknown.</p>
+              <p className="mt-2 text-sm text-slate-700">Save any changes to the DBS evidence first. Then confirm when the nursery actually received the check and explain the evidence reviewed. Changing the receipt date or underlying check requires fresh confirmation.</p>
+              <ProductionActionForm key={centralRecord.updatedAt} action={confirmDbsReceiptAction} submitLabel="Confirm receipt date">
+                <input type="hidden" name="staffId" value={staff.id} />
+                <input type="hidden" name="expectedUpdatedAt" value={centralRecord.updatedAt} />
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field label="Actual receipt/clearance date"><input className={inputClassName()} name="receivedOn" type="date" max={isoDateInLondon()} required /></Field>
+                  <Field label="Evidence reviewed"><textarea className={inputClassName()} name="evidenceNote" minLength={5} maxLength={2000} required /></Field>
+                </div>
+              </ProductionActionForm>
+            </div>
+          ) : null}
           <ProductionActionForm action={saveCentralRecordAction}>
             <input type="hidden" name="staffId" value={staff.id} />
             <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -250,7 +268,7 @@ export function ProductionComplianceDetail({
               <label className="flex min-h-11 items-center gap-2 font-bold text-purple-950"><input name="occasionalSupervisedVolunteer" type="checkbox" defaultChecked={centralRecord?.volunteerException === "occasional_supervised"} /> Occasional supervised volunteer exception</label>
               <Field label="Full 12-digit DBS certificate number"><input autoComplete="off" className={inputClassName()} inputMode="numeric" name="dbsReference" maxLength={14} placeholder={centralRecord?.dbsReferenceRecorded ? `Stored securely (${maskDbsNumber(centralRecord.dbsNumberLast4)})` : "Enter to store securely"} /></Field>
               <Field label="Application date"><input className={inputClassName()} name="dbsApplicationDate" type="date" defaultValue={centralRecord?.dbsApplicationDate ?? ""} /></Field>
-              <Field label="Certificate received"><input className={inputClassName()} name="dbsCertificateReceivedDate" type="date" defaultValue={centralRecord?.dbsCertificateReceivedDate ?? ""} /></Field>
+              <Field label={centralRecord?.dbsReceiptConfirmed ? "Receipt date (confirmed)" : "Recorded receipt date (timing unconfirmed)"}><input className={inputClassName()} name="dbsCertificateReceivedDate" type="date" defaultValue={centralRecord?.dbsCertificateReceivedDate ?? ""} /></Field>
               <Field label="Issue date"><input className={inputClassName()} name="dbsIssueDate" type="date" defaultValue={centralRecord?.dbsIssueDate ?? ""} /></Field>
               <Field label="Last checked"><input className={inputClassName()} name="dbsLastCheckedAt" type="date" defaultValue={centralRecord?.dbsLastCheckedAt ?? ""} /></Field>
               <Field label="Suitability decision"><select className={inputClassName()} name="suitabilityStatus" defaultValue={centralRecord?.suitabilityStatus ?? "not_assessed"}><option value="not_assessed">Not assessed</option><option value="suitable">Suitable</option><option value="suitable_with_restrictions">Suitable with restrictions</option><option value="not_suitable">Not suitable</option></select></Field>

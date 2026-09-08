@@ -154,6 +154,7 @@ function centralRecord(row: Record<string, unknown>): StaffCentralRecord {
     dbsStatus: String(row.dbs_status ?? (row.dbs_recorded ? "legacy_recorded" : "not_started")) as StaffCentralRecord["dbsStatus"],
     dbsApplicationDate: row.dbs_application_date ? String(row.dbs_application_date) : null,
     dbsCertificateReceivedDate: row.dbs_certificate_received_date ? String(row.dbs_certificate_received_date) : null,
+    dbsReceiptConfirmed: row.dbs_receipt_confirmed === true,
     dbsReferenceRecorded: Boolean(row.dbs_reference_encrypted),
     dbsVerifiedAt: row.dbs_verified_at ? String(row.dbs_verified_at) : null,
     volunteerException: row.volunteer_exception ? "occasional_supervised" : null,
@@ -223,7 +224,7 @@ export async function loadProductionComplianceDataset(
     importQuery.eq("organisation_id", organisationId);
     centralItemsQuery.eq("organisation_id", organisationId);
   }
-  const [staffResult, qualificationResult, certificateResult, centralResult, referenceResult, importResult, accountResult, centralItemsResult] = await Promise.all([
+  const [staffResult, qualificationResult, certificateResult, centralResult, referenceResult, importResult, accountResult, centralItemsResult, readinessResult] = await Promise.all([
     staffQuery,
     qualificationQuery,
     certificateQuery,
@@ -234,6 +235,9 @@ export async function loadProductionComplianceDataset(
       ? Promise.resolve({ data: [], error: null })
       : supabase.from("staff_accounts").select("id,staff_id,email,auth_user_id,active"),
     centralItemsQuery,
+    organisationId
+      ? supabase.from("staff_recruitment_readiness").select("staff_id,dbs_receipt_confirmed").eq("organisation_id", organisationId)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   const staffRows = assertQuery(staffResult, "Staff profiles") as Record<string, unknown>[];
   const qualificationRows = assertQuery(qualificationResult, "Qualifications") as Record<string, unknown>[];
@@ -243,11 +247,13 @@ export async function loadProductionComplianceDataset(
   const importRows = assertQuery(importResult, "Import warnings") as Record<string, unknown>[];
   const accountRows = assertQuery(accountResult, "Account status") as Record<string, unknown>[];
   const centralItemRows = assertQuery(centralItemsResult, "Central-record items") as Record<string, unknown>[];
+  const readinessRows = assertQuery(readinessResult, "Receipt confirmation") as Record<string, unknown>[];
+  const receiptConfirmed = new Map(readinessRows.map((row) => [String(row.staff_id), row.dbs_receipt_confirmed === true]));
   return {
     staff: staffRows.map(profile),
     qualifications: qualificationRows.map(qualification),
     certificates: certificateRows.map(certificate),
-    centralRecords: centralRows.map(centralRecord),
+    centralRecords: centralRows.map((row) => centralRecord({ ...row, dbs_receipt_confirmed: receiptConfirmed.get(String(row.staff_id)) === true })),
     references: referenceRows.map(reference),
     importWarnings: importRows.map((row) => ({
       id: String(row.id),

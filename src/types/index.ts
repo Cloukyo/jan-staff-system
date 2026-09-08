@@ -142,6 +142,7 @@ export interface StaffCentralRecord {
   dbsStatus?: DbsLifecycleStatus;
   dbsApplicationDate?: string | null;
   dbsCertificateReceivedDate?: string | null;
+  dbsReceiptConfirmed?: boolean;
   dbsReferenceRecorded?: boolean;
   dbsVerifiedAt?: string | null;
   volunteerException?: "occasional_supervised" | null;

@@ -5,6 +5,7 @@ export type ComplianceEvidenceRow = {
   staffName: string; engagementType: string; role: string; proposedStartDate: string | null;
   dbsRequirement: string; dbsCheckLevel: string; dbsStatus: string; dbsReference: string;
   dbsCertificateReceivedDate: string | null; dbsVerifiedAt: string | null; dbsVerifiedBy: string;
+  receiptTiming?: string;
   suitabilityStatus: string; suitabilityDecidedAt: string | null; restrictions: string; outstandingActions: string;
 };
 
@@ -32,14 +33,15 @@ export async function buildComplianceEvidenceWorkbook(input: { organisationName:
     { header: "Role", key: "role", width: 24 }, { header: "Proposed/start date", key: "proposedStartDate", width: 18 },
     { header: "DBS requirement", key: "dbsRequirement", width: 20 }, { header: "DBS check level", key: "dbsCheckLevel", width: 34 },
     { header: "DBS status", key: "dbsStatus", width: 20 }, { header: "DBS reference", key: "dbsReference", width: 18 },
-    { header: "Certificate received", key: "dbsCertificateReceivedDate", width: 20 }, { header: "Verified at", key: "dbsVerifiedAt", width: 24 },
+    { header: "Recorded receipt date", key: "dbsCertificateReceivedDate", width: 20 }, { header: "Verified at", key: "dbsVerifiedAt", width: 24 },
     { header: "Verified by", key: "dbsVerifiedBy", width: 24 }, { header: "Suitability", key: "suitabilityStatus", width: 24 },
     { header: "Suitability decided", key: "suitabilityDecidedAt", width: 24 }, { header: "Restrictions", key: "restrictions", width: 34 },
     { header: "Outstanding actions", key: "outstandingActions", width: 42 },
+    { header: "Receipt timing evidence", key: "receiptTiming", width: 55 },
   ];
   sheet.addRows(input.rows);
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.autoFilter = { from: "A1", to: "O1" };
+  sheet.autoFilter = { from: "A1", to: "P1" };
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF5B21B6" } };
   return new Uint8Array(await workbook.xlsx.writeBuffer());

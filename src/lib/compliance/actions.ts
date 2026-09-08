@@ -166,6 +166,31 @@ export async function archiveComplianceRecordAction(_state: ComplianceActionStat
   return ok("Record archived.");
 }
 
+export async function confirmDbsReceiptAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
+  const access = await managerSupabase("compliance.manage");
+  if (!access || access.actor.kind !== "commercial") return fail("Commercial manager access is required.");
+  const staffId = text(formData, "staffId");
+  const receivedOn = text(formData, "receivedOn");
+  const evidenceNote = text(formData, "evidenceNote");
+  const expectedUpdatedAt = text(formData, "expectedUpdatedAt");
+  if (!staffId || !receivedOn || !expectedUpdatedAt || !evidenceNote || evidenceNote.length < 5 || evidenceNote.length > 2000) {
+    return fail("Enter the actual receipt date and a brief explanation of the evidence you reviewed.");
+  }
+  const { error } = await access.supabase.rpc("confirm_staff_dbs_receipt", {
+    target_organisation_id: access.actor.context.organisationId,
+    target_staff_id: staffId,
+    expected_updated_at: expectedUpdatedAt,
+    received_on: receivedOn,
+    evidence_note: evidenceNote,
+  });
+  if (error) return fail(error.message.includes("dbs_receipt_record_changed")
+    ? "This record changed. Refresh and review the latest evidence before confirming."
+    : "Receipt timing could not be confirmed. Check the saved DBS evidence and use an actual receipt date, not a future date.");
+  revalidateStaffProfileViews(staffId);
+  revalidatePath("/rota");
+  return ok("Receipt date confirmed and audit evidence recorded. Work eligibility has been recalculated.");
+}
+
 export async function saveCentralRecordAction(_state: ComplianceActionState, formData: FormData): Promise<ComplianceActionState> {
   const actor = await requireCustomerDomainActor("compliance.manage");
   const supabase = hasSupabaseConfig() ? await createSupabaseServerClient() : null;
