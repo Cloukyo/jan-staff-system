@@ -64,10 +64,23 @@ describe("commercial membership context", () => {
     }))).toBe("stale_preference");
   });
 
-  it("limits selected sites to the current permission map", () => {
+  it("uses authoritative site access for selection and site permissions for actions", () => {
     const context = resolveMembershipContext(snapshot([membership()]), { requestedSiteId: SITE_A });
     expect(context.permissions).toEqual(["rota.manage", "site.read"]);
-    expect(code(() => resolveMembershipContext(snapshot([membership({ siteAccess: [SITE_A, SITE_B] })]), { requestedSiteId: SITE_B }))).toBe("site_unavailable");
+
+    const staffContext = resolveMembershipContext(snapshot([membership({
+      roles: [{ role: "staff", scopeType: "organisation", siteId: null }],
+      siteAccess: [SITE_A, SITE_B],
+      sitePermissions: {},
+    })]), { requestedSiteId: SITE_B });
+    expect(staffContext.selectedSiteId).toBe(SITE_B);
+    expect(staffContext.permittedSiteIds).toEqual([SITE_A, SITE_B]);
+    expect(staffContext.permissions).toEqual([]);
+
+    expect(code(() => resolveMembershipContext(snapshot([membership({
+      siteAccess: [SITE_A, SITE_B],
+      sitePermissions: { [SITE_A]: ["site.read"] },
+    })]), { requestedSiteId: SITE_B }))).toBe("site_unavailable");
   });
 
   it("unions permissions already derived by the database without trusting caller values", () => {

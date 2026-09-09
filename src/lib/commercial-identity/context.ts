@@ -56,15 +56,19 @@ export function resolveMembershipContext(
   }
 
   const selectedSiteId = request.requestedSiteId ?? null;
+  const staffOnly = membership.roles.length > 0 && membership.roles.every(({ role }) => role === "staff");
+  const permittedSiteIds = staffOnly
+    ? [...new Set(membership.siteAccess)].sort()
+    : Object.keys(membership.sitePermissions).sort();
   const sitePermissions = selectedSiteId ? membership.sitePermissions[selectedSiteId] : undefined;
-  if (selectedSiteId && !sitePermissions) {
+  if (selectedSiteId && !permittedSiteIds.includes(selectedSiteId)) {
     throw new CommercialIdentityError("site_unavailable");
   }
 
   return {
     ...membership,
     selectedSiteId,
-    permittedSiteIds: Object.keys(membership.sitePermissions).sort(),
+    permittedSiteIds,
     permissions: uniqueSorted(sitePermissions ?? membership.permissions),
   };
 }
