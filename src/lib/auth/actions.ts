@@ -6,6 +6,7 @@ import { hasSupabaseConfig } from "@/lib/auth/config";
 import { clearCommercialPreference } from "@/lib/commercial-identity/session";
 import { validatePrivatePassword } from "@/lib/auth/password-validation";
 import { safeCommercialContinuation } from "@/lib/invitations/continuation";
+import { safePostAuthContinuation } from "@/lib/auth/post-auth-destination";
 import {
   PILOT_SIGNUP_MESSAGE,
   bindPilotSignup,
@@ -21,24 +22,13 @@ export async function signInAction(_state: AuthActionState, formData: FormData):
   if (!hasSupabaseConfig()) return { message: "Supabase is not configured. Add the environment variables before using production login." };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const nextPath = safeCommercialContinuation(String(formData.get("next") ?? ""));
+  const nextPath = safePostAuthContinuation(String(formData.get("next") ?? ""));
   if (!email || !password) return { message: "Enter your email address and password." };
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) return { message: "The email or password was not recognised." };
   await clearCommercialPreference();
-  if (nextPath?.startsWith("/invitations/manager?token=")) redirect(nextPath);
-  const { data: account, error: accountError } = await supabase.from("staff_accounts").select("active,must_change_password,role").eq("auth_user_id", data.user.id).maybeSingle();
-  if (accountError) {
-    await supabase.auth.signOut();
-    return { message: "Your account could not be loaded. Try again." };
-  }
-  if (!account) redirect(nextPath ?? "/onboarding");
-  if (!account.active) {
-    await supabase.auth.signOut();
-    return { message: "This account is inactive." };
-  }
-  redirect(account.must_change_password ? "/change-password" : account.role === "manager" ? "/dashboard" : "/my-rota");
+  redirect(`/auth/continue?next=${encodeURIComponent(nextPath)}`);
 }
 
 export type SignUpActionState = { ok: boolean; message: string; email: string };

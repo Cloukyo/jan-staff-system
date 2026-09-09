@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
-import { safeCommercialContinuation } from "@/lib/invitations/continuation";
+import { safePostAuthContinuation } from "@/lib/auth/post-auth-destination";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const isPasswordReset = url.searchParams.get("next") === "/reset-password";
   const requested = url.searchParams.get("next");
-  const next = isPasswordReset ? "/reset-password" : safeCommercialContinuation(requested) ?? "/dashboard";
+  const next = isPasswordReset
+    ? "/reset-password"
+    : `/auth/continue?next=${encodeURIComponent(safePostAuthContinuation(requested))}`;
 
   if (code) {
     const supabase = await createSupabaseServerClient();

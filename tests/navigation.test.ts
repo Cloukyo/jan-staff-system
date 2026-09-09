@@ -103,8 +103,8 @@ describe("role-aware navigation", () => {
   });
 
   it("redirects staff directly to their own production area", () => {
-    const actions = source("src/lib/auth/actions.ts");
-    expect(actions).toContain('account.role === "manager" ? "/dashboard" : "/my-rota"');
+    const resolver = source("src/lib/auth/post-auth-destination.ts");
+    expect(resolver).toContain('input.legacyAccount.role === "manager" ? "/dashboard" : "/my-rota"');
   });
 
   it("points dashboard setup warnings to the current editing workflows", () => {

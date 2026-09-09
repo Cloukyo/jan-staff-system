@@ -45,5 +45,5 @@ export async function verifyMfaAction(state: MfaActionState, formData: FormData)
   const result = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
   if (result.error) return { ...state, message: "That code was not accepted. Wait for a new code and try again." };
   const requested = String(formData.get("nextPath") ?? "");
-  redirect(requested === "/onboarding/organisation" ? requested : "/onboarding");
+  redirect(`/auth/continue?next=${encodeURIComponent(requested)}`);
 }
