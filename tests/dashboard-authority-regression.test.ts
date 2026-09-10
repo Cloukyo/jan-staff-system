@@ -72,7 +72,7 @@ describe("commercial dashboard authority regression", () => {
   it("ships a forward migration that replaces every placeholder dashboard signal", () => {
     const sql = readFileSync(join(
       process.cwd(),
-      "supabase/migrations/20260910120000_authoritative_commercial_dashboard.sql",
+      "supabase/migrations/20260910050831_authoritative_commercial_dashboard.sql",
     ), "utf8");
 
     expect(sql).toContain("create or replace function public.get_commercial_attendance_dashboard");
