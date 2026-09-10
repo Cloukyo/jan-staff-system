@@ -214,3 +214,16 @@ export function groupPayrollReadinessIssues(issues: PayrollReadinessIssue[]): {
     information: grouped.informational,
   };
 }
+
+export function buildPayrollReadinessProgress(issues: PayrollReadinessIssue[]): {
+  blockers: number;
+  warnings: number;
+  information: number;
+} {
+  const groups = groupPayrollReadinessIssues(issues);
+  return {
+    blockers: groups.blockers.length,
+    warnings: groups.warnings.length,
+    information: groups.information.length,
+  };
+}

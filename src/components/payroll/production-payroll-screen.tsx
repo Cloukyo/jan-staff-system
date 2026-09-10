@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/semantic-primitives";
 import {
   buildPayrollWorkflowPresentation,
+  buildPayrollReadinessProgress,
   groupPayrollReadinessIssues,
   type PayrollReadinessIssuePresentation,
 } from "@/components/payroll/payroll-presentation";
@@ -208,6 +209,7 @@ export function CommercialPayrollReportingScreen({
     exportScopeMatches,
   });
   const readinessGroups = groupPayrollReadinessIssues(snapshot.readiness.issues);
+  const readinessProgress = buildPayrollReadinessProgress(snapshot.readiness.issues);
 
   return (
     <div className="grid gap-5">
@@ -272,9 +274,9 @@ export function CommercialPayrollReportingScreen({
           className="mt-4"
           title="Review progress"
           items={[
-            { key: "blockers", label: "Must be fixed", count: summary.blockerCount, tone: summary.blockerCount ? "blocking" : "neutral" },
-            { key: "warnings", label: "Need review", count: summary.warningCount, tone: summary.warningCount ? "attention" : "neutral" },
-            { key: "information", label: "Information only", count: summary.informationalCount, tone: "information" },
+            { key: "blockers", label: "Must be fixed", count: readinessProgress.blockers, tone: readinessProgress.blockers ? "blocking" : "neutral" },
+            { key: "warnings", label: "Need review", count: readinessProgress.warnings, tone: readinessProgress.warnings ? "attention" : "neutral" },
+            { key: "information", label: "Information only", count: readinessProgress.information, tone: "information" },
           ]}
         />
 

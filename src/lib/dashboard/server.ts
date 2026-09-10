@@ -11,6 +11,10 @@ function numberValue(row: Record<string, unknown>, key: string): number {
   return Number(row[key] ?? 0);
 }
 
+function optionalNumberValue(row: Record<string, unknown>, key: string): number | null {
+  return row[key] === null || row[key] === undefined ? null : Number(row[key]);
+}
+
 export function mapDashboardSummary(row: Record<string, unknown>): ProductionDashboardSummary {
   const currentRota = row.current_rota as Record<string, unknown> | null;
   return {
@@ -24,13 +28,14 @@ export function mapDashboardSummary(row: Record<string, unknown>): ProductionDas
     missingClockOuts: numberValue(row, "missing_clock_outs"),
     longRunningShifts: numberValue(row, "long_running_shifts"),
     pendingCorrections: numberValue(row, "pending_corrections"),
-    pendingLeaveRequests: numberValue(row, "pending_leave_requests"),
-    approvedLeaveRotaConflicts: numberValue(row, "approved_leave_rota_conflicts"),
-    expiredCertificates: numberValue(row, "expired_certificates"),
-    certificatesExpiring30Days: numberValue(row, "certificates_expiring_30_days"),
-    incompleteCentralRecords: numberValue(row, "incomplete_central_records"),
-    staffMissingKioskPin: numberValue(row, "staff_missing_kiosk_pin"),
-    staffMissingPayArrangement: numberValue(row, "staff_missing_pay_arrangement"),
+    pendingLeaveRequests: optionalNumberValue(row, "pending_leave_requests"),
+    approvedLeaveRotaConflicts: optionalNumberValue(row, "approved_leave_rota_conflicts"),
+    expiredCertificates: optionalNumberValue(row, "expired_certificates"),
+    certificatesExpiring30Days: optionalNumberValue(row, "certificates_expiring_30_days"),
+    incompleteCentralRecords: optionalNumberValue(row, "incomplete_central_records"),
+    staffMissingKioskPin: optionalNumberValue(row, "staff_missing_kiosk_pin"),
+    staffMissingPayArrangement: optionalNumberValue(row, "staff_missing_pay_arrangement"),
+    requiresManagerAction: row.requires_manager_action === true,
     currentRota: currentRota?.id ? {
       id: String(currentRota.id),
       status: String(currentRota.status) as DashboardRotaStatus,

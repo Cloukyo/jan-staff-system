@@ -12,7 +12,10 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { buildDashboardActionItems } from "@/components/dashboard/dashboard-presentation";
+import {
+  buildDashboardActionItems,
+  dashboardHasNoImmediateActions,
+} from "@/components/dashboard/dashboard-presentation";
 import { PageHeader, ResponsiveDataView } from "@/components/ui/layout-primitives";
 import { ActionSummary, Alert, StatusBadge } from "@/components/ui/semantic-primitives";
 import { EmptyState, Panel } from "@/components/ui/primitives";
@@ -56,11 +59,11 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
       />
 
       <section aria-label="Manager actions">
-        {actionItems.length ? (
+        {!dashboardHasNoImmediateActions(data) ? (
           <ActionSummary title="Needs attention" items={actionItems} />
         ) : (
           <Alert tone="success" title="No immediate manager actions">
-            Attendance, correction requests, leave decisions and rota leave conflicts are clear.
+            Attendance, leave, rota, staff setup, pay and staff checks are clear.
           </Alert>
         )}
         {data.attendanceWarnings.length ? (
@@ -221,7 +224,7 @@ export function ProductionDashboard({ data }: { data: ProductionDashboardSummary
       <section className="mt-7" aria-labelledby="records-summary-heading">
         <h2 id="records-summary-heading" className="mb-3 text-xl font-black text-purple-950">Records and checks summary</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {recordSummaryItems.map((item) => {
+          {recordSummaryItems.filter((item) => data[item.key] !== null).map((item) => {
             const Icon = item.icon;
             const count = data[item.key];
             return (

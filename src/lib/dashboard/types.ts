@@ -11,13 +11,14 @@ export type ProductionDashboardSummary = {
   missingClockOuts: number;
   longRunningShifts: number;
   pendingCorrections: number;
-  pendingLeaveRequests: number;
-  approvedLeaveRotaConflicts: number;
-  expiredCertificates: number;
-  certificatesExpiring30Days: number;
-  incompleteCentralRecords: number;
-  staffMissingKioskPin: number;
-  staffMissingPayArrangement: number;
+  pendingLeaveRequests: number | null;
+  approvedLeaveRotaConflicts: number | null;
+  expiredCertificates: number | null;
+  certificatesExpiring30Days: number | null;
+  incompleteCentralRecords: number | null;
+  staffMissingKioskPin: number | null;
+  staffMissingPayArrangement: number | null;
+  requiresManagerAction: boolean;
   currentRota: {
     id: string;
     status: DashboardRotaStatus;
