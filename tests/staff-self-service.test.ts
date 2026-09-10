@@ -11,9 +11,13 @@ describe("staff self-service", () => {
   const server = source("src/lib/staff-self-service/server.ts");
 
   it("loads only the signed-in staff member's published rota", () => {
-    expect(server).toContain('requireAccount(["staff"])');
+    expect(server).toContain("requireAttendanceSelfActor()");
+    expect(server).toContain('actor.kind === "commercial"');
+    expect(server).toContain('actor.kind === "legacy"');
     expect(server).toContain('.eq("status", "published")');
-    expect(server).toContain('.eq("staff_id", account.staffId)');
+    expect(server).toContain('.eq("staff_id", staffId)');
+    expect(server).toContain('.eq("organisation_id", commercialContext.organisationId)');
+    expect(server).toContain('.eq("site_id", commercialContext.selectedSiteId!)');
     expect(server).toContain('.in("status", ["scheduled", "completed"])');
   });
 

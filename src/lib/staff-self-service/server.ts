@@ -8,7 +8,6 @@ import {
   type ClockEventSourceRow,
 } from "@/lib/attendance/staff-hours";
 import { analyseAttendanceDay } from "@/lib/attendance/sequence";
-import { requireAccount } from "@/lib/auth/permissions";
 import { requireAttendanceSelfActor } from "@/lib/attendance/server-actor";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDate, isoDateInLondon, weekStart } from "@/lib/dates/format";
@@ -109,27 +108,45 @@ function normaliseDateRange(fromValue?: string, toValue?: string): { from: strin
 }
 
 export async function loadStaffRotaWeek(weekValue?: string): Promise<StaffRotaWeek> {
-  const account = await requireAccount(["staff"]);
+  const actor = await requireAttendanceSelfActor();
+  const commercialContext = actor.kind === "commercial" ? actor.context : null;
+  const staffId = commercialContext?.staffId ?? (actor.kind === "legacy" ? actor.account.staffId : null);
+  if (!staffId) throw new Error("Your staff account could not be resolved.");
   const weekStartDate = normaliseWeekStart(weekValue);
   const weekEnd = isoDate(addDays(parseISO(weekStartDate), 6));
-  const supabase = await createSupabaseServerClient();
+  const supabase = commercialContext
+    ? (await import("@/lib/auth/supabase-admin")).createSupabaseAdminClient()
+    : await createSupabaseServerClient();
+  let weekQuery = supabase.from("rota_weeks").select("id,published_at")
+    .eq("week_start_date", weekStartDate).eq("status", "published");
+  let leaveQuery = supabase.from("leave_requests").select("id,start_date,end_date,day_part,start_time,end_time")
+    .eq("staff_id", staffId).eq("status", "approved").lte("start_date", weekEnd).gte("end_date", weekStartDate);
+  if (commercialContext) {
+    weekQuery = weekQuery.eq("organisation_id", commercialContext.organisationId)
+      .eq("site_id", commercialContext.selectedSiteId!);
+    leaveQuery = leaveQuery.eq("organisation_id", commercialContext.organisationId);
+  }
   const [weekResult, leaveResult] = await Promise.all([
-    supabase.from("rota_weeks").select("id,published_at").eq("week_start_date", weekStartDate).eq("status", "published").maybeSingle(),
-    supabase.from("leave_requests").select("id,start_date,end_date,day_part,start_time,end_time")
-      .eq("staff_id", account.staffId).eq("status", "approved").lte("start_date", weekEnd).gte("end_date", weekStartDate),
+    weekQuery.maybeSingle(),
+    leaveQuery,
   ]);
   if (weekResult.error || leaveResult.error) throw new Error("Your rota could not be loaded.");
 
   let shifts: StaffRotaShift[] = [];
   if (weekResult.data) {
-    const shiftResult = await supabase.from("rota_shifts")
+    let shiftQuery = supabase.from("rota_shifts")
       .select("id,shift_date,start_time,end_time,break_minutes,break_unspecified,work_area,room_or_area,role_on_shift,status")
       .eq("rota_week_id", weekResult.data.id)
-      .eq("staff_id", account.staffId)
+      .eq("staff_id", staffId)
       .is("archived_at", null)
       .in("status", ["scheduled", "completed"])
       .order("shift_date")
       .order("start_time");
+    if (commercialContext) {
+      shiftQuery = shiftQuery.eq("organisation_id", commercialContext.organisationId)
+        .eq("site_id", commercialContext.selectedSiteId!);
+    }
+    const shiftResult = await shiftQuery;
     if (shiftResult.error) throw new Error("Your rota shifts could not be loaded.");
     shifts = (shiftResult.data ?? []).map((row) => ({
       id: row.id,
