@@ -18,8 +18,11 @@ describe("production correctness routes", () => {
 
   it("loads the profile from the authenticated account and canonical staff id", () => {
     const profile = source("src/lib/profile/server.ts");
-    expect(profile).toContain('requireAccount(["manager", "staff"])');
-    expect(profile).toContain("account.staffId");
+    expect(profile).toContain("requireAttendanceSelfActor()");
+    expect(profile).toContain('actor.kind === "commercial"');
+    expect(profile).toContain('actor.kind === "legacy"');
+    expect(profile).toContain('.eq("id", staffId)');
+    expect(profile).toContain('.eq("organisation_id", commercialContext.organisationId)');
     expect(profile).not.toContain("useDemoRepository");
   });
 
