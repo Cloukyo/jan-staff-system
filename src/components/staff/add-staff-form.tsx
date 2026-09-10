@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import { Field, Panel, inputClassName } from "@/components/ui/primitives";
-import { createStaffProfileAction } from "@/lib/staff/actions";
+import { createCommercialStaffProfileAction, createStaffProfileAction } from "@/lib/staff/actions";
 
-export function AddStaffForm() {
+export function AddStaffForm({ commercial = false }: { commercial?: boolean }) {
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -21,7 +21,7 @@ export function AddStaffForm() {
         </Link>
       </div>
       <ProductionActionForm
-        action={createStaffProfileAction}
+        action={commercial ? createCommercialStaffProfileAction : createStaffProfileAction}
         className="mt-5"
         submitLabel="Add staff member"
       >

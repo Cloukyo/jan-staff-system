@@ -95,6 +95,32 @@ describe("customer domain database conversion", () => {
     )).rows).toEqual([{ qualification_name: "Organisation B qualification" }]);
   });
 
+  it("allows compliance readers only the staff and nested evidence in their site scope", async () => {
+    await resetTenantDatabaseRole(db);
+    await db.query(
+      `insert into public.staff_profiles (id, organisation_id, full_name, display_name, employment_role)
+       values ('tenant-staff-a2', $1, 'Staff A2', 'Staff A2', 'Staff member')`,
+      [ORG_A],
+    );
+    await db.query(
+      `insert into public.staff_site_assignments
+       (organisation_id, staff_id, site_id, effective_from, is_primary, created_by_membership_id)
+       values ($1, 'tenant-staff-a2', $2, '2026-08-01', true, $3)`,
+      [ORG_A, SITE_A2, MEMBERSHIP_A_OWNER],
+    );
+    await db.query("insert into public.staff_central_records (staff_id, notes) values ($1, 'Site A1 evidence'), ('tenant-staff-a2', 'Site A2 evidence'), ($2, 'Organisation B evidence')", [STAFF_A, "tenant-staff-b"]);
+    await db.query("insert into public.staff_central_record_items (staff_id, item_key) values ($1, 'site-a1-item'), ('tenant-staff-a2', 'site-a2-item'), ($2, 'site-b-item')", [STAFF_A, "tenant-staff-b"]);
+    await db.query("insert into public.staff_reference_checks (staff_id) values ($1), ('tenant-staff-a2'), ($2)", [STAFF_A, "tenant-staff-b"]);
+
+    await setTenantAuthUser(db, USER_A_SITE_MANAGER);
+    expect((await db.query<{ id: string }>("select id from public.staff_profiles order by id")).rows).toEqual([{ id: STAFF_A }]);
+    expect((await db.query<{ notes: string }>("select notes from public.staff_central_records order by notes")).rows).toEqual([{ notes: "Site A1 evidence" }]);
+    expect((await db.query<{ item_key: string }>("select item_key from public.staff_central_record_items order by item_key")).rows).toEqual([{ item_key: "site-a1-item" }]);
+    expect((await db.query<{ staff_id: string }>("select staff_id from public.staff_reference_checks order by staff_id")).rows).toEqual([{ staff_id: STAFF_A }]);
+    expect((await db.query<{ id: string }>("select id from public.staff_profiles where id = $1", ["tenant-staff-b"])).rows).toEqual([]);
+    expect((await db.query<{ notes: string }>("select notes from public.staff_central_records where staff_id = $1", ["tenant-staff-b"])).rows).toEqual([]);
+  });
+
   it("limits a site manager to work areas at an authorised site", async () => {
     await setTenantAuthUser(db, USER_A_SITE_MANAGER);
     expect((await db.query<{ name: string }>("select name from public.work_areas order by name")).rows).toEqual([{ name: "Blue" }]);

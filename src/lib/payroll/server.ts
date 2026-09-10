@@ -12,6 +12,7 @@ import {
 } from "@/lib/attendance/staff-hours";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { isoDateInLondon, londonDateStartUtc } from "@/lib/dates/format";
+import { loadCommercialStaffIdsForSelectedSite } from "@/lib/staff/commercial-scope";
 import { isPayDetailsReady } from "@/lib/payroll/calculations";
 import { loadAllPostgrestPages } from "@/lib/repositories/postgrest-pagination";
 import type {
@@ -23,6 +24,7 @@ import type {
   ProductionStaffRow,
   StaffDirectoryRow,
 } from "@/lib/payroll/types";
+import type { CommercialMembershipContext } from "@/types/tenancy";
 
 export function payrollRepositorySource(mode = getAppMode()): "demo" | "supabase" {
   return mode === "demo" ? "demo" : "supabase";
@@ -121,13 +123,29 @@ function arrangement(row: Record<string, unknown>, accountNames: Map<string, str
   };
 }
 
-export async function loadProductionStaffRows(): Promise<ProductionStaffRow[]> {
+export async function loadProductionStaffRows(
+  commercialContext?: Pick<CommercialMembershipContext, "organisationId" | "selectedSiteId">,
+): Promise<ProductionStaffRow[]> {
   const supabase = await createSupabaseServerClient();
+  const scopedStaffIds = commercialContext
+    ? await loadCommercialStaffIdsForSelectedSite(commercialContext)
+    : null;
+  if (scopedStaffIds && scopedStaffIds.length === 0) return [];
+  const profilesQuery = supabase.from("staff_profiles").select("id,full_name,display_name,employment_role,main_qualification_level,active").order("full_name");
+  const kioskQuery = supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required");
+  const arrangementsQuery = supabase.from("staff_pay_arrangements").select("*").order("effective_from", { ascending: false });
+  if (commercialContext) {
+    profilesQuery.eq("organisation_id", commercialContext.organisationId).in("id", scopedStaffIds!);
+    kioskQuery.in("staff_id", scopedStaffIds!);
+    arrangementsQuery.eq("organisation_id", commercialContext.organisationId).in("staff_id", scopedStaffIds!);
+  }
   const [profiles, accounts, kiosk, arrangements] = await Promise.all([
-    supabase.from("staff_profiles").select("id,full_name,display_name,employment_role,main_qualification_level,active").order("full_name"),
-    supabase.from("staff_accounts").select("id,staff_id,auth_user_id,active,role,full_name"),
-    supabase.from("staff_kiosk_settings").select("staff_id,kiosk_enabled,pin_updated_at,pin_reset_required"),
-    supabase.from("staff_pay_arrangements").select("*").order("effective_from", { ascending: false }),
+    profilesQuery,
+    commercialContext
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.from("staff_accounts").select("id,staff_id,auth_user_id,active,role,full_name"),
+    kioskQuery,
+    arrangementsQuery,
   ]);
   if (profiles.error || accounts.error || kiosk.error || arrangements.error) throw new Error("Production staff and pay records could not be loaded.");
   const accountsByStaff = new Map((accounts.data ?? []).map((row) => [row.staff_id, row]));

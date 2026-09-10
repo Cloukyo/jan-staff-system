@@ -50,6 +50,7 @@ export function ProductionComplianceDetail({
   account,
   adminConfigured,
   payPerson,
+  commercialAccess = false,
 }: {
   record: StaffComplianceRecord;
   section: StaffRecordSection;
@@ -57,6 +58,7 @@ export function ProductionComplianceDetail({
   account: ProductionAccountRow | null;
   adminConfigured: boolean;
   payPerson: ProductionStaffRow | null;
+  commercialAccess?: boolean;
 }) {
   const { staff, centralRecord } = record;
   const compliancePack = getCompliancePackForIndustry(getActiveIndustryProfile().id);
@@ -145,13 +147,15 @@ export function ProductionComplianceDetail({
         )}
 
         {section === "staff-login" && (
-          <StaffRecordLogin
-            account={account}
-            staffId={staff.id}
-            fullName={staff.fullName}
-            email={staff.email ?? record.account?.email ?? null}
-            adminConfigured={adminConfigured}
-          />
+          commercialAccess
+            ? <Panel><EmptyState title="Staff login is managed through organisation access" body="Use organisation membership administration to invite, suspend or revoke commercial application access." /></Panel>
+            : <StaffRecordLogin
+                account={account}
+                staffId={staff.id}
+                fullName={staff.fullName}
+                email={staff.email ?? record.account?.email ?? null}
+                adminConfigured={adminConfigured}
+              />
         )}
 
         {section === "pay-details" && (

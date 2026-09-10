@@ -28,4 +28,16 @@ describe("customer-domain compatibility actor", () => {
       loadLegacyManager: async () => ({ id: "legacy-manager" }),
     })).rejects.toMatchObject({ code: "permission_denied" });
   });
+
+  it.each(["membership_unavailable", "stale_preference"] as const)(
+    "does not fall back for %s commercial context",
+    async (code) => {
+      let legacyCalls = 0;
+      await expect(resolveCustomerDomainActor({
+        loadCommercial: async () => { throw new CommercialIdentityError(code); },
+        loadLegacyManager: async () => { legacyCalls += 1; return { id: "legacy-manager" }; },
+      })).rejects.toMatchObject({ code });
+      expect(legacyCalls).toBe(0);
+    },
+  );
 });

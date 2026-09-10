@@ -174,8 +174,8 @@ describe("production staff lifecycle interface", () => {
   });
 
   it("enables lifecycle controls on Staff but not Pay arrangements", () => {
-    expect(staffPage).toContain("showStaffLifecycleControls");
-    expect(staffPage).toContain("currentStaffId={manager.staffId}");
+    expect(staffPage).toContain('showStaffLifecycleControls={actor.kind === "legacy"}');
+    expect(staffPage).toContain('currentStaffId={actor.kind === "legacy" ? actor.account.staffId : undefined}');
     expect(payPage).not.toContain("showStaffLifecycleControls");
   });
 });

@@ -9,6 +9,7 @@ import type {
 import { getAppMode } from "@/lib/app-mode";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { loadCommercialStaffIdsForSelectedSite } from "@/lib/staff/commercial-scope";
 import type { CommercialMembershipContext } from "@/types/tenancy";
 
 export type ComplianceImportWarning = {
@@ -203,11 +204,17 @@ function assertQuery<T>(result: { data: T | null; error: { message: string } | n
 }
 
 export async function loadProductionComplianceDataset(
-  commercialContext?: Pick<CommercialMembershipContext, "organisationId">,
+  commercialContext?: Pick<CommercialMembershipContext, "organisationId" | "selectedSiteId">,
 ): Promise<ComplianceDataset> {
   ensureProductionConfig();
   const supabase = await createSupabaseServerClient();
   const organisationId = commercialContext?.organisationId;
+  const scopedStaffIds = commercialContext
+    ? await loadCommercialStaffIdsForSelectedSite(commercialContext)
+    : null;
+  if (scopedStaffIds && scopedStaffIds.length === 0) {
+    return { staff: [], qualifications: [], certificates: [], centralRecords: [], references: [], importWarnings: [], accounts: [], centralItems: [] };
+  }
   const staffQuery = supabase.from("staff_profiles").select("*").order("full_name");
   const qualificationQuery = supabase.from("staff_qualifications").select("*").is("archived_at", null);
   const certificateQuery = supabase.from("staff_certificates").select("*").is("archived_at", null);
@@ -223,6 +230,13 @@ export async function loadProductionComplianceDataset(
     referenceQuery.eq("organisation_id", organisationId);
     importQuery.eq("organisation_id", organisationId);
     centralItemsQuery.eq("organisation_id", organisationId);
+    staffQuery.in("id", scopedStaffIds!);
+    qualificationQuery.in("staff_id", scopedStaffIds!);
+    certificateQuery.in("staff_id", scopedStaffIds!);
+    centralQuery.in("staff_id", scopedStaffIds!);
+    referenceQuery.in("staff_id", scopedStaffIds!);
+    importQuery.in("imported_staff_id", scopedStaffIds!);
+    centralItemsQuery.in("staff_id", scopedStaffIds!);
   }
   const [staffResult, qualificationResult, certificateResult, centralResult, referenceResult, importResult, accountResult, centralItemsResult, readinessResult] = await Promise.all([
     staffQuery,
@@ -236,7 +250,7 @@ export async function loadProductionComplianceDataset(
       : supabase.from("staff_accounts").select("id,staff_id,email,auth_user_id,active"),
     centralItemsQuery,
     organisationId
-      ? supabase.from("staff_recruitment_readiness").select("staff_id,dbs_receipt_confirmed").eq("organisation_id", organisationId)
+      ? supabase.from("staff_recruitment_readiness").select("staff_id,dbs_receipt_confirmed").eq("organisation_id", organisationId).in("staff_id", scopedStaffIds!)
       : Promise.resolve({ data: [], error: null }),
   ]);
   const staffRows = assertQuery(staffResult, "Staff profiles") as Record<string, unknown>[];
@@ -283,7 +297,7 @@ export async function loadProductionComplianceDataset(
 
 export async function loadProductionStaffCompliance(
   staffId: string,
-  commercialContext?: Pick<CommercialMembershipContext, "organisationId">,
+  commercialContext?: Pick<CommercialMembershipContext, "organisationId" | "selectedSiteId">,
 ): Promise<StaffComplianceRecord | null> {
   const dataset = await loadProductionComplianceDataset(commercialContext);
   const staff = dataset.staff.find((person) => person.id === staffId);

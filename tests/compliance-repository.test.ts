@@ -21,13 +21,38 @@ describe("compliance repository selection", () => {
     expect(() => complianceRepositorySource("production", false)).toThrow("Production compliance mode requires");
   });
 
-  it("keeps the legacy compliance URL as a manager-only staff setup redirect", () => {
+  it("uses the commercial-first compatibility actor for Staff and Compliance routes", () => {
     const compliancePage = readFileSync(resolve("src/app/compliance/page.tsx"), "utf8");
+    const staffPage = readFileSync(resolve("src/app/staff/page.tsx"), "utf8");
+    const detailPage = readFileSync(resolve("src/app/compliance/staff/[staffId]/page.tsx"), "utf8");
     const complianceScreen = readFileSync(resolve("src/components/compliance/production-compliance-screen.tsx"), "utf8");
-    expect(compliancePage).toContain('requireAccount(["manager"])');
+    expect(compliancePage).toContain('requireCustomerDomainActor("compliance.read", { siteRequired: true })');
     expect(compliancePage).toContain('redirect("/staff?filter=needs-checks")');
+    expect(staffPage).toContain('requireCustomerDomainActor(adding ? "staff.manage" : "staff.read", { siteRequired: true })');
+    expect(staffPage).toContain('requirePermission(actor.context, "compliance.read")');
+    expect(staffPage).toContain("loadProductionStaffRows(commercialContext)");
+    expect(detailPage).toContain('requireCustomerDomainActor("compliance.read", { siteRequired: true })');
+    expect(detailPage).toContain("loadProductionStaffCompliance(staffId, commercialContext)");
+    expect(detailPage).not.toContain('requireAccount(["manager"])');
     expect(complianceScreen).not.toContain("Add staff member");
     expect(complianceScreen).not.toContain("createStaffProfileAction");
+  });
+
+  it("scopes Staff and nested Compliance reads and writes to the selected commercial site", () => {
+    const scope = readFileSync(resolve("src/lib/staff/commercial-scope.ts"), "utf8");
+    const repository = readFileSync(resolve("src/lib/compliance/repository.ts"), "utf8");
+    const actions = readFileSync(resolve("src/lib/compliance/actions.ts"), "utf8");
+    expect(scope).toContain('.eq("organisation_id", context.organisationId)');
+    expect(scope).toContain('.eq("site_id", selectedSiteId(context))');
+    expect(scope).toContain('.eq("staff_id", staffId)');
+    for (const table of ["staff_qualifications", "staff_certificates", "staff_reference_checks"]) {
+      expect(repository).toContain(`${table}\").select`);
+    }
+    expect(repository).toContain('qualificationQuery.in("staff_id", scopedStaffIds!)');
+    expect(repository).toContain('certificateQuery.in("staff_id", scopedStaffIds!)');
+    expect(repository).toContain('referenceQuery.in("staff_id", scopedStaffIds!)');
+    expect(actions).toContain("isCommercialStaffInSelectedSiteScope(actor.context, staffId)");
+    expect(actions).toContain('.eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId)');
   });
 
   it("refreshes every staff profile consumer after a successful profile save", () => {

@@ -5,9 +5,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { getAppMode } from "@/lib/app-mode";
-import { requireAccount } from "@/lib/auth/permissions";
 import { staffIdsNeedingComplianceChecks } from "@/lib/calculations/compliance";
+import { requirePermission } from "@/lib/commercial-identity/guards";
 import { loadProductionComplianceDataset } from "@/lib/compliance/repository";
+import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
 import { loadProductionStaffRows, toStaffDirectoryRows } from "@/lib/payroll/server";
 import { parseStaffDirectoryFilter } from "@/lib/staff/directory";
 
@@ -20,20 +21,25 @@ type StaffPageSearchParams = {
 
 export default async function StaffPage({ searchParams }: { searchParams: Promise<StaffPageSearchParams> }) {
   if (getAppMode() === "demo") return <StaffScreen />;
-  const manager = await requireAccount(["manager"]);
   const { action, filter } = await searchParams;
   const adding = action === "add";
   const initialFilter = parseStaffDirectoryFilter(filter);
+  const actor = await requireCustomerDomainActor(adding ? "staff.manage" : "staff.read", { siteRequired: true });
+  if (actor.kind === "commercial" && initialFilter === "needs-checks") {
+    requirePermission(actor.context, "compliance.read");
+  }
+  const commercialContext = actor.kind === "commercial" ? actor.context : undefined;
+  const canReadCompliance = actor.kind === "legacy" || actor.context.permissions.includes("compliance.read");
   const directoryStaff = adding
     ? []
     : await Promise.all([
-      loadProductionStaffRows(),
-      loadProductionComplianceDataset(),
+      loadProductionStaffRows(commercialContext),
+      canReadCompliance ? loadProductionComplianceDataset(commercialContext) : Promise.resolve(null),
     ]).then(([staff, compliance]) =>
       toStaffDirectoryRows(
         staff,
         undefined,
-        staffIdsNeedingComplianceChecks(compliance),
+        compliance ? staffIdsNeedingComplianceChecks(compliance) : new Set<string>(),
       )
     );
   return (
@@ -54,12 +60,12 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
         ) : null}
       </div>
       {adding
-        ? <AddStaffForm />
+        ? <AddStaffForm commercial={actor.kind === "commercial"} />
         : (
           <ProductionStaffScreen
-            currentStaffId={manager.staffId}
+            currentStaffId={actor.kind === "legacy" ? actor.account.staffId : undefined}
             initialFilter={initialFilter}
-            showStaffLifecycleControls
+            showStaffLifecycleControls={actor.kind === "legacy"}
             staff={directoryStaff}
           />
         )}

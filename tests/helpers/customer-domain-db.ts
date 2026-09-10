@@ -125,6 +125,10 @@ export async function createCustomerDomainDatabase(): Promise<PGlite> {
     .find((name) => name.endsWith("_customer_domain_conversion.sql"));
   if (!migration) throw new Error("customer domain migration is missing");
   await db.exec(readFileSync(resolve("supabase/migrations", migration), "utf8"));
+  const complianceReadScopeMigration = readdirSync(resolve("supabase/migrations"))
+    .find((name) => name.endsWith("_staff_compliance_read_scope.sql"));
+  if (!complianceReadScopeMigration) throw new Error("staff compliance read-scope migration is missing");
+  await db.exec(readFileSync(resolve("supabase/migrations", complianceReadScopeMigration), "utf8"));
   await db.exec(fixtureSql);
   return db;
 }

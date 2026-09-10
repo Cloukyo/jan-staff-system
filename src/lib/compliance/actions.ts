@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { hasSupabaseConfig } from "@/lib/auth/config";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { requireCustomerDomainActor } from "@/lib/customer-domain/server-actor";
+import { isCommercialStaffInSelectedSiteScope } from "@/lib/staff/commercial-scope";
 import { encryptDbsReference } from "@/lib/compliance/dbs-reference-crypto";
 
 export type ComplianceActionState = {
@@ -24,9 +25,17 @@ function bool(formData: FormData, key: string): boolean {
 }
 
 async function managerSupabase(permission: "staff.manage" | "compliance.manage") {
-  const actor = await requireCustomerDomainActor(permission);
+  const actor = await requireCustomerDomainActor(permission, { siteRequired: true });
   if (!hasSupabaseConfig()) return null;
   return { actor, supabase: await createSupabaseServerClient() };
+}
+
+async function staffIsInActorScope(
+  actor: Awaited<ReturnType<typeof requireCustomerDomainActor>>,
+  staffId: string,
+): Promise<boolean> {
+  return actor.kind === "legacy"
+    || isCommercialStaffInSelectedSiteScope(actor.context, staffId);
 }
 
 function revalidateStaffProfileViews(staffId: string): void {
@@ -44,6 +53,7 @@ export async function quickUpdateStaffProfileAction(_state: ComplianceActionStat
   const staffId = text(formData, "staffId");
   const employmentRole = text(formData, "employmentRole");
   if (!staffId || !employmentRole) return fail("Staff ID and role are required.");
+  if (!await staffIsInActorScope(access.actor, staffId)) return fail("Staff record is unavailable.");
   const quickPayload: Record<string, unknown> = {
     employment_role: employmentRole,
     main_qualification_level: text(formData, "mainQualificationLevel"),
@@ -63,6 +73,7 @@ export async function updateStaffProfileAction(_state: ComplianceActionState, fo
   const fullName = text(formData, "fullName");
   const employmentRole = text(formData, "employmentRole");
   if (!staffId || !fullName || !employmentRole) return fail("Full name and role are required.");
+  if (!await staffIsInActorScope(access.actor, staffId)) return fail("Staff record is unavailable.");
   const profilePayload: Record<string, unknown> = {
     full_name: fullName,
     display_name: text(formData, "displayName") ?? fullName.split(" ")[0],
@@ -90,6 +101,7 @@ export async function saveQualificationAction(_state: ComplianceActionState, for
   const staffId = text(formData, "staffId");
   const name = text(formData, "qualificationName");
   if (!staffId || !name) return fail("Qualification name is required.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   const id = text(formData, "qualificationId");
   const payload = {
     organisation_id: actor.kind === "commercial" ? actor.context.organisationId : null,
@@ -107,7 +119,7 @@ export async function saveQualificationAction(_state: ComplianceActionState, for
     verified_at: bool(formData, "verified") ? new Date().toISOString() : null,
   };
   let query = id ? supabase.from("staff_qualifications").update(payload).eq("id", id) : supabase.from("staff_qualifications").insert(payload);
-  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
+  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId);
   const { error } = await query;
   if (error) return fail("Qualification could not be saved.");
   revalidatePath(`/compliance/staff/${staffId}`);
@@ -122,6 +134,7 @@ export async function saveCertificateAction(_state: ComplianceActionState, formD
   const staffId = text(formData, "staffId");
   const certificateType = text(formData, "certificateType");
   if (!staffId || !certificateType) return fail("Training type is required.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   const id = text(formData, "certificateId");
   const noExpiry = bool(formData, "noExpiry");
   const validityMonths = text(formData, "validityMonths");
@@ -141,7 +154,7 @@ export async function saveCertificateAction(_state: ComplianceActionState, formD
     verified_at: bool(formData, "verified") ? new Date().toISOString() : null,
   };
   let query = id ? supabase.from("staff_certificates").update(payload).eq("id", id) : supabase.from("staff_certificates").insert(payload);
-  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
+  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId);
   const { error } = await query;
   if (error) return fail("Certificate could not be saved.");
   revalidatePath(`/compliance/staff/${staffId}`);
@@ -157,8 +170,9 @@ export async function archiveComplianceRecordAction(_state: ComplianceActionStat
   const id = text(formData, "id");
   const staffId = text(formData, "staffId");
   if (!id || !staffId || !["staff_qualifications", "staff_certificates", "staff_reference_checks"].includes(table ?? "")) return fail("Archive request is invalid.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   let query = supabase.from(table!).update({ archived_at: new Date().toISOString() }).eq("id", id);
-  if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
+  if (actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId);
   const { error } = await query;
   if (error) return fail("Record could not be archived.");
   revalidatePath(`/compliance/staff/${staffId}`);
@@ -176,6 +190,7 @@ export async function confirmDbsReceiptAction(_state: ComplianceActionState, for
   if (!staffId || !receivedOn || !expectedUpdatedAt || !evidenceNote || evidenceNote.length < 5 || evidenceNote.length > 2000) {
     return fail("Enter the actual receipt date and a brief explanation of the evidence you reviewed.");
   }
+  if (!await staffIsInActorScope(access.actor, staffId)) return fail("Staff record is unavailable.");
   const { error } = await access.supabase.rpc("confirm_staff_dbs_receipt", {
     target_organisation_id: access.actor.context.organisationId,
     target_staff_id: staffId,
@@ -197,6 +212,7 @@ export async function saveCentralRecordAction(_state: ComplianceActionState, for
   if (!supabase) return fail("Demo mode is local only. Configure Supabase to save central records.");
   const staffId = text(formData, "staffId");
   if (!staffId) return fail("Staff profile is required.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   const basePayload = {
     organisation_id: actor.kind === "commercial" ? actor.context.organisationId : null,
     staff_id: staffId,
@@ -287,6 +303,7 @@ export async function saveCentralRecordItemAction(_state: ComplianceActionState,
   const itemKey = text(formData, "itemKey");
   const status = text(formData, "status");
   if (!staffId || !itemKey || !["complete", "incomplete", "not_applicable"].includes(status ?? "")) return fail("Checklist item is invalid.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   const { error } = await supabase.from("staff_central_record_items").upsert({
     organisation_id: actor.kind === "commercial" ? actor.context.organisationId : null,
     staff_id: staffId,
@@ -309,6 +326,7 @@ export async function saveReferenceAction(_state: ComplianceActionState, formDat
   if (!supabase) return fail("Demo mode is local only. Configure Supabase to save references.");
   const staffId = text(formData, "staffId");
   if (!staffId) return fail("Staff profile is required.");
+  if (!await staffIsInActorScope(actor, staffId)) return fail("Staff record is unavailable.");
   const id = text(formData, "referenceId");
   const payload = {
     organisation_id: actor.kind === "commercial" ? actor.context.organisationId : null,
@@ -323,7 +341,7 @@ export async function saveReferenceAction(_state: ComplianceActionState, formDat
     notes: text(formData, "notes"),
   };
   let query = id ? supabase.from("staff_reference_checks").update(payload).eq("id", id) : supabase.from("staff_reference_checks").insert(payload);
-  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId);
+  if (id && actor.kind === "commercial") query = query.eq("organisation_id", actor.context.organisationId).eq("staff_id", staffId);
   const { error } = await query;
   if (error) return fail("Reference could not be saved.");
   revalidatePath(`/compliance/staff/${staffId}`);
