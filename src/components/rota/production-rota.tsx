@@ -71,7 +71,7 @@ export function ProductionRota({
         <div>
           <h1 className="text-3xl font-black text-purple-950">Weekly rota</h1>
           {data.site ? <p className="mt-1 text-sm font-black text-purple-700">Editing {data.site.name}</p> : null}
-          <p className="mt-2 text-slate-600">Compare each employee&apos;s week and daily staffing coverage in one schedule.</p>
+          <p className="mt-2 text-slate-600">Plan one site and week, resolve anything that prevents work, then publish the rota.</p>
           <ManagerHelpLink taskId="edit-rota" />
         </div>
         {data.week ? <StatusPill tone={data.week.status === "published" ? "green" : "amber"}>{data.week.status}</StatusPill> : null}
@@ -108,7 +108,7 @@ export function ProductionRota({
           {data.week ? (
             <>
               {data.week.status === "draft" ? (
-                <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Publish rota" className="inline-flex" confirmMessage="Publish this rota for staff viewing?">
+                <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Publish rota" className="inline-flex" confirmMessage={`Publish ${data.site?.name ?? "this site"}, week commencing ${formatDateUk(data.weekStart)}, for staff viewing?`}>
                   {hidden("weekId", data.week.id)}{hidden("status", "published")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                 </RotaActionForm>
               ) : null}
@@ -119,7 +119,7 @@ export function ProductionRota({
                 <div className="absolute right-0 z-40 mt-2 w-80 rounded-2xl border border-purple-100 bg-white p-4 shadow-xl">
                   {data.week.status === "published" ? (
                     <>
-                      <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Return to draft" variant="secondary" className="grid" confirmMessage="Return this published rota to draft?">
+                      <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Return to draft" variant="secondary" className="grid" confirmMessage={`Return the entire rota for ${data.site?.name ?? "this site"}, week commencing ${formatDateUk(data.weekStart)}, to draft? Staff will no longer see it as published.`}>
                         {hidden("weekId", data.week.id)}{hidden("status", "draft")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                       </RotaActionForm>
                       <div className="my-4 border-t border-purple-100" />
@@ -130,7 +130,7 @@ export function ProductionRota({
                     <Field label="Day to clear"><select className={inputClassName()} name="shiftDate">{dates.map((date) => <option key={date} value={date}>{format(parseISO(date), "EEEE d MMMM")}</option>)}</select></Field>
                   </RotaActionForm> : null}
                   {!data.organisationId ? <div className="my-4 border-t border-purple-100" /> : null}
-                  <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Archive week" variant="danger" className="grid" confirmMessage="Archive this rota week?">
+                  <RotaActionForm action={setRotaWeekStatusAction} submitLabel="Archive week" variant="danger" className="grid" confirmMessage={`Archive the entire rota for ${data.site?.name ?? "this site"}, week commencing ${formatDateUk(data.weekStart)}? It will no longer appear as the active week.`}>
                     {hidden("weekId", data.week.id)}{hidden("status", "archived")}{data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                   </RotaActionForm>
                 </div>
@@ -152,7 +152,7 @@ export function ProductionRota({
               <Field label="Notes"><input className={inputClassName()} name="notes" placeholder="Optional manager note" /></Field>
             </div>
           </RotaActionForm>
-          <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="mt-4">
+          <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy all staff from previous week" variant="secondary" className="mt-4" confirmMessage={`Copy every eligible shift from the previous week into ${data.site?.name ?? "this site"}, week commencing ${formatDateUk(data.weekStart)}?`}>
             {hidden("weekStart", data.weekStart)}
             {hidden("operationId", crypto.randomUUID())}
           </RotaActionForm>
@@ -166,15 +166,16 @@ export function ProductionRota({
                 <Copy className="mt-0.5 h-5 w-5 text-purple-700" aria-hidden />
                 <div>
                   <h2 className="text-lg font-black text-purple-950">Copy tools</h2>
-                  <p className="mt-1 text-sm text-slate-600">Reuse a previous week or copy one day within this week.</p>
+                  <p className="mt-1 text-sm text-slate-600">Choose whether to copy the whole previous week or one specific day. Existing shifts are kept.</p>
                 </div>
               </div>
               <div className="mt-4 grid gap-5 lg:grid-cols-2">
-                <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy previous week" variant="secondary" className="grid content-start">
+                <RotaActionForm action={copyPreviousRotaWeekAction} submitLabel="Copy all staff from previous week" variant="secondary" className="grid content-start" confirmMessage={`Copy every eligible shift from the previous week into ${data.site?.name ?? "this site"}, week commencing ${formatDateUk(data.weekStart)}? Existing shifts are kept and overlaps may need review.`}>
                   {hidden("weekStart", data.weekStart)}
                   {hidden("operationId", crypto.randomUUID())}
+                  <p className="mb-3 text-sm text-slate-600">Scope: every eligible staff shift from the previous week.</p>
                 </RotaActionForm>
-                <RotaActionForm action={copyRotaDayAction} submitLabel="Copy day" variant="secondary" className="grid gap-3">
+                <RotaActionForm action={copyRotaDayAction} submitLabel="Copy one day in this week" variant="secondary" className="grid gap-3" confirmMessage={`Copy the selected source day into the selected destination day for ${data.site?.name ?? "this site"}? Existing destination shifts are kept.`}>
                   {hidden("weekId", data.week.id)}
                   {data.week.revision ? hidden("revision", String(data.week.revision)) : null}{hidden("operationId", crypto.randomUUID())}
                   <div className="grid grid-cols-2 gap-3">

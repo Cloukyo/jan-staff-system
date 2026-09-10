@@ -64,6 +64,9 @@ export async function loadCommercialProductionRota(
     staff: rows(snapshot.staff).map((row) => ({
       id: String(row.id), fullName: String(row.full_name), displayName: String(row.display_name),
       employmentRole: String(row.employment_role ?? "Staff"), active: Boolean(row.active),
+      operationalReadiness: Object.fromEntries(
+        Object.entries(record(row.operational_readiness)).map(([date, allowed]) => [date, Boolean(allowed)]),
+      ),
     })),
     leave: rows(snapshot.leave).map((row) => ({
       id: String(row.id), staffId: String(row.staff_id), startDate: String(row.start_date), endDate: String(row.end_date),

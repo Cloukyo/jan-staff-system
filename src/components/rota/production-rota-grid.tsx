@@ -33,6 +33,7 @@ import {
   scheduledMinutes,
   shiftWarningSummary,
 } from "@/lib/rota/grid";
+import { shiftAttentionItems, staffMayBeginWorkOn } from "@/lib/rota/presentation";
 import type { ProductionRotaDataset, ProductionRotaShift, ProductionRotaStaff } from "@/lib/rota/types";
 
 const weekdayLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -57,11 +58,16 @@ function ShiftEditorDrawer({
   onClose: () => void;
 }) {
   const shift = editor.shift;
+  const [selectedStaffId, setSelectedStaffId] = useState(editor.staff.id);
+  const [selectedDate, setSelectedDate] = useState(editor.date);
   const [saveOperationId] = useState(() => crypto.randomUUID());
   const [archiveOperationId] = useState(() => crypto.randomUUID());
   const previousDate = format(addDays(parseISO(editor.date), -1), "yyyy-MM-dd");
   const previousShifts = previousDayShifts(editor.staff.id, editor.date, data.shifts);
   const laterDates = shift ? laterWeekDates(data.weekStart, editor.date) : [];
+  const selectedStaff = data.staff.find((person) => person.id === selectedStaffId) ?? editor.staff;
+  const mayBeginWork = staffMayBeginWorkOn(selectedStaff, selectedDate);
+  const shiftAttention = shift ? shiftAttentionItems(shift, data.shifts, data.leave) : [];
   const previousDayConfirmation = previousShifts.length
     ? `This will replace existing shifts for ${editor.staff.fullName} on ${format(parseISO(editor.date), "EEEE d MMMM")} with the previous day's hours. Continue?`
     : `${editor.staff.fullName} was not working on ${format(parseISO(previousDate), "EEEE d MMMM")}. This will remove existing shifts on ${format(parseISO(editor.date), "EEEE d MMMM")}. Continue?`;
@@ -80,6 +86,7 @@ function ShiftEditorDrawer({
             <h2 id="shift-editor-title" className="mt-1 text-xl font-black text-purple-950">
               {editor.staff.fullName}
             </h2>
+            <p className="mt-1 text-sm font-bold text-purple-800">{editor.staff.employmentRole}</p>
             <p className="mt-1 text-sm text-slate-600">{format(parseISO(editor.date), "EEEE d MMMM yyyy")}</p>
           </div>
           <Button type="button" variant="ghost" aria-label="Close shift editor" onClick={onClose}>
@@ -147,14 +154,24 @@ function ShiftEditorDrawer({
           submitLabel={shift ? "Save changes" : "Add shift"}
           className="grid flex-1 content-start gap-5 p-5"
           onSuccess={onClose}
+          submitDisabled={mayBeginWork === false}
         >
           {hidden("rotaWeekId", data.week?.id ?? "")}
           {hidden("operationId", saveOperationId)}
           {shift ? hidden("shiftId", shift.id) : null}
           {shift?.revision ? hidden("revision", String(shift.revision)) : null}
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><p className="font-black text-purple-950">{selectedStaff.fullName}</p><p className="text-sm text-slate-600">{format(parseISO(selectedDate), "EEEE d MMMM yyyy")}</p></div>
+              {shift ? <StatusPill tone="purple">Current: {shift.status.replaceAll("_", " ")}</StatusPill> : <StatusPill tone="purple">New shift</StatusPill>}
+            </div>
+            {shift ? <p className="mt-3 text-sm font-bold text-purple-900">Current time: {shift.startTime} to {shift.endTime}</p> : null}
+          </div>
+          {mayBeginWork === false ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-950"><p className="font-black">Cannot work on this date</p><p className="mt-1">Recruitment requirements or manager authorisation are not effective. Review the staff record before saving a shift.</p><a className="mt-2 inline-block min-h-11 py-2 font-black underline" href={`/compliance/staff/${selectedStaff.id}`}>Review recruitment record</a></div> : null}
+          {shiftAttention.length ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-black">This shift needs attention</p><ul className="mt-2 list-disc space-y-1 pl-5">{shiftAttention.map((item) => <li key={item.label}>{item.label}</li>)}</ul></div> : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Staff member">
-              <select className={inputClassName()} name="staffId" defaultValue={editor.staff.id} required>
+              <select className={inputClassName()} name="staffId" value={selectedStaffId} onChange={(event) => setSelectedStaffId(event.target.value)} required>
                 {data.staff.map((person) => (
                   <option key={person.id} value={person.id}>
                     {person.fullName}{person.active ? "" : " (inactive)"}
@@ -169,7 +186,8 @@ function ShiftEditorDrawer({
                 type="date"
                 min={data.weekStart}
                 max={format(addDays(parseISO(data.weekStart), 6), "yyyy-MM-dd")}
-                defaultValue={editor.date}
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
                 required
               />
             </Field>
@@ -204,15 +222,16 @@ function ShiftEditorDrawer({
           <Field label="Notes">
             <textarea className={inputClassName("min-h-24")} name="notes" defaultValue={shift?.notes ?? ""} />
           </Field>
-          <Field label="Leave override reason">
-            <textarea className={inputClassName("min-h-20")} name="leaveOverrideReason" defaultValue={shift?.leaveOverrideReason ?? ""} />
-          </Field>
-          <Field label="Overlap override reason">
-            <textarea className={inputClassName("min-h-20")} name="overlapOverrideReason" defaultValue={shift?.overlapOverrideReason ?? ""} />
-          </Field>
-          <Field label="Inactive staff override reason">
-            <textarea className={inputClassName("min-h-20")} name="inactiveStaffOverrideReason" defaultValue={shift?.inactiveStaffOverrideReason ?? ""} />
-          </Field>
+          <details className="rounded-xl border border-purple-100 p-4" open={shiftAttention.length > 0}>
+            <summary className="min-h-11 cursor-pointer font-black text-purple-950">Conflict and exception reasons</summary>
+            <p className="mb-3 text-sm text-slate-600">Complete only when the system reports a conflict that the manager is authorised to resolve.</p>
+            <div className="grid gap-4">
+              <Field label="Leave override reason"><textarea className={inputClassName("min-h-20")} name="leaveOverrideReason" defaultValue={shift?.leaveOverrideReason ?? ""} /></Field>
+              <Field label="Overlap override reason"><textarea className={inputClassName("min-h-20")} name="overlapOverrideReason" defaultValue={shift?.overlapOverrideReason ?? ""} /></Field>
+              <Field label="Inactive staff override reason"><textarea className={inputClassName("min-h-20")} name="inactiveStaffOverrideReason" defaultValue={shift?.inactiveStaffOverrideReason ?? ""} /></Field>
+            </div>
+          </details>
+          <p className="text-sm text-slate-600">Saving updates this person&apos;s shift for the selected date. Published rota visibility follows the week status.</p>
           <div className="sticky bottom-0 -mx-5 mt-auto flex flex-wrap justify-end gap-3 border-t border-purple-100 bg-white px-5 py-4">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           </div>
@@ -224,7 +243,7 @@ function ShiftEditorDrawer({
             submitLabel="Archive shift"
             variant="danger"
             className="border-t border-purple-100 p-5"
-            confirmMessage="Archive this shift? It will no longer appear in the active rota."
+            confirmMessage={`Archive ${editor.staff.fullName}'s ${shift.startTime} to ${shift.endTime} shift on ${format(parseISO(shift.shiftDate), "EEEE d MMMM yyyy")}? It will no longer appear in the active rota.`}
             onSuccess={onClose}
           >
             {hidden("shiftId", shift.id)}
@@ -259,6 +278,7 @@ function ShiftCellButton({
   onEdit: () => void;
 }) {
   const total = scheduledMinutes(shift);
+  const attention = shiftAttentionItems(shift, data.shifts, data.leave);
   const tone = shift.status === "cancelled"
     ? "border-slate-200 bg-slate-50"
     : shift.status === "completed"
@@ -285,6 +305,7 @@ function ShiftCellButton({
         <StatusPill tone={shift.status === "scheduled" ? "purple" : shift.status === "completed" ? "green" : "grey"}>{shift.status}</StatusPill>
         <WarningIcons shift={shift} data={data} />
       </span>
+      {attention.length ? <span className={`mt-2 block text-xs font-black leading-snug ${attention.some((item) => item.tone === "danger") ? "text-red-700" : "text-amber-800"}`}>{attention.map((item) => item.label).join(" · ")}</span> : null}
     </button>
   );
 }
@@ -324,6 +345,8 @@ function CoverageSummary({ dates, data }: { dates: string[]; data: ProductionRot
 export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
   const [showWeekend, setShowWeekend] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
+  const [mobileView, setMobileView] = useState<"day" | "staff">("day");
+  const [selectedStaffId, setSelectedStaffId] = useState(data.staff[0]?.id ?? "");
   const [editor, setEditor] = useState<EditorState | null>(null);
   const allDates = useMemo(
     () => Array.from({ length: 7 }, (_, index) => format(addDays(parseISO(data.weekStart), index), "yyyy-MM-dd")),
@@ -332,6 +355,7 @@ export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
   const dates = showWeekend ? allDates : allDates.slice(0, 5);
   const activeStaff = data.staff.filter((person) => person.active);
   const today = format(new Date(), "yyyy-MM-dd");
+  const selectedStaff = activeStaff.find((person) => person.id === selectedStaffId) ?? activeStaff[0];
 
   const shiftsFor = (staffId: string, date: string) =>
     data.shifts.filter((shift) => shift.staffId === staffId && shift.shiftDate === date);
@@ -389,10 +413,11 @@ export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
                             <button
                               type="button"
                               onClick={() => setEditor({ staff: person, date })}
-                              className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 px-3 text-sm font-bold text-purple-700 hover:border-purple-500 hover:bg-purple-50 ${shifts.length ? "opacity-70" : ""}`}
+                              disabled={staffMayBeginWorkOn(person, date) === false}
+                              className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 px-3 text-sm font-bold text-purple-700 hover:border-purple-500 hover:bg-purple-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:bg-red-50 disabled:text-red-700 ${shifts.length ? "opacity-70" : ""}`}
                               aria-label={`Add shift for ${person.fullName} on ${format(parseISO(date), "EEEE d MMMM")}`}
                             >
-                              <Plus className="h-4 w-4" /> Add shift
+                              {staffMayBeginWorkOn(person, date) === false ? <><AlertTriangle className="h-4 w-4" /> Cannot schedule</> : <><Plus className="h-4 w-4" /> Add shift</>}
                             </button>
                           </div>
                         </td>
@@ -410,6 +435,14 @@ export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
         </div>
 
         <div className="md:hidden">
+          <div className="border-b border-purple-100 bg-white p-3">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-purple-50 p-1" role="group" aria-label="Choose mobile rota view">
+              <button type="button" className={`min-h-11 rounded-lg px-3 text-sm font-black ${mobileView === "day" ? "bg-white text-purple-950 shadow-sm" : "text-purple-700"}`} aria-pressed={mobileView === "day"} onClick={() => setMobileView("day")}>Day</button>
+              <button type="button" className={`min-h-11 rounded-lg px-3 text-sm font-black ${mobileView === "staff" ? "bg-white text-purple-950 shadow-sm" : "text-purple-700"}`} aria-pressed={mobileView === "staff"} onClick={() => setMobileView("staff")}>Staff</button>
+            </div>
+            <p className="mt-2 text-center text-xs text-slate-600">Day shows who is working. Staff shows one person&apos;s week.</p>
+          </div>
+          {mobileView === "day" ? <>
           <div className="flex items-center justify-between border-b border-purple-100 bg-purple-50 px-3 py-3">
             <Button type="button" variant="secondary" aria-label="Previous day" onClick={() => setSelectedDay((day) => Math.max(0, day - 1))} disabled={selectedDay === 0}>
               <ChevronLeft className="h-5 w-5" />
@@ -446,14 +479,22 @@ export function ProductionRotaGrid({ data }: { data: ProductionRotaDataset }) {
                   <div className="grid gap-2">
                     {shifts.map((shift) => <ShiftCellButton key={shift.id} shift={shift} data={data} onEdit={() => setEditor({ staff: person, date, shift })} />)}
                     {!shifts.length ? <p className="text-sm text-slate-500">No shift scheduled</p> : null}
-                    <Button type="button" variant="secondary" className="w-full" onClick={() => setEditor({ staff: person, date })}>
-                      <Plus className="h-4 w-4" /> Add shift
+                    <Button type="button" variant="secondary" className="w-full" disabled={staffMayBeginWorkOn(person, date) === false} onClick={() => setEditor({ staff: person, date })}>
+                      {staffMayBeginWorkOn(person, date) === false ? <><AlertTriangle className="h-4 w-4" /> Cannot schedule</> : <><Plus className="h-4 w-4" /> Add shift</>}
                     </Button>
                   </div>
                 </div>
               );
             })}
           </div>
+          </> : selectedStaff ? <div className="p-4">
+            <label className="grid gap-1 text-sm font-bold text-purple-950">Staff member<select className={inputClassName("min-h-12 text-base")} value={selectedStaff.id} onChange={(event) => setSelectedStaffId(event.target.value)}>{activeStaff.map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}</select></label>
+            <div className="mt-4 space-y-3">{dates.map((date) => {
+              const shifts = shiftsFor(selectedStaff.id, date);
+              const mayWork = staffMayBeginWorkOn(selectedStaff, date);
+              return <article key={date} className="rounded-xl border border-purple-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-purple-950">{format(parseISO(date), "EEEE")}</p><p className="text-sm text-slate-600">{format(parseISO(date), "d MMMM yyyy")}</p></div>{mayWork === false ? <StatusPill tone="red">Cannot work</StatusPill> : null}</div>{mayWork === false ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-900">Recruitment requirements are not effective for this date.</p> : null}<div className="mt-3 grid gap-2">{shifts.map((shift) => <ShiftCellButton key={shift.id} shift={shift} data={data} onEdit={() => setEditor({ staff: selectedStaff, date, shift })} />)}{!shifts.length ? <p className="text-sm text-slate-500">No shift scheduled</p> : null}<Button type="button" variant="secondary" className="w-full" disabled={mayWork === false} onClick={() => setEditor({ staff: selectedStaff, date })}>{mayWork === false ? <><AlertTriangle className="h-4 w-4" /> Cannot schedule</> : <><Plus className="h-4 w-4" /> Add shift</>}</Button></div></article>;
+            })}</div>
+          </div> : <div className="p-4"><p className="text-sm text-slate-600">No active staff are available for this site.</p></div>}
         </div>
       </section>
       {editor ? <ShiftEditorDrawer data={data} editor={editor} onClose={() => setEditor(null)} /> : null}
