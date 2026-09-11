@@ -1,46 +1,16 @@
 import Link from "next/link";
+import { Award, BookOpen, UserRound } from "lucide-react";
 import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
 import type { ProductionProfile } from "@/lib/profile/server";
-import { formatDateUk } from "@/lib/dates/format";
+import { formatDateUk, isoDateInLondon } from "@/lib/dates/format";
+import { certificateTimingStatus } from "@/lib/staff-self-service/presentation";
 
-export function ProductionProfileScreen({ data }: { data: ProductionProfile }) {
-  return (
-    <div className="grid gap-5">
-      <div>
-        <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">My profile</h1>
-        <p className="mt-2 text-slate-600">Your account and limited staff record summary.</p>
-      </div>
-      <Panel>
-        <dl className="grid gap-4 sm:grid-cols-2">
-          <div><dt className="text-sm font-bold text-slate-500">Name</dt><dd className="mt-1 font-black text-purple-950">{data.profile.fullName}</dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">Email</dt><dd className="mt-1 font-black text-purple-950">{data.account.email}</dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">Job role</dt><dd className="mt-1 font-black text-purple-950">{data.profile.employmentRole}</dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">System role</dt><dd className="mt-1 capitalize font-black text-purple-950">{data.account.role}</dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">Account</dt><dd className="mt-1"><StatusPill tone={data.account.active ? "green" : "grey"}>{data.account.active ? "Active" : "Inactive"}</StatusPill></dd></div>
-          <div><dt className="text-sm font-bold text-slate-500">Staff profile</dt><dd className="mt-1"><StatusPill tone={data.profile.active ? "green" : "grey"}>{data.profile.active ? "Active" : "Inactive"}</StatusPill></dd></div>
-        </dl>
-        <div className="mt-5 flex flex-wrap gap-3">
-          {data.account.role === "staff" ? <Link className="inline-flex min-h-11 items-center rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" href="/my-rota">My rota</Link> : null}
-          <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/leave">My leave</Link>
-          {data.account.role === "staff" ? <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/my-attendance">My attendance</Link> : null}
-          <Link className="inline-flex min-h-11 items-center rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href="/change-password">Change password</Link>
-        </div>
-      </Panel>
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Panel>
-          <h2 className="text-xl font-black text-purple-950">Qualifications</h2>
-          <div className="mt-4 grid gap-3">
-            {data.qualifications.length ? data.qualifications.map((item) => <div key={item.id}><p className="font-bold text-purple-950">{item.qualificationName}</p><p className="text-sm text-slate-600">{item.qualificationLevel ?? "Level not recorded"}</p></div>) : <EmptyState title="No qualifications listed" body="A manager can update qualification records." />}
-          </div>
-        </Panel>
-        <Panel>
-          <h2 className="text-xl font-black text-purple-950">Training and certificates</h2>
-          <div className="mt-4 grid gap-3">
-            {data.certificates.length ? data.certificates.map((item) => <div key={item.id}><p className="font-bold text-purple-950">{item.customTitle || item.certificateType}</p><p className="text-sm text-slate-600">{item.expiryDate ? `Expires ${formatDateUk(item.expiryDate)}` : "No expiry recorded"}</p></div>) : <EmptyState title="No certificates listed" body="A manager can update training records." />}
-          </div>
-        </Panel>
-      </div>
-    </div>
-  );
+export function ProductionProfileScreen({ data, view = "profile" }: { data: ProductionProfile; view?: "profile" | "qualifications" }) {
+  if (view === "qualifications") return <QualificationsAndTraining data={data} />;
+  return <div className="grid gap-5"><header><p className="text-sm font-bold text-purple-700">My details</p><h1 className="mt-1 text-3xl font-black text-purple-950">My profile</h1><p className="mt-2 text-slate-600">The personal and work information held on your staff record.</p></header><Panel><div className="flex items-center gap-3"><UserRound className="h-6 w-6 text-purple-700" /><h2 className="text-xl font-black text-purple-950">Personal and work details</h2></div><dl className="mt-5 grid gap-4 sm:grid-cols-2"><div><dt className="text-sm font-bold text-slate-500">Name</dt><dd className="mt-1 font-black text-purple-950">{data.profile.fullName}</dd></div><div><dt className="text-sm font-bold text-slate-500">Email</dt><dd className="mt-1 break-words font-black text-purple-950">{data.account.email}</dd></div><div><dt className="text-sm font-bold text-slate-500">Job role</dt><dd className="mt-1 font-black text-purple-950">{data.profile.employmentRole}</dd></div><div><dt className="text-sm font-bold text-slate-500">Account status</dt><dd className="mt-1"><StatusPill tone={data.account.active && data.profile.active ? "green" : "grey"}>{data.account.active && data.profile.active ? "Active" : "Inactive"}</StatusPill></dd></div></dl><p className="mt-5 text-sm text-slate-600">Ask your manager if any staff record details need updating.</p></Panel><div className="grid gap-4 sm:grid-cols-2"><Link className="group rounded-2xl bg-white p-5 shadow-soft ring-1 ring-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500" href="/profile/qualifications"><Award className="h-6 w-6 text-purple-700" /><h2 className="mt-3 text-lg font-black text-purple-950 group-hover:text-purple-700">Qualifications & training</h2><p className="mt-1 text-sm text-slate-600">View qualifications, certificates and expiry dates.</p></Link><Link className="group rounded-2xl bg-white p-5 shadow-soft ring-1 ring-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500" href="/change-password"><UserRound className="h-6 w-6 text-purple-700" /><h2 className="mt-3 text-lg font-black text-purple-950 group-hover:text-purple-700">Password and security</h2><p className="mt-1 text-sm text-slate-600">Change your sign-in password.</p></Link></div></div>;
+}
+
+function QualificationsAndTraining({ data }: { data: ProductionProfile }) {
+  const today = isoDateInLondon();
+  return <div id="qualifications-training" className="grid gap-5"><header><p className="text-sm font-bold text-purple-700">My staff record</p><h1 className="mt-1 text-3xl font-black text-purple-950">Qualifications & training</h1><p className="mt-2 text-slate-600">See the qualifications and training recorded for you. Ask your manager if anything is missing or incorrect.</p></header><Panel><div className="flex items-center gap-3"><Award className="h-6 w-6 text-purple-700" /><h2 className="text-xl font-black text-purple-950">Qualifications</h2></div><div className="mt-4 grid gap-3">{data.qualifications.length ? data.qualifications.map((item) => <div className="rounded-xl bg-slate-50 p-4" key={item.id}><p className="font-black text-purple-950">{item.qualificationName}</p><p className="mt-1 text-sm font-semibold text-slate-600">{item.qualificationLevel ?? "Level not recorded"}</p></div>) : <EmptyState title="No qualifications listed" body="Ask your manager if a qualification should be added." />}</div></Panel><Panel><div className="flex items-center gap-3"><BookOpen className="h-6 w-6 text-purple-700" /><h2 className="text-xl font-black text-purple-950">Training and certificates</h2></div><div className="mt-4 grid gap-3">{data.certificates.length ? data.certificates.map((item) => { const status = certificateTimingStatus(item.expiryDate, today); return <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl bg-slate-50 p-4" key={item.id}><div><p className="font-black text-purple-950">{item.customTitle || item.certificateType}</p><p className="mt-1 text-sm font-semibold text-slate-600">{item.expiryDate ? `Expiry date ${formatDateUk(item.expiryDate)}` : "No expiry date is recorded"}</p>{status.key === "expired" || status.key === "due_soon" ? <p className="mt-2 text-sm font-semibold text-slate-700">Ask your manager what action is needed.</p> : null}</div><StatusPill tone={status.tone}>{status.label}</StatusPill></div>; }) : <EmptyState title="No training or certificates listed" body="Ask your manager if training should be added." />}</div></Panel><Link className="inline-flex min-h-11 w-fit items-center rounded-xl bg-white px-4 font-bold text-purple-900 ring-1 ring-purple-200" href="/profile">Back to my profile</Link></div>;
 }

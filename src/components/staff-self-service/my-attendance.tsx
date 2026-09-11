@@ -1,56 +1,23 @@
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react";
 import { AttendanceCorrectionRequest } from "@/components/staff-self-service/attendance-correction-request";
-import { EmptyState, Field, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
-import { formatDateUk, formatDurationCompact, formatTimeUk } from "@/lib/dates/format";
-import type { StaffAttendanceRange } from "@/lib/staff-self-service/server";
+import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
+import { formatDateUk, formatHours, formatTimeUk } from "@/lib/dates/format";
+import { staffAttendanceStatus } from "@/lib/staff-self-service/presentation";
+import type { StaffAttendanceDay, StaffAttendanceRange } from "@/lib/staff-self-service/server";
 
 export function MyAttendance({ data }: { data: StaffAttendanceRange }) {
-  return (
-    <div className="grid gap-5">
-      <div>
-        <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-        <h1 className="mt-1 text-3xl font-black text-purple-950">My attendance</h1>
-        <p className="mt-2 text-slate-600">Your clock history. Original kiosk events cannot be edited here.</p>
-      </div>
+  const attentionCount = data.days.filter((day) => day.missingClockOut).length;
+  const correctedCount = data.days.filter((day) => day.hasManagerCorrection).length;
+  return <div className="grid gap-5">
+    <header><p className="text-sm font-bold text-purple-700">My time records</p><h1 className="mt-1 text-3xl font-black text-purple-950">My attendance</h1><p className="mt-2 text-slate-600">See your recorded clock times and any corrections made by your manager.</p></header>
+    <section className="grid gap-3 sm:grid-cols-2" aria-label="Attendance summary"><Panel className={attentionCount ? "border-amber-300 bg-amber-50" : "border-green-200 bg-green-50"}><div className="flex items-start gap-3">{attentionCount ? <AlertTriangle className="mt-1 h-6 w-6 text-amber-700" /> : <CheckCircle2 className="mt-1 h-6 w-6 text-green-700" />}<div><p className="text-sm font-bold text-slate-600">Attendance needing attention</p><p className="mt-1 text-3xl font-black text-purple-950">{attentionCount}</p><p className="mt-1 text-sm font-semibold text-slate-600">{attentionCount ? "Tell your manager if a record needs correcting." : "No missing clock-outs in this date range."}</p></div></div></Panel><Panel><p className="text-sm font-bold text-slate-600">Records corrected</p><p className="mt-1 text-3xl font-black text-purple-950">{correctedCount}</p><p className="mt-1 text-sm font-semibold text-slate-600">Original clock events remain visible in the record.</p></Panel></section>
+    <Panel><form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" method="get"><label className="grid gap-1 text-sm font-bold text-slate-700">From<input className="min-h-11 rounded-xl border border-slate-300 px-3" type="date" name="from" defaultValue={data.from} /></label><label className="grid gap-1 text-sm font-bold text-slate-700">To<input className="min-h-11 rounded-xl border border-slate-300 px-3" type="date" name="to" defaultValue={data.to} /></label><button className="min-h-11 rounded-xl bg-purple-700 px-4 font-bold text-white" type="submit">Show dates</button></form></Panel>
+    <section aria-labelledby="attendance-history-heading"><h2 id="attendance-history-heading" className="text-xl font-black text-purple-950">Clock-in and clock-out history</h2><p className="mt-1 text-sm text-slate-600">{formatDateUk(data.from)} to {formatDateUk(data.to)}</p><div className="mt-4 grid gap-3">{data.days.length ? data.days.map((day) => <AttendanceDay key={day.date} day={day} />) : <EmptyState title="No attendance recorded" body="No clock-in or clock-out records were found for these dates." />}</div></section>
+    <section aria-labelledby="report-attendance-heading"><h2 id="report-attendance-heading" className="text-xl font-black text-purple-950">Something missing or incorrect?</h2><p className="mt-1 text-sm text-slate-600">Send the date and details to your manager. You cannot change attendance records yourself.</p><div className="mt-3"><AttendanceCorrectionRequest defaultDate={data.to} /></div></section>
+  </div>;
+}
 
-      <Panel>
-        <form className="grid gap-4 sm:grid-cols-[1fr_1fr_auto]" method="get">
-          <Field label="From"><input className={inputClassName()} type="date" name="from" defaultValue={data.from} /></Field>
-          <Field label="To"><input className={inputClassName()} type="date" name="to" defaultValue={data.to} /></Field>
-          <button className="min-h-11 self-end rounded-xl bg-purple-700 px-4 text-sm font-bold text-white" type="submit">Apply dates</button>
-        </form>
-      </Panel>
-
-      <AttendanceCorrectionRequest defaultDate={data.to} />
-
-      {data.days.length ? data.days.map((day) => (
-        <Panel key={day.date}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-black text-purple-950">{formatDateUk(day.date)}</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                {day.firstClockIn ? `First clock-in ${formatTimeUk(day.firstClockIn)}` : "No clock-in"}
-                {day.finalClockOut ? ` | Final clock-out ${formatTimeUk(day.finalClockOut)}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill tone={day.missingClockOut ? "red" : "green"}>{day.missingClockOut ? "Missing clock-out" : formatDurationCompact(day.totalMinutes)}</StatusPill>
-              {day.hasManagerCorrection ? <StatusPill tone="purple">Manager correction</StatusPill> : null}
-            </div>
-          </div>
-          <div className="mt-4 grid gap-2">
-            {day.events.map((event) => (
-              <div key={event.id} className="flex min-h-11 items-center justify-between gap-3 rounded-lg bg-purple-50 px-3 py-2 text-sm">
-                <span className="flex items-center gap-2 font-bold text-purple-950">
-                  {event.eventType === "clock_in" ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <AlertTriangle className="h-4 w-4 text-purple-700" />}
-                  {event.eventType === "clock_in" ? "Clock in" : "Clock out"}
-                </span>
-                <span className="text-slate-700">{formatTimeUk(event.eventTimestamp)}{event.managerCorrection ? " | Manager correction" : ""}</span>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      )) : <EmptyState title="No attendance records" body="There are no clock events in the selected date range." />}
-    </div>
-  );
+function AttendanceDay({ day }: { day: StaffAttendanceDay }) {
+  const status = staffAttendanceStatus(day);
+  return <Panel className={day.missingClockOut ? "border-amber-300" : ""}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-black text-purple-950">{formatDateUk(day.date)}</p><p className="mt-1 text-sm font-semibold text-slate-600">{status.explanation}</p></div><StatusPill tone={status.tone}>{status.label}</StatusPill></div><dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-3"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Clocked in</dt><dd className="mt-1 font-black text-purple-950">{day.firstClockIn ? formatTimeUk(day.firstClockIn) : "Not recorded"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Clocked out</dt><dd className="mt-1 font-black text-purple-950">{day.finalClockOut ? formatTimeUk(day.finalClockOut) : "Not recorded"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Recorded time</dt><dd className="mt-1 font-black text-purple-950">{formatHours(day.totalMinutes)}</dd></div></dl><details className="mt-4 rounded-xl border border-slate-200 bg-white p-3"><summary className="min-h-11 cursor-pointer font-bold text-purple-800">View clock event details</summary><ol className="mt-3 grid gap-2">{day.events.map((event) => <li key={event.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm"><span className="inline-flex items-center gap-2 font-bold text-slate-700"><Clock3 className="h-4 w-4" /> {event.eventType === "clock_in" ? "Clock in" : "Clock out"}</span><span className="font-black text-purple-950">{formatTimeUk(event.eventTimestamp)}</span></li>)}</ol>{day.hasManagerCorrection ? <p className="mt-3 text-sm font-semibold text-blue-800">This effective record includes a manager correction. Original events are preserved.</p> : null}</details></Panel>;
 }
