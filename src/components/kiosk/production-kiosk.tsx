@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock3 } from "lucide-react";
+import { CheckCircle2, Clock3, Search } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import { PinKeypad } from "@/components/kiosk/pin-keypad";
 import { ServiceWorkerRegistration } from "@/components/kiosk/service-worker-registration";
@@ -34,6 +34,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
   const [changeStep, setChangeStep] = useState<"new" | "confirm">("new");
   const [message, setMessage] = useState("");
   const [localSuccess, setLocalSuccess] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [weeklyHours, setWeeklyHours] = useState<{
     weekStartDate: string;
     weekEndDate: string;
@@ -57,6 +58,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
       pinReady: true,
     })) satisfies KioskRosterEntry[]
     : roster;
+  const visibleRoster = displayRoster.filter((person) => `${person.displayName} ${person.employmentRole}`.toLowerCase().includes(searchTerm.trim().toLowerCase()));
 
   function reset() {
     setSelected(null);
@@ -70,6 +72,14 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     setMessage("");
     setLocalSuccess(false);
     setWeeklyHours(null);
+    setSearchTerm("");
+  }
+
+  function scheduleSafeReset(delayMs = 4000) {
+    window.setTimeout(() => {
+      dispatch({ type: "timeout" });
+      reset();
+    }, delayMs);
   }
 
   function verify() {
@@ -210,6 +220,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           setMessage(`${actionName} saved on this device at ${new Date(queued.occurredAtDevice).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}. Pending synchronisation.`);
           setLocalSuccess(true);
           dispatch({ type: "succeeded", recordedAt, completedMinutes: null });
+          scheduleSafeReset();
         } catch (error) {
           submissionKey.current = null;
           setMessage(error instanceof Error ? error.message : "The action could not be saved on this device.");
@@ -246,10 +257,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
         : null;
       setMessage(action === "clock_out" ? "Clocked out" : "Clocked in");
       dispatch({ type: "succeeded", recordedAt: result.recordedAt, completedMinutes });
-      window.setTimeout(() => {
-        dispatch({ type: "timeout" });
-        reset();
-      }, 4000);
+      scheduleSafeReset();
     });
   }
 
@@ -258,31 +266,32 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
     : null;
 
   return (
-    <main className="min-h-screen bg-purple-950 p-4 text-white">
+    <main className="min-h-screen bg-purple-950 p-2 text-white sm:p-4">
       <ServiceWorkerRegistration />
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl flex-col rounded-2xl bg-lavender p-5 text-purple-950 shadow-2xl">
-        <div className="flex items-center justify-between gap-4">
+      <div className="mx-auto flex min-h-[calc(100vh-1rem)] max-w-6xl flex-col rounded-2xl bg-lavender p-4 text-purple-950 shadow-2xl sm:min-h-[calc(100vh-2rem)] sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <BrandMark />
           <div className="text-right">
-            <p className="text-sm font-bold text-green-700">Registered Staff Clock device</p>
+            <p className="text-sm font-bold text-green-700">Ready for staff clocking</p>
             <LiveTime />
           </div>
         </div>
         <OfflineStatus connection={offline.connection} runtime={offline.runtime} onSync={() => void offline.syncNow()} />
-        <form action={exitKioskModeAction} className="mt-3 self-end">
-          <button className="min-h-11 text-sm font-bold text-purple-700 underline" type="submit">Remove Staff Clock access from this browser</button>
-        </form>
+        <details className="mt-2 self-end text-right"><summary className="min-h-11 cursor-pointer py-3 text-sm font-bold text-purple-700">Device options</summary><form action={exitKioskModeAction}><button className="min-h-11 text-sm font-bold text-red-700 underline" type="submit">Remove Staff Clock access from this browser</button></form></details>
 
         {flow.mode === "select" ? (
           <>
             <h1 className="mt-8 text-center text-4xl font-black">Staff Clock</h1>
             <p className="mt-3 text-center font-semibold text-slate-600">Choose your name to clock in or clock out.</p>
-            {!displayRoster.length ? <p className="mt-8 text-center font-bold text-red-700">No active Staff Clock users could be loaded. Please ask a manager for help.</p> : null}
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {displayRoster.map((person) => (
+            {displayRoster.length > 6 ? <label className="relative mx-auto mt-6 block w-full max-w-md"><span className="sr-only">Find your name</span><Search className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-slate-500" aria-hidden="true" /><input className="min-h-12 w-full rounded-xl border border-purple-200 bg-white pl-12 pr-4 text-lg font-semibold text-purple-950" type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Find your name" /></label> : null}
+            {!displayRoster.length ? <p className="mt-8 text-center font-bold text-red-700">No staff are available on this device. Please ask a manager for help.</p> : null}
+            {displayRoster.length && !visibleRoster.length ? <p className="mt-8 text-center font-bold text-slate-700">No matching name. Check the spelling or clear the search.</p> : null}
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Staff Clock users">
+              {visibleRoster.map((person) => (
                 <button
                   key={person.staffId}
-                  className="min-h-28 rounded-lg bg-white p-5 text-left shadow-soft ring-1 ring-purple-100 transition hover:ring-purple-500 focus:outline-purple-700"
+                  type="button"
+                  className="min-h-28 rounded-xl bg-white p-5 text-left shadow-soft ring-1 ring-purple-100 transition hover:ring-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-300"
                   onClick={() => {
                     setSelected(person);
                     dispatch({ type: "choose" });
@@ -343,7 +352,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
                 </div>
               ) : null}
               {presentation.primaryLabel ? (
-                <button disabled={pending || flow.pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-lg bg-green-700 p-6 text-2xl font-black text-white disabled:opacity-60" onClick={record}>
+                <button type="button" disabled={pending || flow.pending} className="flex min-h-32 w-full items-center justify-center gap-3 rounded-xl bg-green-700 p-6 text-2xl font-black text-white focus:outline-none focus:ring-4 focus:ring-green-300 disabled:opacity-60" onClick={record}>
                   <Clock3 className="h-8 w-8" /> {pending || flow.pending ? "Recording" : presentation.primaryLabel}
                 </button>
               ) : null}
@@ -356,6 +365,7 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
           <KioskPanel title={localSuccess ? "Saved on this device" : "Recorded"} message={localSuccess ? message : `${message}${flow.recordedAt ? ` at ${new Date(flow.recordedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}` : ""}.`}>
             <CheckCircle2 className="mx-auto h-24 w-24 text-green-600" />
             {flow.completedMinutes !== null ? <p className="mt-4 text-center text-lg font-bold">Shift duration: {formatHours(flow.completedMinutes)}</p> : null}
+            <p className="mt-3 text-center text-sm font-semibold text-slate-600">Returning to the staff list shortly.</p>
             <Button className="mx-auto mt-6 flex" onClick={reset}>Done</Button>
           </KioskPanel>
         ) : null}
@@ -365,7 +375,9 @@ export function ProductionKiosk({ initialRoster }: { initialRoster: KioskRosterE
 }
 
 function KioskPanel({ title, message, children }: { title: string; message: string; children: React.ReactNode }) {
-  return <div className="mx-auto mt-10 w-full max-w-3xl"><h1 className="text-center text-4xl font-black">{title}</h1><p className="mt-3 min-h-6 text-center font-bold text-purple-700">{message}</p><div className="mt-8">{children}</div></div>;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { headingRef.current?.focus(); }, [title]);
+  return <div className="mx-auto mt-8 w-full max-w-3xl sm:mt-10"><h1 ref={headingRef} tabIndex={-1} className="text-center text-3xl font-black outline-none sm:text-4xl">{title}</h1><p className="mt-3 min-h-6 text-center font-bold text-purple-700" role="status" aria-live="polite" aria-atomic="true">{message}</p><div className="mt-6 sm:mt-8">{children}</div></div>;
 }
 
 function LiveTime() {
