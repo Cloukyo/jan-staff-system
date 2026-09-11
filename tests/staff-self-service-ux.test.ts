@@ -49,6 +49,7 @@ describe("staff self-service surface", () => {
   const rota = readFileSync(resolve("src/components/staff-self-service/my-rota.tsx"), "utf8");
   const attendance = readFileSync(resolve("src/components/staff-self-service/my-attendance.tsx"), "utf8");
   const profile = readFileSync(resolve("src/components/profile/production-profile.tsx"), "utf8");
+  const qualificationsRoute = readFileSync(resolve("src/app/profile/qualifications/page.tsx"), "utf8");
 
   it("offers five personal destinations and keeps leave requests inside My leave", () => {
     expect(shell).toContain('label: "My rota"');
@@ -57,6 +58,7 @@ describe("staff self-service surface", () => {
     expect(shell).toContain('label: "My profile"');
     expect(shell).toContain('label: "Qualifications & training"');
     expect(shell).not.toContain('label: "Request leave"');
+    expect(qualificationsRoute).toContain("<AppShell role={data.account.role}>");
   });
 
   it("removes implementation labels and gives each page a personal hierarchy", () => {

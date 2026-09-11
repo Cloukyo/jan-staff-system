@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function QualificationsPage() {
   const data = await loadCurrentProductionProfile();
-  return <AppShell><ProductionProfileScreen data={data} view="qualifications" /></AppShell>;
+  return <AppShell role={data.account.role}><ProductionProfileScreen data={data} view="qualifications" /></AppShell>;
 }
