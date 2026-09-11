@@ -63,6 +63,39 @@ textarea {
   font: inherit;
 }
 
+.app-shell__skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  min-height: 44px;
+  transform: translateY(-150%);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px 16px;
+  color: var(--brand-purple-dark);
+  font-weight: 800;
+  box-shadow: 0 4px 18px rgba(39, 20, 71, 0.2);
+}
+
+.app-shell__skip-link:focus {
+  transform: translateY(0);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-alert__body,
+.ui-inline-feedback,
+.ui-empty-state,
+.app-shell__content {
+  overflow-wrap: anywhere;
+}
+
 /* Legacy Safari fallback: keep the manager shell usable if Tailwind utility layers are ignored. */
 .app-shell {
   min-height: 100vh;
@@ -1666,6 +1699,14 @@ tbody tr:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
   .onboarding-mobile-progress > div span { transition: none; }
 }
 

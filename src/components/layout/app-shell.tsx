@@ -56,7 +56,7 @@ export function AppShell({ children, role = "manager", commercialPermissions }: 
       if (document.querySelector('[aria-modal="true"]')) return;
       if (
         target instanceof HTMLElement
-        && target.matches("input, textarea, select, [contenteditable='true']")
+        && target.closest("a, button, input, textarea, select, summary, [contenteditable='true']")
       ) return;
       const shell = shellRef.current;
       if (!shell) return;
@@ -73,15 +73,8 @@ export function AppShell({ children, role = "manager", commercialPermissions }: 
           top: shell.clientHeight * (event.key === "PageDown" ? 0.85 : -0.85),
           behavior: "smooth",
         });
-      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        shell.scrollBy({
-          top: event.key === "ArrowDown" ? 48 : -48,
-          behavior: "smooth",
-        });
       } else if (
         event.key === " "
-        && !(target instanceof HTMLElement && target.closest("a, button, summary"))
       ) {
         event.preventDefault();
         shell.scrollBy({
@@ -175,6 +168,7 @@ export function AppShell({ children, role = "manager", commercialPermissions }: 
 
   return (
     <div ref={shellRef} className="app-shell min-h-screen bg-lavender">
+      <a className="app-shell__skip-link" href="#main-content">Skip to main content</a>
       <aside className="app-shell__sidebar fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-purple-100 bg-white/95 lg:flex">
         <div className="app-shell__sidebar-brand border-b border-purple-100 p-5"><BrandMark /></div>
         <div className="app-shell__sidebar-menu min-h-0 flex-1 overflow-y-auto px-5 py-6">{menu}</div>
@@ -191,7 +185,7 @@ export function AppShell({ children, role = "manager", commercialPermissions }: 
             className="app-shell__menu-button inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-purple-900 shadow-sm ring-1 ring-purple-200 transition hover:bg-purple-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700"
             onClick={() => setOpen(true)}
           >
-            <Menu className="h-5 w-5" />
+            <Menu aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
       </header>
@@ -207,14 +201,14 @@ export function AppShell({ children, role = "manager", commercialPermissions }: 
           >
             <div className="app-shell__drawer-header flex items-center justify-between border-b border-purple-100 p-5">
               <BrandMark />
-              <Button variant="ghost" aria-label="Close navigation" onClick={closeMenu}><X className="h-5 w-5" /></Button>
+              <Button variant="ghost" aria-label="Close navigation" onClick={closeMenu}><X aria-hidden="true" className="h-5 w-5" /></Button>
             </div>
             <div className="app-shell__drawer-menu min-h-0 flex-1 overflow-y-auto p-5">{menu}</div>
             <div className="app-shell__drawer-footer border-t border-purple-100 p-5">{signOut}</div>
           </div>
         </div>
       ) : null}
-      <main className="app-shell__main px-4 py-6 lg:ml-72 lg:px-8">
+      <main id="main-content" tabIndex={-1} className="app-shell__main px-4 py-6 lg:ml-72 lg:px-8">
         <div className="app-shell__content mx-auto max-w-7xl">{children}</div>
       </main>
     </div>

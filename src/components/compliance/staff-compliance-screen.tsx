@@ -92,7 +92,7 @@ export function StaffComplianceScreen() {
         </div>
       </div>
       <p className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">Demo mode: these compliance rows are non-sensitive sample records. Do not enter real identity, credential or medical information here.</p>
-      {message && <p className="mb-4 rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800">{message}</p>}
+      {message && <p className="mb-4 rounded-xl bg-purple-50 p-3 text-sm font-bold text-purple-800" role="status" aria-live="polite">{message}</p>}
       {(
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -111,17 +111,17 @@ export function StaffComplianceScreen() {
               <Panel key={label as string}>
                 <p className="text-sm font-bold text-slate-500">{label}</p>
                 <p className="mt-2 text-3xl font-black text-purple-950">{value}</p>
-                <StatusPill tone={tone as "purple" | "red" | "amber"}>Manager alert</StatusPill>
+                <StatusPill tone={tone as "purple" | "red" | "amber"}>{tone === "purple" ? "Current" : tone === "amber" ? "Due soon" : "Needs attention"}</StatusPill>
               </Panel>
             ))}
           </div>
           <Panel className="mt-4">
             <div className="grid gap-3 md:grid-cols-[1fr_220px]">
               <label className="relative">
-                <Search className="absolute left-3 top-3 h-5 w-5 text-purple-400" />
-                <input className={inputClassName("w-full pl-10")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff compliance" />
+                <Search aria-hidden="true" className="absolute left-3 top-3 h-5 w-5 text-purple-400" />
+                <input aria-label="Search staff compliance" className={inputClassName("w-full pl-10")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff compliance" />
               </label>
-              <select className={inputClassName()} value={filter} onChange={(event) => setFilter(event.target.value)}>
+              <select aria-label="Filter staff compliance" className={inputClassName()} value={filter} onChange={(event) => setFilter(event.target.value)}>
                 <option value="all">All records</option>
                 <option value="active">Active staff</option>
                 <option value="inactive">Inactive staff</option>
@@ -157,8 +157,8 @@ export function StaffComplianceScreen() {
                       return (
                         <tr key={person.id}>
                           <td className="border-b border-purple-50 px-3 py-3 font-bold text-purple-950">{person.fullName}</td>
-                          <td className="border-b border-purple-50 px-3 py-3"><input className={inputClassName("w-44")} defaultValue={person.employmentRole} onBlur={(event) => event.target.value !== person.employmentRole && quickSave(person, "employmentRole", event.target.value)} /></td>
-                          <td className="border-b border-purple-50 px-3 py-3"><input className={inputClassName("w-32")} defaultValue={person.mainQualificationLevel ?? ""} onBlur={(event) => event.target.value !== (person.mainQualificationLevel ?? "") && quickSave(person, "mainQualificationLevel", event.target.value)} /></td>
+                          <td className="border-b border-purple-50 px-3 py-3"><input aria-label={`Role for ${person.fullName}`} className={inputClassName("w-44")} defaultValue={person.employmentRole} onBlur={(event) => event.target.value !== person.employmentRole && quickSave(person, "employmentRole", event.target.value)} /></td>
+                          <td className="border-b border-purple-50 px-3 py-3"><input aria-label={`Qualification for ${person.fullName}`} className={inputClassName("w-32")} defaultValue={person.mainQualificationLevel ?? ""} onBlur={(event) => event.target.value !== (person.mainQualificationLevel ?? "") && quickSave(person, "mainQualificationLevel", event.target.value)} /></td>
                           {requiredStatuses.map((status, index) => <td key={certificateRequirements[index].id} className="border-b border-purple-50 px-3 py-3"><StatusPill tone={certificateStatusTone(status)}>{certificateStatusLabel(status)}</StatusPill></td>)}
                           {includesDbs ? <td className="border-b border-purple-50 px-3 py-3">{state.centralRecords.find((record) => record.staffId === person.id)?.dbsRecorded ? "Recorded" : "Missing"}</td> : null}
                           {includesCentralRecord ? <td className="border-b border-purple-50 px-3 py-3">{central.completed}/{central.total}</td> : null}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
+import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 import { ProductionActionForm } from "@/components/compliance/production-action-form";
 import {
   centralRecordCompletion,
@@ -42,10 +42,10 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
             value,
             "red",
           ]),
-        ].map(([label, value, tone]) => <Panel key={label as string}><p className="text-sm font-bold text-slate-500">{label}</p><p className="mt-2 text-3xl font-black text-purple-950">{value}</p><StatusPill tone={tone as "purple" | "red" | "amber"}>Live</StatusPill></Panel>)}
+        ].map(([label, value, tone]) => <Panel key={label as string}><p className="text-sm font-bold text-slate-500">{label}</p><p className="mt-2 text-3xl font-black text-purple-950">{value}</p><StatusPill tone={tone as "purple" | "red" | "amber"}>{tone === "purple" ? "Current" : tone === "amber" ? "Due soon" : "Needs attention"}</StatusPill></Panel>)}
       </div>
       <Panel className="mt-4">
-        <div className="overflow-x-auto">
+        {data.staff.length ? <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-sm">
             <thead><tr>{[
               "Staff",
@@ -77,8 +77,8 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
                       <ProductionActionForm action={quickUpdateStaffProfileAction} submitLabel="Save quick edit" submitVariant="secondary">
                         <input type="hidden" name="staffId" value={person.id} />
                         <div className="grid gap-2">
-                          <input className={inputClassName("w-44")} name="employmentRole" defaultValue={person.employmentRole} />
-                          <input className={inputClassName("w-44")} name="mainQualificationLevel" defaultValue={person.mainQualificationLevel ?? ""} />
+                          <input aria-label={`Role for ${person.fullName}`} className={inputClassName("w-44")} name="employmentRole" defaultValue={person.employmentRole} />
+                          <input aria-label={`Qualification for ${person.fullName}`} className={inputClassName("w-44")} name="mainQualificationLevel" defaultValue={person.mainQualificationLevel ?? ""} />
                         </div>
                       </ProductionActionForm>
                     </td>
@@ -94,7 +94,7 @@ export function ProductionComplianceScreen({ data }: { data: ComplianceDataset }
               })}
             </tbody>
           </table>
-        </div>
+        </div> : <EmptyState title="No staff records yet" body="Add a staff record before recording training and checks." kind="first-use" action={<Link className="inline-flex min-h-11 items-center rounded-lg bg-purple-700 px-4 py-2 font-semibold text-white" href="/staff?action=add">Add the first staff record</Link>} />}
       </Panel>
     </AppShell>
   );
