@@ -27,6 +27,7 @@ import type { StaffRecordSection } from "@/lib/staff/record-sections";
 import { getActiveIndustryProfile } from "@/lib/platform/industry-profile";
 import { getCompliancePackForIndustry } from "@/lib/compliance/modules";
 import { deriveRecruitmentReadiness } from "@/lib/compliance/recruitment-readiness";
+import { recruitmentIssuePresentation, recruitmentPriorityPresentation } from "@/lib/compliance/presentation";
 
 const checklist = [
   ["appointment_induction", "Appointment and induction"],
@@ -92,6 +93,14 @@ export function ProductionComplianceDetail({
     suitabilityStatus: centralRecord?.suitabilityStatus ?? "not_assessed", suitabilityDecidedAt: centralRecord?.suitabilityDecidedAt ?? null,
     startAuthorisedAt: centralRecord?.startAuthorisedAt ?? null, volunteerException: centralRecord?.volunteerException ?? null,
   }, isoDateInLondon());
+  const recruitmentPriority = recruitmentPriorityPresentation(recruitmentReadiness);
+  const recruitmentIssues = recruitmentReadiness.blockerCodes.map(recruitmentIssuePresentation);
+  const dueSoonCertificates = record.certificates.filter((certificate) => ["expiring_30", "expiring_60", "expiring_90"].includes(certificateStatus(certificate)));
+  const orderedChecklist = [...checklist].sort(([leftKey], [rightKey]) => {
+    const left = record.centralItems.find((entry) => entry.itemKey === leftKey)?.status === "complete";
+    const right = record.centralItems.find((entry) => entry.itemKey === rightKey)?.status === "complete";
+    return Number(left) - Number(right);
+  });
   return (
     <AppShell>
       <div className="mb-6">
@@ -166,6 +175,21 @@ export function ProductionComplianceDetail({
 
         {section === "training-checks" && (
           <>
+            <section className={`rounded-2xl border p-5 ${recruitmentPriority.tone === "danger" ? "border-red-200 bg-red-50" : recruitmentPriority.tone === "warning" ? "border-amber-200 bg-amber-50" : recruitmentPriority.tone === "success" ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}`} aria-labelledby="recruitment-priority-heading">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-3xl">
+                  <StatusPill tone={recruitmentPriority.tone === "danger" ? "red" : recruitmentPriority.tone === "warning" ? "amber" : recruitmentPriority.tone === "success" ? "green" : "purple"}>{recruitmentPriority.label}</StatusPill>
+                  <h2 id="recruitment-priority-heading" className="mt-3 text-xl font-black text-purple-950">{recruitmentPriority.heading}</h2>
+                  <p className="mt-1 text-sm text-slate-700">{recruitmentPriority.description}</p>
+                </div>
+                <div className="grid min-w-48 grid-cols-2 gap-2 text-center text-sm">
+                  <div className="rounded-xl bg-white p-3"><span className="block text-xl font-black text-purple-950">{recruitmentIssues.length}</span><span className="text-slate-600">blocking actions</span></div>
+                  <div className="rounded-xl bg-white p-3"><span className="block text-xl font-black text-purple-950">{dueSoonCertificates.length}</span><span className="text-slate-600">due soon</span></div>
+                </div>
+              </div>
+              {recruitmentIssues.length ? <ol className="mt-4 grid gap-2 sm:grid-cols-2">{recruitmentIssues.map((issue, index) => <li key={`${issue.target}-${index}`}><a className="flex min-h-11 items-center rounded-xl border border-purple-100 bg-white px-3 text-sm font-bold text-purple-900 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700" href={`#${issue.target}`}>{issue.label}</a></li>)}</ol> : null}
+              {recruitmentReadiness.restrictionCodes.includes("supervision_required") ? <p className="mt-4 rounded-xl bg-white p-3 text-sm font-bold text-blue-900">This person must remain under the recorded supervision arrangement.</p> : null}
+            </section>
             <nav aria-label="Training and checks sections" className="flex flex-wrap gap-2">
               {[
                 ["qualifications", "Qualifications"],
@@ -240,14 +264,15 @@ export function ProductionComplianceDetail({
         {includesDbs ? <Panel>
           <h2 id="dbs-suitability" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">DBS and suitability</h2>
           <p className="mt-2 text-sm font-bold text-purple-800">Central record: {central.completed}/{central.total}</p>
-          <div className={`mt-3 rounded-xl border p-3 text-sm ${recruitmentReadiness.status === "blocked" ? "border-red-200 bg-red-50 text-red-950" : recruitmentReadiness.status === "ready" ? "border-green-200 bg-green-50 text-green-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
-            <p className="font-black">Work start status: {recruitmentReadiness.mayStartWork ? "Ready" : recruitmentReadiness.evidenceState === "future_effective" ? "Evidence is future-effective" : "Not ready"}</p>
+          <div className={`mt-3 rounded-xl border p-3 text-sm ${recruitmentPriority.tone === "danger" ? "border-red-200 bg-red-50 text-red-950" : recruitmentPriority.tone === "success" ? "border-green-200 bg-green-50 text-green-950" : recruitmentPriority.tone === "information" ? "border-blue-200 bg-blue-50 text-blue-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
+            <p className="font-black">{recruitmentPriority.heading}</p>
             {recruitmentReadiness.evidenceState === "receipt_unconfirmed" ? <p className="mt-1">Receipt timing unconfirmed - manager confirmation required.</p> : null}
             {recruitmentReadiness.blockerCodes.length ? <p className="mt-1">{recruitmentReadiness.blockerCodes.length} item(s) must be completed before this person can begin work.</p> : null}
             {recruitmentReadiness.restrictionCodes.includes("supervision_required") ? <p className="mt-1">This occasional volunteer must remain supervised.</p> : null}
           </div>
           {staff.organisationId && centralRecord?.dbsRequirement === "required" ? (
-            <div className="mt-4 rounded-xl border border-purple-100 p-4">
+            <div id="dbs-receipt-confirmation" className={`mt-4 scroll-mt-44 rounded-xl border p-4 md:scroll-mt-36 lg:scroll-mt-16 ${recruitmentReadiness.evidenceState === "receipt_unconfirmed" ? "border-amber-300 bg-amber-50" : "border-purple-100"}`}>
+              {recruitmentReadiness.evidenceState === "receipt_unconfirmed" ? <StatusPill tone="amber">Historical evidence recorded</StatusPill> : null}
               <h3 className="font-bold text-purple-950">{centralRecord.dbsReceiptConfirmed ? "Confirmed receipt date" : "Confirm receipt timing"}</h3>
               <p className="mt-2 text-sm text-slate-700">Existing historical DBS evidence is retained. An issue date or last-check date is not proof of receipt. A replacement DBS is not required solely because receipt timing is unknown.</p>
               <p className="mt-2 text-sm text-slate-700">Save any changes to the DBS evidence first. Then confirm when the nursery actually received the check and explain the evidence reviewed. Changing the receipt date or underlying check requires fresh confirmation.</p>
@@ -286,7 +311,7 @@ export function ProductionComplianceDetail({
         {includesCentralRecord ? <Panel>
           <h2 id="central-record" className="scroll-mt-44 text-xl font-black text-purple-950 md:scroll-mt-36 lg:scroll-mt-16">Central-record checklist</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {checklist.map(([key, label]) => {
+            {orderedChecklist.map(([key, label]) => {
               const item = record.centralItems.find((entry) => entry.itemKey === key);
               return (
                 <ProductionActionForm key={key} action={saveCentralRecordItemAction} submitLabel="Save item" submitVariant="secondary" className="rounded-xl border border-purple-100 p-3">

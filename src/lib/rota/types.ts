@@ -18,6 +18,7 @@ export type ProductionRotaStaff = {
   displayName: string;
   employmentRole: string;
   active: boolean;
+  operationalReadiness?: Record<string, boolean>;
 };
 
 export type ProductionRotaShift = {
