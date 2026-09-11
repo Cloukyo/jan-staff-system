@@ -235,7 +235,8 @@ describe("manager attendance views", () => {
     expect(appShell).toContain('window.addEventListener("keydown", handlePageScroll)');
     expect(appShell).toContain("shell.scrollBy");
     expect(appShell).toContain('event.key === " "');
-    expect(appShell).toContain('event.key === "ArrowDown"');
+    expect(appShell).toContain('target.closest("a, button, input, textarea, select, summary');
+    expect(appShell).not.toContain('event.key === "ArrowDown"');
     expect(appShell).toContain('[aria-modal="true"]');
   });
 
