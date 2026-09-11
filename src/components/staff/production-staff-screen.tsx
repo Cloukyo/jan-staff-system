@@ -9,6 +9,7 @@ import {
   reactivateStaffProfileAction,
 } from "@/lib/staff/actions";
 import type { StaffDirectoryFilter } from "@/lib/staff/directory";
+import { staffDirectoryCounts, staffDirectoryPriority, staffNeedsSetup } from "@/lib/staff/presentation";
 import { EmptyState, Panel, StatusPill, inputClassName } from "@/components/ui/primitives";
 
 export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
@@ -22,7 +23,7 @@ export function highestPrioritySetupWarning(person: StaffDirectoryRow): string {
 }
 
 function needsSetup(person: StaffDirectoryRow): boolean {
-  return person.active && highestPrioritySetupWarning(person) !== "Setup complete";
+  return staffNeedsSetup(person);
 }
 
 export function filterStaffDirectoryRows(
@@ -64,6 +65,7 @@ export function ProductionStaffScreen({
     () => filterStaffDirectoryRows(staff, filter, query),
     [filter, query, staff],
   );
+  const counts = useMemo(() => staffDirectoryCounts(staff), [staff]);
 
   const filters: Array<{ id: StaffDirectoryFilter; label: string }> = [
     { id: "active", label: "Active" },
@@ -72,7 +74,22 @@ export function ProductionStaffScreen({
     { id: "inactive", label: "Inactive" },
   ];
   return (
-    <Panel>
+    <div className="grid gap-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Staff record summary">
+        {filters.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`min-h-20 rounded-lg border p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-700 ${filter === item.id ? "border-purple-600 bg-purple-700 text-white" : "border-purple-100 bg-white text-purple-950 hover:border-purple-300"}`}
+            aria-pressed={filter === item.id}
+            onClick={() => setFilter(item.id)}
+          >
+            <span className={`block text-xs font-bold uppercase tracking-wide ${filter === item.id ? "text-purple-100" : "text-slate-500"}`}>{item.label}</span>
+            <span className="mt-1 block text-2xl font-black">{counts[item.id]}</span>
+          </button>
+        ))}
+      </div>
+      <Panel>
       <div className="grid gap-4 md:grid-cols-[minmax(16rem,1fr)_auto] md:items-end">
         <label className="grid gap-1 text-sm font-semibold text-purple-950">
           <span>Search staff</span>
@@ -85,7 +102,7 @@ export function ProductionStaffScreen({
         </label>
         <div>
           <p className="mb-1 text-sm font-semibold text-purple-950">Show</p>
-          <div className="inline-flex min-h-11 flex-wrap overflow-hidden rounded-lg border border-purple-200" aria-label="Filter staff records">
+          <div className="grid min-h-11 grid-cols-2 overflow-hidden rounded-lg border border-purple-200 sm:inline-flex" aria-label="Filter staff records">
             {filters.map((item) => (
               <button
                 key={item.id}
@@ -98,20 +115,27 @@ export function ProductionStaffScreen({
                 aria-pressed={filter === item.id}
                 onClick={() => setFilter(item.id)}
               >
-                {item.label}
+                {item.label} <span aria-hidden>({counts[item.id]})</span>
               </button>
             ))}
           </div>
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p className="font-bold text-purple-950" aria-live="polite">
+          {filtered.length} {filtered.length === 1 ? "staff record" : "staff records"} shown
+        </p>
+        <p className="text-slate-600">Staff needing action are labelled with their highest-priority next step.</p>
+      </div>
+
       <div className="mt-5 border-t border-purple-100">
         {filtered.map((person) => {
-          const warning = highestPrioritySetupWarning(person);
+          const priority = staffDirectoryPriority(person);
           return (
             <div
               key={person.id}
-              className="grid gap-3 border-b border-purple-100 py-4 lg:grid-cols-[minmax(12rem,1.3fr)_minmax(9rem,1fr)_auto_auto_auto] lg:items-center"
+              className="grid gap-4 border-b border-purple-100 py-5 lg:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,.8fr)_minmax(13rem,1fr)_auto] lg:items-center"
             >
               <div>
                 <h2 className="font-black text-purple-950">{person.fullName}</h2>
@@ -119,21 +143,22 @@ export function ProductionStaffScreen({
                   <p className="text-xs text-slate-500">Staff Clock: {person.displayName}</p>
                 ) : null}
               </div>
-              <p className="text-sm text-slate-700">{person.employmentRole}</p>
-              <StatusPill tone={person.active ? "green" : "grey"}>{person.active ? "Active" : "Inactive"}</StatusPill>
               <div>
-                <p className="text-xs font-bold uppercase text-slate-500">Clocking in</p>
-                <p className="mt-1 text-sm font-semibold text-slate-700">{person.kioskStatus}</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Employment</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{person.employmentRole}</p>
+                <div className="mt-2"><StatusPill tone={person.active ? "green" : "grey"}>{person.active ? "Active" : "Inactive"}</StatusPill></div>
               </div>
-              <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                <StatusPill tone={warning === "Setup complete" || warning === "No setup action needed" ? "green" : "amber"}>
-                  {warning}
-                </StatusPill>
+              <div>
+                <StatusPill tone={priority.tone}>{priority.label}</StatusPill>
+                <p className="mt-2 text-sm text-slate-600">{priority.detail}</p>
+                <p className="mt-2 text-xs text-slate-500">Clocking in: {person.kioskStatus}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                 <Link
-                  className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200 hover:bg-purple-50"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-purple-700 px-4 text-sm font-bold text-white hover:bg-purple-800 sm:w-auto"
                   href={`/compliance/staff/${person.id}`}
                 >
-                  Open record
+                  Open staff record
                 </Link>
                 {showStaffLifecycleControls && person.active && person.id !== currentStaffId ? (
                   <button
@@ -154,7 +179,7 @@ export function ProductionStaffScreen({
                 ) : null}
               </div>
               {confirmingStaffId === person.id ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 lg:col-span-5" role="alert">
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 lg:col-span-4" role="alert">
                   <p className="font-black text-red-950">Confirm deactivation</p>
                   <p className="mt-2 text-sm text-red-900">
                     The person will be removed from active staff, rota and kiosk lists. Their current and future rota entries and all reusable template shifts will be archived. Login and kiosk clocking will be disabled. Past attendance, rota, pay, audit and compliance history will remain preserved.
@@ -183,6 +208,7 @@ export function ProductionStaffScreen({
           <EmptyState title="No staff found" body="Try another name or filter." />
         </div>
       ) : null}
-    </Panel>
+      </Panel>
+    </div>
   );
 }

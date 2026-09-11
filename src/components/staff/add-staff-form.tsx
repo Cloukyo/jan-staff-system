@@ -25,27 +25,35 @@ export function AddStaffForm({ commercial = false }: { commercial?: boolean }) {
         className="mt-5"
         submitLabel="Add staff member"
       >
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Full legal name">
-            <input className={inputClassName()} name="fullName" required />
-          </Field>
-          <Field label="Name shown on Staff Clock">
-            <input className={inputClassName()} name="displayName" />
-          </Field>
-          <Field label="Role">
-            <input className={inputClassName()} name="employmentRole" required />
-          </Field>
-          <Field label="Qualification">
-            <input className={inputClassName()} name="mainQualificationLevel" />
-          </Field>
-          <Field label="Start date">
-            <input className={inputClassName()} name="appointmentDate" type="date" />
-          </Field>
-        </div>
-        <label className="mt-4 flex min-h-11 items-center gap-2 font-bold text-purple-950">
-          <input name="active" type="checkbox" defaultChecked />
-          Active
-        </label>
+        <fieldset>
+          <legend className="text-base font-black text-purple-950">Employment details</legend>
+          <p className="mt-1 text-sm text-slate-600">Use the person&apos;s legal name for employment and compliance records.</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <Field label="Full legal name">
+              <input className={inputClassName()} name="fullName" autoComplete="name" required />
+            </Field>
+            <Field label="Name shown on Staff Clock">
+              <input className={inputClassName()} name="displayName" aria-describedby="staff-clock-name-hint" />
+            </Field>
+            <p id="staff-clock-name-hint" className="-mt-2 text-xs text-slate-500 md:col-start-2">Leave blank to use their legal name.</p>
+            <Field label="Role">
+              <input className={inputClassName()} name="employmentRole" required />
+            </Field>
+            <Field label="Main qualification">
+              <input className={inputClassName()} name="mainQualificationLevel" />
+            </Field>
+            <Field label="Proposed start date">
+              <input className={inputClassName()} name="appointmentDate" type="date" />
+            </Field>
+          </div>
+        </fieldset>
+        <fieldset className="mt-6 rounded-lg border border-purple-100 bg-purple-50/60 p-4">
+          <legend className="px-1 text-base font-black text-purple-950">Operational status</legend>
+          <label className="flex min-h-11 items-start gap-3 font-bold text-purple-950">
+            <input className="mt-1 h-5 w-5" name="active" type="checkbox" defaultChecked />
+            <span>Include in active staff records<span className="mt-1 block text-sm font-normal text-slate-600">Recruitment checks and start authorisation still determine whether this person can work.</span></span>
+          </label>
+        </fieldset>
       </ProductionActionForm>
     </Panel>
   );
