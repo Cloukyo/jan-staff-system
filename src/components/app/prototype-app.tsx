@@ -263,15 +263,15 @@ function StaffScreen() {
       <Panel>
         <div className="grid gap-3 md:grid-cols-[1fr_180px_180px]">
           <label className="relative">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-purple-400" />
-            <input className={inputClassName("w-full pl-10")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff" />
+            <Search aria-hidden="true" className="absolute left-3 top-3 h-5 w-5 text-purple-400" />
+            <input aria-label="Search staff" className={inputClassName("w-full pl-10")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search staff" />
           </label>
-          <select className={inputClassName()} value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}>
+          <select aria-label="Filter staff by active status" className={inputClassName()} value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}>
             <option value="active">Active only</option>
             <option value="inactive">Inactive only</option>
             <option value="all">All staff</option>
           </select>
-          <select className={inputClassName()} value={payFilter} onChange={(event) => setPayFilter(event.target.value)}>
+          <select aria-label="Filter staff by pay type" className={inputClassName()} value={payFilter} onChange={(event) => setPayFilter(event.target.value)}>
             <option value="all">All pay types</option>
             <option value="hourly">Hourly</option>
             <option value="salaried">Salaried</option>
@@ -722,7 +722,7 @@ function AttendanceScreen() {
                   const clean = isCleanApprovalCandidate(day);
                   return (
                     <tr key={key} className="border-t border-purple-50">
-                      <td className="px-3 py-2"><input type="checkbox" disabled={!clean} checked={selected.includes(key)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, key] : current.filter((item) => item !== key))} className="h-5 w-5 accent-purple-700" /></td>
+                      <td className="px-3 py-2"><input aria-label={`Select ${person?.displayName ?? "staff"} on ${formatDateUk(day.date)} for bulk approval`} type="checkbox" disabled={!clean} checked={selected.includes(key)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, key] : current.filter((item) => item !== key))} className="h-5 w-5 accent-purple-700" /></td>
                       <td className="px-3 py-2">{formatDateUk(day.date)}</td>
                       <td className="px-3 py-2 font-bold text-purple-950">{person?.displayName}</td>
                       <td className="px-3 py-2">{day.shift?.scheduledStart ?? "-"} to {day.shift?.scheduledEnd ?? "-"}</td>

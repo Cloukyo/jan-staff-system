@@ -1,4 +1,11 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  type ButtonHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { StatusBadge } from "@/components/ui/semantic-primitives";
 
 export function Button({
@@ -28,11 +35,25 @@ export function Panel({ children, className = "" }: { children: ReactNode; class
 }
 
 export function Field({ label, children, error }: { label: string; children: ReactNode; error?: string }) {
+  const errorId = `${useId()}-error`;
+  type FieldControlProps = {
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean | "true" | "false";
+  };
+  const control = isValidElement<FieldControlProps>(children)
+    ? cloneElement(children as ReactElement<FieldControlProps>, {
+        "aria-describedby": [children.props["aria-describedby"], error ? errorId : null]
+          .filter(Boolean)
+          .join(" ") || undefined,
+        "aria-invalid": error ? true : children.props["aria-invalid"],
+      })
+    : children;
+
   return (
     <label className="ui-field grid gap-1 text-sm font-semibold text-purple-950">
       <span>{label}</span>
-      {children}
-      {error && <span className="text-sm font-medium text-red-700">{error}</span>}
+      {control}
+      {error ? <span id={errorId} className="text-sm font-medium text-red-700" role="alert">{error}</span> : null}
     </label>
   );
 }
@@ -70,14 +91,16 @@ export function EmptyState({
   action?: ReactNode;
   kind?: "first-use" | "filtered" | "default";
 }) {
+  const titleId = useId();
   return (
-    <div
+    <section
       className="ui-empty-state rounded-lg border border-dashed border-purple-200 bg-purple-50/60 p-6 text-center"
       data-empty-state-kind={kind}
+      aria-labelledby={titleId}
     >
-      <p className="font-bold text-purple-950">{title}</p>
+      <h2 id={titleId} className="font-bold text-purple-950">{title}</h2>
       <p className="mt-1 text-sm text-purple-700">{body}</p>
       {action ? <div className="ui-empty-state__action">{action}</div> : null}
-    </div>
+    </section>
   );
 }
