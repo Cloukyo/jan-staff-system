@@ -13,12 +13,14 @@ export function ProductionActionForm({
   submitLabel = "Save",
   submitVariant = "primary",
   className = "",
+  confirmMessage,
 }: {
   action: (state: ComplianceActionState, formData: FormData) => Promise<ComplianceActionState>;
   children: React.ReactNode;
   submitLabel?: string;
   submitVariant?: "primary" | "secondary" | "danger" | "ghost";
   className?: string;
+  confirmMessage?: string;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(action, initialState);
@@ -26,7 +28,13 @@ export function ProductionActionForm({
     if (state.ok) router.refresh();
   }, [router, state.ok]);
   return (
-    <form action={formAction} className={className}>
+    <form
+      action={formAction}
+      className={className}
+      onSubmit={(event) => {
+        if (confirmMessage && !window.confirm(confirmMessage)) event.preventDefault();
+      }}
+    >
       {children}
       {state.message && <p className={`mt-3 rounded-xl p-3 text-sm font-bold ${state.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>{state.message}</p>}
       <Button className="mt-3" type="submit" variant={submitVariant} disabled={pending}>{pending ? "Saving..." : submitLabel}</Button>
