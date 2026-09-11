@@ -84,10 +84,10 @@ describe("role-aware navigation", () => {
       shell.indexOf("export function AppShell"),
     );
     expect(staffSection).toContain('label: "My leave"');
-    expect(staffSection).toContain('label: "Request leave"');
     expect(staffSection).toContain('label: "My rota"');
     expect(staffSection).toContain('label: "My attendance"');
-    expect(staffSection).toContain('label: "Profile"');
+    expect(staffSection).toContain('label: "My profile"');
+    expect(staffSection).toContain('label: "Qualifications & training"');
     expect(staffSection).not.toContain("/payroll");
     expect(staffSection).not.toContain("/compliance");
     expect(staffSection).not.toContain("/accounts");

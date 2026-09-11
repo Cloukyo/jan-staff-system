@@ -30,10 +30,10 @@ const staffNavigation: NavGroup[] = [
     label: "My work",
     items: [
       { href: "/my-rota", label: "My rota", icon: CalendarDays },
-      { href: "/leave", label: "My leave", icon: CalendarDays, active: (path) => path === "/leave" },
-      { href: "/leave/request", label: "Request leave", icon: CalendarPlus },
       { href: "/my-attendance", label: "My attendance", icon: Clock3 },
-      { href: "/profile", label: "Profile", icon: UserRound },
+      { href: "/leave", label: "My leave", icon: CalendarPlus, active: (path) => path === "/leave" || path === "/leave/request" },
+      { href: "/profile", label: "My profile", icon: UserRound, active: (path) => path === "/profile" },
+      { href: "/profile/qualifications", label: "Qualifications & training", icon: UserRound },
     ],
   },
 ];

@@ -1,85 +1,41 @@
-import { addDays, format, parseISO } from "date-fns";
+import { addDays, eachDayOfInterval, parseISO } from "date-fns";
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin } from "lucide-react";
 import { EmptyState, Panel, StatusPill } from "@/components/ui/primitives";
-import { formatDateUk, formatTimeUk, isoDate } from "@/lib/dates/format";
-import type { StaffApprovedLeave, StaffRotaWeek } from "@/lib/staff-self-service/server";
-
-function leaveForDate(leave: StaffApprovedLeave[], date: string): StaffApprovedLeave[] {
-  return leave.filter((item) => item.startDate <= date && item.endDate >= date);
-}
+import { formatDateUk, formatTimeUk, isoDate, isoDateInLondon } from "@/lib/dates/format";
+import { personalRotaSummary, shiftTimeLabel } from "@/lib/staff-self-service/presentation";
+import type { StaffApprovedLeave, StaffRotaShift, StaffRotaWeek } from "@/lib/staff-self-service/server";
 
 export function MyRota({ data }: { data: StaffRotaWeek }) {
-  const start = parseISO(data.weekStart);
-  const dates = Array.from({ length: 7 }, (_, index) => isoDate(addDays(start, index)));
-  const previousWeek = isoDate(addDays(start, -7));
-  const nextWeek = isoDate(addDays(start, 7));
-
+  const today = isoDateInLondon();
+  const summary = personalRotaSummary(data, today);
+  const previousWeek = isoDate(addDays(parseISO(data.weekStart), -7));
+  const nextWeek = isoDate(addDays(parseISO(data.weekStart), 7));
+  const days = eachDayOfInterval({ start: parseISO(data.weekStart), end: parseISO(data.weekEnd) });
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-green-700">Production data | Supabase</p>
-          <h1 className="mt-1 text-3xl font-black text-purple-950">My rota</h1>
-          <p className="mt-2 text-slate-600">Your published shifts for {formatDateUk(data.weekStart)} to {formatDateUk(data.weekEnd)}.</p>
-        </div>
-        {data.publishedAt ? <StatusPill tone="green">Published {formatDateUk(data.publishedAt)} at {formatTimeUk(data.publishedAt)}</StatusPill> : null}
-      </div>
-
-      <div className="flex items-center justify-between gap-3">
-        <Link className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href={`/my-rota?week=${previousWeek}`}>
-          <ChevronLeft className="h-4 w-4" /> Previous week
-        </Link>
-        <Link className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-purple-900 ring-1 ring-purple-200" href={`/my-rota?week=${nextWeek}`}>
-          Next week <ChevronRight className="h-4 w-4" />
-        </Link>
-      </div>
-
-      {!data.publishedAt ? (
-        <EmptyState title="No published rota for this week" body="Your manager has not published this week yet. Draft shifts are not shown." />
-      ) : (
-        <div className="grid gap-4">
-          {dates.map((date) => {
-            const shifts = data.shifts.filter((shift) => shift.shiftDate === date);
-            const approvedLeave = leaveForDate(data.leave, date);
-            return (
-              <Panel key={date}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-bold text-slate-500">{format(parseISO(date), "EEEE")}</p>
-                    <h2 className="text-xl font-black text-purple-950">{formatDateUk(date)}</h2>
-                  </div>
-                  {approvedLeave.length ? <StatusPill tone="purple">Approved leave</StatusPill> : null}
-                </div>
-                {approvedLeave.map((item) => (
-                  <p key={item.id} className="mt-3 rounded-lg bg-purple-50 p-3 text-sm font-bold text-purple-800">
-                    Approved leave{item.dayPart === "partial_day" && item.startTime && item.endTime ? `, ${item.startTime} to ${item.endTime}` : ""}
-                  </p>
-                ))}
-                <div className="mt-4 grid gap-3">
-                  {shifts.length ? shifts.map((shift) => (
-                    <div key={shift.id} className="rounded-lg border border-purple-100 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-lg font-black text-purple-950">{shift.startTime} to {shift.endTime}</p>
-                          <p className="mt-1 text-sm text-slate-600">
-                            Break: {shift.breakUnspecified ? "Not specified" : `${shift.breakMinutes} minutes`}
-                          </p>
-                          {shift.workArea || shift.roomOrArea ? <p className="mt-2 flex items-center gap-2 text-sm font-bold text-purple-800"><MapPin className="h-4 w-4" />{shift.workArea || shift.roomOrArea}</p> : null}
-                          {shift.roleOnShift ? <p className="mt-1 text-sm text-slate-600">Role: {shift.roleOnShift}</p> : null}
-                        </div>
-                        <StatusPill tone={shift.status === "completed" ? "grey" : "green"}>{shift.status === "completed" ? "Completed" : "Published"}</StatusPill>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="flex items-center gap-3 text-sm text-slate-600"><CalendarDays className="h-5 w-5 text-purple-500" />No shift published for this day.</div>
-                  )}
-                </div>
-              </Panel>
-            );
-          })}
-        </div>
-      )}
+      <header><p className="text-sm font-bold text-purple-700">My schedule</p><h1 className="mt-1 text-3xl font-black text-purple-950">My rota</h1><p className="mt-2 text-slate-600">See when you are working and any approved leave.</p></header>
+      <nav className="flex items-center justify-between gap-3" aria-label="Rota week">
+        <Link className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-3 font-bold text-purple-900 ring-1 ring-purple-200" href={`/my-rota?week=${previousWeek}`}><ChevronLeft className="h-4 w-4" /> Previous</Link>
+        <div className="text-center"><p className="font-black text-purple-950">{formatDateUk(data.weekStart)} to {formatDateUk(data.weekEnd)}</p>{data.publishedAt ? <p className="mt-1 text-xs font-semibold text-slate-500">Last updated {formatDateUk(data.publishedAt)} at {formatTimeUk(data.publishedAt)}</p> : null}</div>
+        <Link className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-3 font-bold text-purple-900 ring-1 ring-purple-200" href={`/my-rota?week=${nextWeek}`}>Next <ChevronRight className="h-4 w-4" /></Link>
+      </nav>
+      <section className="grid gap-4 lg:grid-cols-2" aria-label="Schedule highlights">
+        <Panel className="border-purple-200 bg-purple-50"><div className="flex items-center justify-between gap-3"><h2 className="text-xl font-black text-purple-950">Today</h2><StatusPill tone={summary.today.length ? "green" : "grey"}>{summary.today.length ? `${summary.today.length} shift${summary.today.length === 1 ? "" : "s"}` : "No shift"}</StatusPill></div><div className="mt-4 grid gap-3">{summary.today.length ? summary.today.map((shift) => <PersonalShift key={shift.id} shift={shift} prominent />) : <p className="font-semibold text-slate-600">You are not scheduled to work today.</p>}</div></Panel>
+        <Panel><h2 className="text-xl font-black text-purple-950">Next shift</h2><div className="mt-4">{summary.next ? <PersonalShift shift={summary.next} showDate prominent /> : <p className="font-semibold text-slate-600">No later shifts are scheduled in this week.</p>}</div></Panel>
+      </section>
+      <section aria-labelledby="week-schedule-heading">
+        <div className="mb-3 flex items-center gap-2"><CalendarDays className="h-5 w-5 text-purple-700" /><h2 id="week-schedule-heading" className="text-xl font-black text-purple-950">This week</h2></div>
+        {!data.shifts.length && !data.leave.length ? <EmptyState title="Nothing scheduled this week" body="There are no published shifts or approved leave for this week." /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{days.map((day) => { const date = isoDate(day); return <ScheduleDay key={date} date={date} today={date === today} shifts={data.shifts.filter((shift) => shift.shiftDate === date)} leave={data.leave.filter((item) => date >= item.startDate && date <= item.endDate)} />; })}</div>}
+      </section>
     </div>
   );
+}
+
+function ScheduleDay({ date, today, shifts, leave }: { date: string; today: boolean; shifts: StaffRotaShift[]; leave: StaffApprovedLeave[] }) {
+  return <Panel className={today ? "border-purple-300 ring-2 ring-purple-100" : ""}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold uppercase tracking-wide text-slate-500">{parseISO(date).toLocaleDateString("en-GB", { weekday: "long" })}</p><p className="font-black text-purple-950">{formatDateUk(date)}</p></div>{today ? <StatusPill tone="purple">Today</StatusPill> : null}</div><div className="mt-4 grid gap-3">{shifts.map((shift) => <PersonalShift key={shift.id} shift={shift} />)}{leave.map((item) => <div key={item.id} className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900">Approved leave{item.dayPart === "partial_day" && item.startTime && item.endTime ? `, ${item.startTime} to ${item.endTime}` : ""}</div>)}{!shifts.length && !leave.length ? <p className="text-sm font-semibold text-slate-500">Not working</p> : null}</div></Panel>;
+}
+
+function PersonalShift({ shift, showDate = false, prominent = false }: { shift: StaffRotaShift; showDate?: boolean; prominent?: boolean }) {
+  return <div className={`rounded-xl bg-white ring-1 ring-purple-100 ${prominent ? "p-4" : "p-3"}`}>{showDate ? <p className="mb-1 text-sm font-bold text-slate-600">{parseISO(shift.shiftDate).toLocaleDateString("en-GB", { weekday: "long" })}, {formatDateUk(shift.shiftDate)}</p> : null}<p className={`${prominent ? "text-2xl" : "text-lg"} font-black text-purple-950`}>{shiftTimeLabel(shift)}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600"><span className="inline-flex items-center gap-1"><Clock3 className="h-4 w-4" /> {shift.breakUnspecified ? "Break to be confirmed" : shift.breakMinutes ? `${shift.breakMinutes} minute break` : "No recorded break"}</span>{shift.workArea ? <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> {shift.workArea}</span> : null}</div>{shift.roleOnShift ? <p className="mt-2 text-sm font-semibold text-slate-600">{shift.roleOnShift}</p> : null}{shift.status === "completed" ? <div className="mt-3"><StatusPill tone="green">Completed</StatusPill></div> : null}</div>;
 }

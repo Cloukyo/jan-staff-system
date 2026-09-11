@@ -1,49 +1,32 @@
 "use client";
 
+import { Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
 import { formatDateUk, formatTimeUk } from "@/lib/dates/format";
+import { offlineKioskStatus } from "@/lib/kiosk/presentation";
 import type { OfflineConnectionState } from "@/components/kiosk/use-offline-kiosk";
 import type { OfflineRuntimeState } from "@/lib/kiosk/offline/runtime";
 
-function statusLabel(connection: OfflineConnectionState, runtime: OfflineRuntimeState) {
-  if (connection === "revoked") return "Device revoked";
-  if (connection === "update_required") return "Update required";
-  if (runtime.lifecycle === "expired") return "Authorisation expired";
-  if (runtime.lifecycle === "expiring") return "Authorisation expiring";
-  if (connection === "synchronising") return "Synchronising";
-  if (runtime.conflictCount > 0) return "Sync conflict";
-  if (connection === "sync_problem") return "Sync problem";
-  if (connection === "offline") return "Offline - actions will sync later";
-  return "Online";
-}
-
-export function OfflineStatus({
-  connection,
-  runtime,
-  onSync,
-}: {
-  connection: OfflineConnectionState;
-  runtime: OfflineRuntimeState;
-  onSync: () => void;
-}) {
-  const warning = connection !== "online" || runtime.pendingCount > 0
-    || runtime.conflictCount > 0 || runtime.lifecycle === "expiring";
+export function OfflineStatus({ connection, runtime, onSync }: { connection: OfflineConnectionState; runtime: OfflineRuntimeState; onSync: () => void }) {
+  const status = offlineKioskStatus(connection, runtime);
+  const colour = status.tone === "green" ? "border-green-200 bg-green-50 text-green-900" : status.tone === "red" ? "border-red-300 bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950";
   return (
-    <section className={`mt-4 rounded-xl border p-4 ${warning ? "border-amber-300 bg-amber-50" : "border-green-200 bg-green-50"}`} aria-live="polite">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className={`font-black ${warning ? "text-amber-950" : "text-green-900"}`}>{statusLabel(connection, runtime)}</p>
-          <p className="mt-1 text-sm font-semibold text-slate-700">Pending actions: {runtime.pendingCount}</p>
-          <p className="mt-1 text-xs text-slate-600">
-            Last successful sync: {runtime.lastSuccessfulSyncAt
-              ? `${formatDateUk(runtime.lastSuccessfulSyncAt)} ${formatTimeUk(runtime.lastSuccessfulSyncAt)}`
-              : "Not yet"}
-          </p>
-          {runtime.oldestPendingActionAt ? <p className="mt-1 text-xs text-slate-600">Oldest pending action: {formatDateUk(runtime.oldestPendingActionAt)} {formatTimeUk(runtime.oldestPendingActionAt)}</p> : null}
-          {runtime.conflictCount > 0 ? <p className="mt-2 text-sm font-bold text-red-700">A manager must review {runtime.conflictCount} synchronisation conflict(s).</p> : null}
-        </div>
-        <Button variant="secondary" disabled={connection === "synchronising"} onClick={onSync}>Sync now</Button>
+    <section className={`mt-4 rounded-xl border p-4 ${colour}`} aria-live="polite" aria-atomic="true">
+      <div className="flex items-start gap-3">
+        {status.tone === "green" ? <Wifi className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" /> : <WifiOff className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />}
+        <div className="min-w-0 flex-1"><p className="font-black">{status.heading}</p><p className="mt-1 text-sm font-semibold text-slate-700">{status.body}</p></div>
       </div>
+      {(connection !== "online" || runtime.pendingCount > 0) ? (
+        <details className="mt-3 border-t border-current/20 pt-2 text-slate-700">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold">Connection details</summary>
+          <div className="grid gap-2 pb-1 text-xs font-semibold">
+            <p>Saved actions waiting: {runtime.pendingCount}</p>
+            <p>Last successful connection: {runtime.lastSuccessfulSyncAt ? `${formatDateUk(runtime.lastSuccessfulSyncAt)} at ${formatTimeUk(runtime.lastSuccessfulSyncAt)}` : "Not yet"}</p>
+            {runtime.oldestPendingActionAt ? <p>Oldest saved action: {formatDateUk(runtime.oldestPendingActionAt)} at {formatTimeUk(runtime.oldestPendingActionAt)}</p> : null}
+            <Button className="mt-1 w-full sm:w-fit" variant="secondary" disabled={connection === "synchronising"} onClick={onSync}>{connection === "synchronising" ? "Updating" : "Try connection now"}</Button>
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
