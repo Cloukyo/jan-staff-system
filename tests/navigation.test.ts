@@ -131,7 +131,7 @@ describe("role-aware navigation", () => {
       'import { ProductionStaffScreen } from "@/components/staff/production-staff-screen";',
     );
     expect(directory).toContain("Needs setup");
-    expect(directory).toContain("Open record");
+    expect(directory).toContain("Open staff record");
     expect(directory).not.toContain("payArrangements");
     expect(directory).not.toContain("hourlyRate");
     expect(directory).not.toContain("annualSalary");
