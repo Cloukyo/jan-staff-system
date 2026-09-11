@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const sql = readFileSync("supabase/migrations/20260911120000_rota_readiness_projection.sql", "utf8").toLowerCase();
+const sql = readFileSync("supabase/migrations/20260911000235_rota_readiness_projection.sql", "utf8").toLowerCase();
 
 describe("commercial rota readiness projection migration", () => {
   it("preserves the guarded snapshot signature and returns only date-specific eligibility", () => {
