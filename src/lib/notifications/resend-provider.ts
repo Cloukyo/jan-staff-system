@@ -27,6 +27,7 @@ export function createResendEmailProvider(dependencies: ResendDependencies): Tra
           },
           body: JSON.stringify({
             from: message.fromAddress,
+            ...(message.replyToAddress ? { reply_to: message.replyToAddress } : {}),
             to: [message.recipientAddress],
             subject: message.subject,
             html: message.html,

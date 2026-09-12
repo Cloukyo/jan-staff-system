@@ -7,6 +7,8 @@ import { clearCommercialPreference } from "@/lib/commercial-identity/session";
 import { validatePrivatePassword } from "@/lib/auth/password-validation";
 import { safeCommercialContinuation } from "@/lib/invitations/continuation";
 import { safePostAuthContinuation } from "@/lib/auth/post-auth-destination";
+import { configuredApplicationUrl } from "@/lib/auth/application-origin";
+import { CAPTCHA_REQUIRED_MESSAGE, configuredCaptchaToken } from "@/lib/auth/captcha";
 import {
   PILOT_SIGNUP_MESSAGE,
   bindPilotSignup,
@@ -18,14 +20,24 @@ export type AuthActionState = {
   message: string;
 };
 
+function authCaptcha(formData: FormData): { token?: string; message?: string } {
+  try {
+    return { token: configuredCaptchaToken(formData) };
+  } catch {
+    return { message: CAPTCHA_REQUIRED_MESSAGE };
+  }
+}
+
 export async function signInAction(_state: AuthActionState, formData: FormData): Promise<AuthActionState> {
   if (!hasSupabaseConfig()) return { message: "Supabase is not configured. Add the environment variables before using production login." };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const nextPath = safePostAuthContinuation(String(formData.get("next") ?? ""));
   if (!email || !password) return { message: "Enter your email address and password." };
+  const captcha = authCaptcha(formData);
+  if (captcha.message) return { message: captcha.message };
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken: captcha.token } });
   if (error || !data.user) return { message: "The email or password was not recognised." };
   await clearCommercialPreference();
   redirect(`/auth/continue?next=${encodeURIComponent(nextPath)}`);
@@ -46,6 +58,8 @@ export async function signUpAction(
   if (password !== confirmation) return { ok: false, message: "The password confirmation does not match.", email };
   const passwordIssue = validatePrivatePassword(password, email);
   if (passwordIssue) return { ok: false, message: passwordIssue, email };
+  const captcha = authCaptcha(formData);
+  if (captcha.message) return { ok: false, message: captcha.message, email };
 
   const pilotReservation = await reservePilotSignup(email);
   if (pilotReservation === false) return { ok: false, message: PILOT_SIGNUP_MESSAGE, email };
@@ -55,9 +69,8 @@ export async function signUpAction(
     email,
     password,
     options: {
-      emailRedirectTo: process.env.NEXT_PUBLIC_SITE_URL
-        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(nextPath)}`
-        : undefined,
+      emailRedirectTo: configuredApplicationUrl(`/auth/callback?next=${encodeURIComponent(nextPath)}`),
+      captchaToken: captcha.token,
     },
   });
   if (error) {
@@ -140,9 +153,12 @@ export async function resetPasswordAction(_state: AuthActionState, formData: For
   if (!hasSupabaseConfig()) return { message: "Supabase is not configured. Add the environment variables before sending reset emails." };
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!email) return { message: "Enter your email address first." };
+  const captcha = authCaptcha(formData);
+  if (captcha.message) return { message: captcha.message };
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/reset-password` : undefined,
+    redirectTo: configuredApplicationUrl("/auth/callback?next=/reset-password"),
+    captchaToken: captcha.token,
   });
   if (error) {
     console.error("Supabase password reset failed", { code: error.code, status: error.status });

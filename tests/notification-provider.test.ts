@@ -41,6 +41,7 @@ describe("commercial notification delivery", () => {
       templateVersion: "manager_invitation_v1",
       recipientAddress: "delivered+pilot@resend.dev",
       fromAddress: "Workforce Platform <staging@notifications.example.test>",
+      replyToAddress: "Support <support@example.test>",
       subject: "You have been invited to Workforce Platform",
       html: "<p>Safe body</p>",
       text: "Safe body",
@@ -52,6 +53,7 @@ describe("commercial notification delivery", () => {
     expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(
       "notification/00000000-0000-4000-8000-000000000123/manager_invitation_v1",
     );
+    expect(JSON.parse(String(init?.body))).toMatchObject({ reply_to: "Support <support@example.test>" });
   });
 
   it("maps provider rejection to bounded safe failures", async () => {
@@ -63,6 +65,7 @@ describe("commercial notification delivery", () => {
       templateVersion: "trial_ending_v1",
       recipientAddress: "delivered+pilot@resend.dev",
       fromAddress: "Workforce Platform <staging@notifications.example.test>",
+      replyToAddress: "Support <support@example.test>",
       subject: "Your trial is ending soon",
       html: "<p>Review billing</p>",
       text: "Review billing",

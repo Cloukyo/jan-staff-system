@@ -16,6 +16,7 @@ export type TransactionalEmailMessage = {
   templateVersion: NotificationTemplateVersion;
   recipientAddress: string;
   fromAddress: string;
+  replyToAddress?: string;
   subject: string;
   html: string;
   text: string;

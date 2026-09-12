@@ -1,6 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { configuredApplicationUrl } from "@/lib/auth/application-origin";
 import { staffInvitationPath } from "./continuation";
 export type StaffInvitationAcceptanceActionState = {
   outcome: string;
@@ -19,9 +20,7 @@ export async function resendStaffInvitationVerificationAction(
       type: "signup",
       email: data.user.email,
       options: {
-        emailRedirectTo: process.env.NEXT_PUBLIC_SITE_URL
-          ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`
-          : undefined,
+        emailRedirectTo: configuredApplicationUrl(`/auth/callback?next=${encodeURIComponent(next)}`),
       },
     });
   redirect(`${next}&verification=sent`);

@@ -1,3 +1,5 @@
+import { canonicalApplicationOrigin } from "../auth/application-origin";
+
 export type AppEnvironment = "local" | "preview" | "staging" | "production";
 export type ValidatedAppMode = "demo" | "production";
 
@@ -103,7 +105,8 @@ export function validateEnvironment(
   if (
     value(env, "NEXT_PUBLIC_RESEND_API_KEY") ||
     value(env, "NEXT_PUBLIC_CRON_SECRET") ||
-    value(env, "NEXT_PUBLIC_COMMERCIAL_PILOT_ACCESS_HMAC_SECRET")
+    value(env, "NEXT_PUBLIC_COMMERCIAL_PILOT_ACCESS_HMAC_SECRET") ||
+    value(env, "NEXT_PUBLIC_RESEND_WEBHOOK_SECRET")
   ) {
     issues.push("Server secrets must never use a NEXT_PUBLIC_ variable.");
   }
@@ -114,6 +117,9 @@ export function validateEnvironment(
     for (const key of ["RESEND_API_KEY", "RESEND_FROM_ADDRESS", "CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY"]) {
       if (!value(env, key)) issues.push(`${key} is required when transactional notification delivery is enabled.`);
     }
+    if (appEnvironment === "production" && !value(env, "RESEND_WEBHOOK_SECRET")) {
+      issues.push("RESEND_WEBHOOK_SECRET is required for Production transactional delivery.");
+    }
     if (appEnvironment === "staging") {
       const stagingRecipient = value(env, "RESEND_STAGING_RECIPIENT")?.toLowerCase();
       if (!stagingRecipient) {
@@ -123,6 +129,19 @@ export function validateEnvironment(
       }
     }
   }
+  const webhookSecret = value(env, "RESEND_WEBHOOK_SECRET");
+  if (webhookSecret && (!webhookSecret.startsWith("whsec_") || webhookSecret.length < 24)) {
+    issues.push("RESEND_WEBHOOK_SECRET must be a valid Resend endpoint signing secret.");
+  }
+  const replyToAddress = value(env, "RESEND_REPLY_TO_ADDRESS");
+  if (replyToAddress && (/\r|\n/.test(replyToAddress) || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$|^[^\r\n<>]+<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>$/.test(replyToAddress))) {
+    issues.push("RESEND_REPLY_TO_ADDRESS must be a single valid mailbox without control characters.");
+  }
+  const turnstileSiteKey = value(env, "NEXT_PUBLIC_TURNSTILE_SITE_KEY");
+  if (turnstileSiteKey && (turnstileSiteKey.length > 200 || /[\x00-\x1f\x7f]/.test(turnstileSiteKey))) {
+    issues.push("NEXT_PUBLIC_TURNSTILE_SITE_KEY is invalid.");
+  }
+
   if (value(env, "COMMERCIAL_PILOT_SIGNUP_GATE") === "true") {
     if (appEnvironment !== "production") {
       issues.push("The application pilot signup gate may be enabled only in Commercial Production.");
@@ -157,7 +176,15 @@ export function validateEnvironment(
     if (!value(env, key)) issues.push(`${key} is required.`);
   }
 
-  const siteUrl = parseUrl(value(env, "NEXT_PUBLIC_SITE_URL"), "NEXT_PUBLIC_SITE_URL", issues);
+  const configuredSiteUrl = value(env, "NEXT_PUBLIC_SITE_URL");
+  const siteUrl = parseUrl(configuredSiteUrl, "NEXT_PUBLIC_SITE_URL", issues);
+  if (configuredSiteUrl) {
+    try {
+      canonicalApplicationOrigin(configuredSiteUrl, appEnvironment);
+    } catch (error) {
+      issues.push(error instanceof Error ? error.message : "NEXT_PUBLIC_SITE_URL must be an application origin.");
+    }
+  }
   const supabaseUrl = parseUrl(
     value(env, "NEXT_PUBLIC_SUPABASE_URL"),
     "NEXT_PUBLIC_SUPABASE_URL",

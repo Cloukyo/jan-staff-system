@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { configuredApplicationUrl } from "@/lib/auth/application-origin";
 import { requireCommercialIdentity } from "@/lib/commercial-identity/server";
 import { requireAal2 } from "@/lib/commercial-identity/guards";
 import { CommercialIdentityError } from "@/lib/commercial-identity/errors";
@@ -262,9 +263,7 @@ export async function resendVerificationAction(): Promise<void> {
       type: "signup",
       email: data.user.email,
       options: {
-        emailRedirectTo: process.env.NEXT_PUBLIC_SITE_URL
-          ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/onboarding`
-          : undefined,
+        emailRedirectTo: configuredApplicationUrl("/auth/callback?next=/onboarding"),
       },
     });
   }

@@ -36,6 +36,7 @@ export async function GET(request: Request) {
   }
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const fromAddress = process.env.RESEND_FROM_ADDRESS?.trim();
+  const replyToAddress = process.env.RESEND_REPLY_TO_ADDRESS?.trim();
   const stagingRecipient = process.env.RESEND_STAGING_RECIPIENT?.trim();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!apiKey || !fromAddress || !siteUrl || (environment.appEnvironment === "staging" && !stagingRecipient)) {
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
       appEnvironment: environment.appEnvironment,
       siteUrl,
       fromAddress,
+      replyToAddress,
       stagingRecipient,
       provider: createResendEmailProvider({ apiKey }),
       async claimNext() {
