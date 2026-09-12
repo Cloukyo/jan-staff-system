@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { Button, Field, inputClassName } from "@/components/ui/primitives";
 import { PasswordInput } from "@/components/ui/password-input";
+import { AuthCaptcha } from "@/components/auth/captcha-widget";
 import { signUpAction, type SignUpActionState } from "@/lib/auth/actions";
 
 const initialState: SignUpActionState = { ok: false, message: "", email: "" };
@@ -16,6 +17,7 @@ export function SignupForm({ nextPath }: { nextPath?: string }) {
       <Field label="Work email"><input className={inputClassName()} name="email" type="email" defaultValue={state.email} autoComplete="email" required /></Field>
       <Field label="Password"><PasswordInput name="password" autoComplete="new-password" required /></Field>
       <Field label="Confirm password"><PasswordInput name="confirmation" autoComplete="new-password" required /></Field>
+      <AuthCaptcha pending={pending} />
       {state.message ? <p className={state.ok ? "onboarding-auth-message onboarding-auth-message--success" : "onboarding-auth-message"} role="status">{state.message}</p> : null}
       <Button type="submit" disabled={pending}>{pending ? "Creating account..." : "Create account"}</Button>
       <p className="onboarding-auth-switch">Already registered? <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : "/login"}>Sign in</Link></p>

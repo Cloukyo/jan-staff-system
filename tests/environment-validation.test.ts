@@ -190,5 +190,23 @@ describe("commercial environment validation", () => {
       .toThrow("requires Commercial Staging or Production");
     expect(() => validateEnvironment({ ...staging, NEXT_PUBLIC_RESEND_API_KEY: "forbidden" }))
       .toThrow("must never use a NEXT_PUBLIC_ variable");
+    expect(() => validateEnvironment({ ...staging, NEXT_PUBLIC_RESEND_WEBHOOK_SECRET: "forbidden" }))
+      .toThrow("must never use a NEXT_PUBLIC_ variable");
+  });
+
+  it("requires canonical application origins and coherent communications secrets", () => {
+    expect(() => validateEnvironment(productionEnvironment({ NEXT_PUBLIC_SITE_URL: "https://staff.example.com/auth/callback" })))
+      .toThrow("application origin");
+    expect(() => validateEnvironment(productionEnvironment({
+      NOTIFICATION_DELIVERY_ENABLED: "true",
+      RESEND_API_KEY: "production-placeholder",
+      RESEND_FROM_ADDRESS: "Workforce Platform <notifications@example.com>",
+      CRON_SECRET: "fictional-worker-secret",
+      SUPABASE_SERVICE_ROLE_KEY: "fictional-service-role",
+    }))).toThrow("RESEND_WEBHOOK_SECRET");
+    expect(() => validateEnvironment(productionEnvironment({ NEXT_PUBLIC_TURNSTILE_SITE_KEY: "site-key" }))).not.toThrow();
+    expect(() => validateEnvironment(productionEnvironment({
+      RESEND_REPLY_TO_ADDRESS: "support@example.com\nBcc: attacker@example.com",
+    }))).toThrow("RESEND_REPLY_TO_ADDRESS");
   });
 });

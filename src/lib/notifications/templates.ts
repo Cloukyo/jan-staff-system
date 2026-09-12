@@ -40,7 +40,10 @@ export function renderNotification(input: NotificationTemplateInput): RenderedNo
   if (configuration.version !== input.templateVersion) throw new Error("Unsupported notification template version.");
   const url = "acceptanceUrl" in input ? input.acceptanceUrl : input.accountUrl;
   const safeUrl = escapeHtml(url);
-  const text = `${configuration.intro}\n\n${configuration.action}: ${url}\n\nIf you were not expecting this message, you can ignore it.`;
-  const html = `<p>${escapeHtml(configuration.intro)}</p><p><a href="${safeUrl}">${escapeHtml(configuration.action)}</a></p><p>If you were not expecting this message, you can ignore it.</p>`;
+  const timing = "acceptanceUrl" in input
+    ? "This invitation is time limited. If it has expired, ask the organisation manager to send a new invitation."
+    : "Sign in to review the current account status.";
+  const text = `${configuration.intro}\n\n${configuration.action}: ${url}\n\n${timing}\n\nIf you were not expecting this message, you can ignore it.`;
+  const html = `<p>${escapeHtml(configuration.intro)}</p><p><a href="${safeUrl}">${escapeHtml(configuration.action)}</a></p><p>${escapeHtml(timing)}</p><p>If you were not expecting this message, you can ignore it.</p>`;
   return { subject: configuration.subject, html, text };
 }

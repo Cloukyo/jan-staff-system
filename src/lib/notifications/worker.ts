@@ -1,6 +1,7 @@
 import type { NotificationMessageType, NotificationTemplateVersion, TransactionalEmailProvider } from "./contracts";
 import { resolveNotificationRecipient } from "./config";
 import { renderNotification } from "./templates";
+import { canonicalApplicationOrigin } from "@/lib/auth/application-origin";
 
 type ClaimedNotification =
   | { outcome: "not_available" }
@@ -27,6 +28,7 @@ export type NotificationWorkerDependencies = {
   appEnvironment: string;
   siteUrl: string;
   fromAddress: string;
+  replyToAddress?: string;
   stagingRecipient?: string;
 };
 
@@ -70,7 +72,7 @@ export async function processNotificationBatch(
       continue;
     }
 
-    const baseUrl = dependencies.siteUrl.replace(/\/$/, "");
+    const baseUrl = canonicalApplicationOrigin(dependencies.siteUrl, dependencies.appEnvironment);
     const rendered = kind
       ? renderNotification({
           messageType: claim.messageType as "manager_invitation" | "staff_invitation",
@@ -92,6 +94,7 @@ export async function processNotificationBatch(
         stagingRecipient: dependencies.stagingRecipient,
       }),
       fromAddress: dependencies.fromAddress,
+      replyToAddress: dependencies.replyToAddress,
       ...rendered,
       tags: [{ name: "environment", value: dependencies.appEnvironment }, { name: "message_type", value: claim.messageType }],
     });

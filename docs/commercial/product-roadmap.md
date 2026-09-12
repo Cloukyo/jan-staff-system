@@ -41,6 +41,8 @@ Priorities are dashboard work queues, attendance review, payroll hierarchy, rota
 
 Select only the domain infrastructure needed for the application, Auth redirects, CAPTCHA, production email, billing callbacks, legal links, and support. Configure production Auth and transactional email with SPF, DKIM, DMARC, bounce handling, suppression handling, and delivery-failure visibility. Do not build the public marketing site in this milestone.
 
+Status: provider-independent application foundation implemented on the communications candidate. Permanent domain, DNS, Resend account/credentials, Supabase custom SMTP/templates, Turnstile provider secret, and live end-to-end delivery evidence remain manual prerequisites before this milestone can be marked complete.
+
 ## Milestone 6: Billing and commercial operations
 
 After domain and email foundations, configure live Stripe products and prices, Checkout, Customer Portal, signed webhooks, trial conversion, payment failure, grace, recovery, cancellation, reconciliation, and cost alerts. Keep the existing production billing guard until this phase is separately reviewed and tested. Pricing remains a hypothesis: founding customers around GBP 29-39 monthly with free onboarding, standard pricing around GBP 49 monthly, and later multi-site tiers, subject to updated competitor and unit-economics review.

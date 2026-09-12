@@ -6,6 +6,7 @@ import { requireAccount } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { createSupabaseAdminClient, hasSupabaseAdminConfig } from "@/lib/auth/supabase-admin";
 import type { ActionResult } from "@/lib/leave/server";
+import { configuredApplicationUrl } from "@/lib/auth/application-origin";
 
 export type ProductionAccountStaffOption = {
   id: string;
@@ -119,7 +120,7 @@ export async function inviteStaffAccountAction(_state: ActionResult, formData: F
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.auth.admin.inviteUserByEmail(account.email, {
     data: { full_name: account.fullName, staff_id: account.staffId },
-    redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback` : undefined,
+    redirectTo: configuredApplicationUrl("/auth/callback"),
   });
   if (error || !data.user) return { ok: false, message: "The invitation could not be sent. If the Auth user already exists, use Link existing Auth user." };
   const supabase = await createSupabaseServerClient();

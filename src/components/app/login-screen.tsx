@@ -6,6 +6,7 @@ import { signInAction, resetPasswordAction, type AuthActionState } from "@/lib/a
 import { BrandMark } from "@/components/ui/brand";
 import { Button, Field, Panel, inputClassName } from "@/components/ui/primitives";
 import { PasswordInput } from "@/components/ui/password-input";
+import { AuthCaptcha } from "@/components/auth/captcha-widget";
 import { getPlatformBranding } from "@/lib/platform/branding";
 import Link from "next/link";
 
@@ -39,6 +40,7 @@ export function LoginScreen({ notice, nextPath }: { notice?: string; nextPath?: 
               required
             />
           </Field>
+          <AuthCaptcha pending={loginPending} />
           {loginState.message && <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{loginState.message}</p>}
           <Button type="submit" disabled={loginPending}>{loginPending ? "Signing in..." : "Sign in"}</Button>
         </form>
@@ -48,6 +50,7 @@ export function LoginScreen({ notice, nextPath }: { notice?: string; nextPath?: 
           <Field label="Reset email">
             <input className={inputClassName("mt-2 w-full")} name="email" type="email" autoComplete="email" required />
           </Field>
+          <AuthCaptcha pending={resetPending} />
           {resetState.message && <p className="mt-3 rounded-xl bg-purple-50 p-3 text-sm font-semibold text-purple-800">{resetState.message}</p>}
           <Button className="mt-3 w-full" variant="secondary" type="submit" disabled={resetPending}>
             {resetPending ? "Sending..." : "Send reset email"}

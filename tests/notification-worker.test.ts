@@ -18,6 +18,7 @@ function dependencies(overrides: Partial<NotificationWorkerDependencies> = {}): 
     appEnvironment: "staging",
     siteUrl: "https://sh-workforce-staging.vercel.app",
     fromAddress: "Workforce Platform <staging@notifications.example.test>",
+    replyToAddress: "Support <support@example.test>",
     stagingRecipient: "delivered+pilot@resend.dev",
     ...overrides,
   };
@@ -31,6 +32,7 @@ describe("notification delivery worker", () => {
     expect(result).toEqual({ claimed: 1, accepted: 1, retryableFailures: 0, permanentFailures: 0 });
     expect(deps.provider.send).toHaveBeenCalledWith(expect.objectContaining({
       recipientAddress: "delivered+pilot@resend.dev",
+      replyToAddress: "Support <support@example.test>",
       text: expect.stringContaining("/invitations/manager?token="),
     }));
     expect(deps.record).toHaveBeenCalledWith({
