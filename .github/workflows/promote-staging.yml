@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXPECTED_SHA: ${{ inputs.expected_sha }}
+
 concurrency:
   group: commercial-staging-deployment
   cancel-in-progress: false
@@ -23,7 +26,7 @@ jobs:
     timeout-minutes: 25
     environment: commercial-staging
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ inputs.expected_sha }}
           fetch-depth: 0
@@ -31,11 +34,11 @@ jobs:
         shell: bash
         run: |
           git fetch origin main
-          test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
-          test "$(git rev-parse origin/main)" = "${{ inputs.expected_sha }}"
-      - uses: actions/setup-node@v4
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git rev-parse origin/main)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -47,24 +50,38 @@ jobs:
       - run: npm run audit:dependencies
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@58.5.1
+      - name: Verify staging target before deployment
+        shell: bash
+        env:
+          EXPECTED_ENVIRONMENT: staging
+          EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
+          VERCEL_ACCESS_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
+        run: |
+          curl --fail --silent --show-error --max-time 30 \
+            --header "Authorization: Bearer $VERCEL_ACCESS_TOKEN" \
+            "https://api.vercel.com/v9/projects/$EXPECTED_PROJECT?teamId=$VERCEL_ORG_ID" > "$RUNNER_TEMP/commercial-project.json"
+          node scripts/verify-commercial-deployment.mjs project "$RUNNER_TEMP/commercial-project.json"
       - name: Deploy exact candidate
         shell: bash
         run: |
           set -o pipefail
-          vercel deploy --yes \
-            --build-env "DEPLOYMENT_SHA=${{ inputs.expected_sha }}" \
-            --env "DEPLOYMENT_SHA=${{ inputs.expected_sha }}" \
-            --meta "githubCommitSha=${{ inputs.expected_sha }}" \
-            --token="${{ secrets.COMMERCIAL_VERCEL_TOKEN }}" 2>&1 | tee deployment.log
+          vercel deploy --yes --regions lhr1 \
+            --build-env "DEPLOYMENT_SHA=$EXPECTED_SHA" \
+            --env "DEPLOYMENT_SHA=$EXPECTED_SHA" \
+            --meta "githubCommitSha=$EXPECTED_SHA" \
+            --token="$VERCEL_ACCESS_TOKEN" 2>&1 | tee deployment.log
           grep -Eo 'https://[^[:space:]]+\.vercel\.app' deployment.log | tail -1 > staging-url.txt
           test -s staging-url.txt
         env:
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
+          VERCEL_ACCESS_TOKEN: ${{ secrets.COMMERCIAL_VERCEL_TOKEN }}
       - name: Verify staging identity, liveness, readiness, and SHA
         shell: bash
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_ENVIRONMENT: staging
           EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.COMMERCIAL_STAGING_VERCEL_PROJECT_ID }}
@@ -72,40 +89,17 @@ jobs:
           STAGING_BYPASS_SECRET: ${{ secrets.COMMERCIAL_STAGING_AUTOMATION_BYPASS_SECRET }}
         run: |
           staging_url="$(cat staging-url.txt)"
-          staging_host="${staging_url#https://}"
-          curl --fail --silent --show-error \
+          staging_host="$(node scripts/verify-commercial-deployment.mjs url "$staging_url")"
+          curl --fail --silent --show-error --max-time 30 \
             --header "Authorization: Bearer $VERCEL_ACCESS_TOKEN" \
             "https://api.vercel.com/v13/deployments/$staging_host?teamId=$VERCEL_ORG_ID&withGitRepoInfo=true" \
             > deployment.json
-          curl --fail --silent --show-error \
+          DEPLOYMENT_URL="$staging_url" node scripts/verify-commercial-deployment.mjs deployment deployment.json
+          curl --fail --silent --show-error --max-time 30 \
             --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
             "$staging_url/api/health/live" > live.json
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --max-time 30 \
             --header "x-vercel-protection-bypass: $STAGING_BYPASS_SECRET" \
             "$staging_url/api/health/ready" > ready.json
-          node - <<'NODE'
-           const fs = require('fs');
-           const deployment = JSON.parse(fs.readFileSync('deployment.json', 'utf8'));
-           const outputs = (deployment.builds ?? []).flatMap((build) => build.output ?? []);
-           const projectIds = outputs
-             .map((output) => typeof output.digest === 'string' ? output.digest.split('/')[0] : null)
-             .filter(Boolean);
-           const project = deployment.projectId ?? deployment.project?.id;
-           if (project !== process.env.EXPECTED_PROJECT && !projectIds.includes(process.env.EXPECTED_PROJECT)) {
-             throw new Error('Staging deployment project mismatch');
-           }
-           const regions = [
-             ...(deployment.regions ?? []),
-             ...outputs.flatMap((output) => output.lambda?.deployedTo ?? []),
-           ];
-           if (!regions.includes("lhr1")) {
-             throw new Error('Commercial Staging functions are not running in London');
-           }
-          for (const file of ['live.json', 'ready.json']) {
-            const result = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (result.environment !== 'staging') throw new Error(`${file} is not Commercial Staging`);
-            if (result.deploymentSha !== process.env.EXPECTED_SHA) throw new Error(`${file} SHA mismatch`);
-             if (result.status !== "ok") throw new Error(`${file} is not healthy`);
-          }
-          NODE
+          node scripts/verify-commercial-deployment.mjs health live.json ready.json
           echo "Commercial Staging verified at $staging_url for $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"

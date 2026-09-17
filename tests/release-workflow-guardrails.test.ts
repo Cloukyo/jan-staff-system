@@ -7,6 +7,7 @@ describe("commercial production release workflow", () => {
   const stagingWorkflow = readFileSync(resolve(".github/workflows/promote-staging.yml"), "utf8");
   const releaseStagingVerification =
     workflow.match(/  verify-staging-sha:[\s\S]*?(?=\n  verify-migration-ledgers:)/)?.[0] ?? "";
+  const productionDeployment = workflow.slice(workflow.indexOf("  deploy-production:"));
 
   it("requires the exact staging SHA and health evidence before production", () => {
     expect(workflow).toContain("expected_sha");
@@ -23,7 +24,7 @@ describe("commercial production release workflow", () => {
     expect(workflow).not.toContain("vercel promote");
   });
 
-  it("uses the protected Commercial Staging environment token contract", () => {
+  it("uses the Commercial Staging environment token contract", () => {
     expect(stagingWorkflow).toContain("secrets.COMMERCIAL_VERCEL_TOKEN");
     expect(stagingWorkflow).not.toContain("COMMERCIAL_STAGING_VERCEL_TOKEN");
     expect(workflow).toContain("environment: commercial-staging");
@@ -49,10 +50,9 @@ describe("commercial production release workflow", () => {
 
   it("requires the Commercial Staging deployment to run in London", () => {
     expect(stagingWorkflow).toContain("deployment.json");
-    expect(stagingWorkflow).toContain("deployment.builds");
-    expect(stagingWorkflow).toContain("output.lambda?.deployedTo");
-    expect(stagingWorkflow).toContain('includes("lhr1")');
-    expect(stagingWorkflow).toContain('result.status !== "ok"');
+    expect(stagingWorkflow).toContain("--regions lhr1");
+    expect(stagingWorkflow).toContain("EXPECTED_ENVIRONMENT: staging");
+    expect(stagingWorkflow).toContain("node scripts/verify-commercial-deployment.mjs deployment deployment.json");
   });
 
   it("provides the staging project context to post-deploy Vercel verification", () => {
@@ -72,8 +72,45 @@ describe("commercial production release workflow", () => {
     expect(source).not.toContain("vercel curl");
   });
 
-  it("uses the deployed health response contract throughout the production release", () => {
-    expect(workflow).not.toContain("result.ok !== true");
-    expect(workflow.match(/result\.status !== "ok"/g)).toHaveLength(2);
+  it("uses the executable health verifier in both pre-release and post-release checks", () => {
+    expect(releaseStagingVerification).toContain("node scripts/verify-commercial-deployment.mjs health live.json ready.json");
+    expect(productionDeployment).toContain("node scripts/verify-commercial-deployment.mjs health production-live.json production-ready.json");
+  });
+
+  it("sets the required Node runtime in every job that executes Node or npm", () => {
+    const packageMetadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+    const minimumMajor = packageMetadata.engines.node.match(/^>=(\d+)/)[1];
+    for (const source of [workflow, stagingWorkflow]) {
+      const jobs = source.split(/\n  [a-z][a-z-]+:\r?\n/).filter((job) => job.includes("    steps:"));
+      for (const job of jobs.filter((candidate) => /\b(node|npm) /.test(candidate))) {
+        expect(job).toContain(`node-version: ${minimumMajor}`);
+        expect(job.indexOf("node-version:")).toBeLessThan(job.search(/\b(node|npm) /));
+      }
+    }
+  });
+
+  it("verifies the production project and London runtime before requesting application health", () => {
+    expect(productionDeployment).toContain("EXPECTED_ENVIRONMENT: production");
+    expect(productionDeployment).toContain("EXPECTED_PROJECT: ${{ secrets.COMMERCIAL_PRODUCTION_VERCEL_PROJECT_ID }}");
+    expect(productionDeployment).toContain("--regions lhr1");
+    const identityCheck = productionDeployment.indexOf("node scripts/verify-commercial-deployment.mjs deployment deployment.json");
+    expect(identityCheck).toBeGreaterThan(0);
+    expect(identityCheck).toBeLessThan(productionDeployment.indexOf("vercel curl /api/health/live"));
+    expect(productionDeployment).toContain('vercel curl /api/health/ready --deployment "$production_url"');
+  });
+
+  it("validates the supplied staging URL and identity before transmitting the bypass secret", () => {
+    expect(releaseStagingVerification.indexOf("verify-commercial-deployment.mjs url")).toBeGreaterThan(0);
+    expect(releaseStagingVerification.indexOf("verify-commercial-deployment.mjs deployment")).toBeLessThan(
+      releaseStagingVerification.indexOf('--header "x-vercel-protection-bypass'),
+    );
+    expect(releaseStagingVerification).not.toContain("--location");
+  });
+
+  it.each([stagingWorkflow, productionDeployment])("checks the target before deploying and keeps the provider response outside the upload", (source) => {
+    const targetCheck = source.indexOf('node scripts/verify-commercial-deployment.mjs project "$RUNNER_TEMP/commercial-project.json"');
+    expect(targetCheck).toBeGreaterThan(0);
+    expect(targetCheck).toBeLessThan(source.indexOf("vercel deploy"));
+    expect(source).not.toMatch(/> project\.json/);
   });
 });
