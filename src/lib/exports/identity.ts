@@ -25,7 +25,7 @@ export function getCommercialExportIdentity(input: CommercialExportIdentityInput
   const organisationDisplayName = input.organisationDisplayName.trim() || "Organisation";
   const siteDisplayName = input.siteDisplayName?.trim() || null;
   return {
-    productName: "Workforce Operations Platform",
+    productName: getPlatformBranding().productName,
     organisationDisplayName,
     siteDisplayName,
     fileSlug: safeExportSlug([

@@ -1,4 +1,5 @@
 import type { NotificationMessageType, NotificationTemplateVersion } from "./contracts";
+import { getPlatformBranding } from "@/lib/platform/branding";
 
 type InvitationInput = {
   messageType: "manager_invitation" | "staff_invitation";
@@ -30,9 +31,10 @@ function escapeHtml(value: string): string {
   })[character] ?? character);
 }
 export function renderNotification(input: NotificationTemplateInput): RenderedNotification {
+  const productName = getPlatformBranding().productShortName;
   const configurations: Record<NotificationMessageType, { version: NotificationTemplateVersion; subject: string; intro: string; action: string }> = {
-    manager_invitation: { version: "manager_invitation_v1", subject: "You have been invited to Workforce Platform", intro: "You have been invited to help manage an organisation in Workforce Platform.", action: "Accept manager invitation" },
-    staff_invitation: { version: "staff_invitation_v1", subject: "You have been invited to Workforce Platform", intro: "You have been invited to access your organisation in Workforce Platform.", action: "Accept staff invitation" },
+    manager_invitation: { version: "manager_invitation_v1", subject: `You have been invited to ${productName}`, intro: `You have been invited to help manage an organisation in ${productName}.`, action: "Accept manager invitation" },
+    staff_invitation: { version: "staff_invitation_v1", subject: `You have been invited to ${productName}`, intro: `You have been invited to access your organisation in ${productName}.`, action: "Accept staff invitation" },
     trial_ending: { version: "trial_ending_v1", subject: "Your trial is ending soon", intro: "Your organisation's trial is ending soon. Core records remain protected.", action: "Review plan and billing" },
     payment_failure: { version: "payment_failure_v1", subject: "Action is needed for your subscription", intro: "We could not confirm the latest subscription payment. Existing records remain available.", action: "Review billing" },
   };

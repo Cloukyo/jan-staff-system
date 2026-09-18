@@ -11,10 +11,11 @@ describe("commercial notification delivery", () => {
       acceptanceUrl: "https://staging.example.test/invitations/manager?token=secret",
     });
 
-    expect(rendered.subject).toBe("You have been invited to Workforce Platform");
+    expect(rendered.subject).toBe("You have been invited to Jan Staff");
     expect(rendered.text).toContain("https://staging.example.test/invitations/manager?token=secret");
     expect(JSON.stringify(rendered)).not.toContain("invitationToken");
-    expect(rendered.text.toLowerCase()).not.toMatch(/jan|nursery|preschool/);
+    expect(rendered.text).toContain("Jan Staff");
+    expect(rendered.text.toLowerCase()).not.toMatch(/jan pre-school|nursery|preschool/);
   });
 
   it("fails closed to the configured Resend test recipient in staging", () => {

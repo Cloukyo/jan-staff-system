@@ -7,10 +7,10 @@ import {
 } from "@/lib/platform/industry-profile";
 
 describe("platform branding", () => {
-  it("uses neutral placeholders until a commercial identity is configured", () => {
+  it("uses the Jan Staff commercial identity until deployment values override it", () => {
     expect(getPlatformBranding({} as NodeJS.ProcessEnv)).toEqual({
-      productName: "Workforce Operations Platform",
-      productShortName: "Workforce Platform",
+      productName: "Jan Staff",
+      productShortName: "Jan Staff",
       productLogoPath: null,
       organisationDisplayName: "Organisation",
       siteDisplayName: "Site",

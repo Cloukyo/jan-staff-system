@@ -15,8 +15,8 @@ export function getPlatformBranding(
   env: NodeJS.ProcessEnv = process.env,
 ): PlatformBranding {
   return {
-    productName: value(env, "NEXT_PUBLIC_PRODUCT_NAME", "Workforce Operations Platform"),
-    productShortName: value(env, "NEXT_PUBLIC_PRODUCT_SHORT_NAME", "Workforce Platform"),
+    productName: value(env, "NEXT_PUBLIC_PRODUCT_NAME", "Jan Staff"),
+    productShortName: value(env, "NEXT_PUBLIC_PRODUCT_SHORT_NAME", "Jan Staff"),
     productLogoPath: env.NEXT_PUBLIC_PRODUCT_LOGO_PATH?.trim() || null,
     organisationDisplayName: value(env, "NEXT_PUBLIC_ORGANISATION_DISPLAY_NAME", "Organisation"),
     siteDisplayName: value(env, "NEXT_PUBLIC_SITE_DISPLAY_NAME", "Site"),

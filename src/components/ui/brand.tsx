@@ -9,7 +9,7 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
         {branding.productLogoPath ? (
           <Image src={branding.productLogoPath} alt="" width={42} height={42} className="brand-mark__image h-10 w-10 object-contain" />
         ) : (
-          <span className="text-sm font-black text-purple-800" aria-hidden>WP</span>
+          <span className="text-sm font-black text-purple-800" aria-hidden>JS</span>
         )}
       </div>
       {!compact && (

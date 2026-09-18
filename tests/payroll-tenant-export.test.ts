@@ -111,7 +111,7 @@ describe("commercial payroll export identity and workbook", () => {
       organisationDisplayName: "Fictional Care Group",
       siteDisplayName: "Central Site",
     })).toEqual({
-      productName: "Workforce Operations Platform",
+      productName: "Jan Staff",
       organisationDisplayName: "Fictional Care Group",
       siteDisplayName: "Central Site",
       fileSlug: "fictional-care-group-central-site",
@@ -123,7 +123,7 @@ describe("commercial payroll export identity and workbook", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as never);
 
-    expect(workbook.creator).toBe("Workforce Operations Platform");
+    expect(workbook.creator).toBe("Jan Staff");
     expect(workbook.subject).toContain("Fictional Care Group");
     expect(workbook.subject).toContain("Central Site");
     const allText = workbook.worksheets.flatMap((sheet) =>

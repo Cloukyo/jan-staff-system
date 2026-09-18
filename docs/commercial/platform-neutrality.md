@@ -4,7 +4,7 @@ This document records the implementation boundary for Workstream 1.5. It does no
 
 ## Neutral core
 
-The core platform uses organisation, site, staff, attendance, shift, leave, kiosk, work area, compliance, qualification, credential, document and requirement terminology. Product branding and customer display names come from environment configuration. No final commercial product name is selected by this workstream.
+The core platform uses organisation, site, staff, attendance, shift, leave, kiosk, work area, compliance, qualification, credential, document and requirement terminology. Product branding and customer display names come from environment configuration. The current commercial product name is Jan Staff.
 
 The presentation profile is selected with `NEXT_PUBLIC_INDUSTRY_PROFILE`. The supported values are `nursery`, `care_home`, `tuition_centre` and `clinic`. A profile provides work-area terminology, example roles and work areas, demo content, help context and a default compliance pack. Nursery is the explicit compatibility fallback for inherited Jan data.
 
